@@ -10,6 +10,7 @@ import { PathResolver } from "../utils/path-resolver.js";
 import { toRepoId } from "../utils/repo-id.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
 import path from "node:path";
+import { promises as fs } from "node:fs";
 
 export class ServiceFactory {
   private readonly stateStore = new StateStore();
@@ -41,6 +42,53 @@ export class ServiceFactory {
   async history(type: ResourceType, name: string): Promise<VersionInfo[]> {
     const source = await this.loadSourceFromConfig();
     return source.history(type, name);
+  }
+
+  async install(
+    type: ResourceType,
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+  ): Promise<{ type: ResourceType; name: string; version: string; linkPath: string }> {
+    const source = await this.loadSourceFromConfig();
+    const history = await source.history(type, name);
+    if (history.length === 0) {
+      throw new HimanError(
+        errorCodes.RESOURCE_NOT_FOUND,
+        `Resource not found: ${type}/${name}`,
+      );
+    }
+
+    const resolvedVersion = this.resolveVersion(history, version);
+    const storePath = this.getStorePath(type, name, resolvedVersion);
+    const linkPath = this.getProjectRulePath(projectDir, name);
+    await source.pull(type, name, resolvedVersion, storePath);
+    await this.switchSymlink(storePath, linkPath);
+
+    return { type, name, version: resolvedVersion, linkPath };
+  }
+
+  async dev(
+    type: ResourceType,
+    name: string,
+    projectDir: string,
+  ): Promise<{ type: ResourceType; name: string; devPath: string; linkPath: string }> {
+    if (type !== "rule") {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Unsupported resource type: ${type}`,
+      );
+    }
+
+    const linkPath = this.getProjectRulePath(projectDir, name);
+    const installedPath = await this.readInstalledPath(linkPath);
+    const devPath = path.join(projectDir, ".himan", "dev", name);
+    if (!(await this.exists(devPath))) {
+      await fs.mkdir(path.dirname(devPath), { recursive: true });
+      await fs.cp(installedPath, devPath, { recursive: true });
+    }
+    await this.switchSymlink(devPath, linkPath);
+    return { type, name, devPath, linkPath };
   }
 
   private async loadSourceFromConfig(): Promise<ResourceSourceAdapter> {
@@ -90,5 +138,50 @@ export class ServiceFactory {
       repoId: effectiveRepoId,
       repoDir: path.join(this.paths.getReposDir(), effectiveRepoId),
     };
+  }
+
+  private resolveVersion(history: VersionInfo[], version?: string): string {
+    if (!version) return history[0].version;
+    const found = history.find((item) => item.version === version);
+    if (!found) {
+      throw new HimanError(
+        errorCodes.VERSION_NOT_FOUND,
+        `Version not found: ${version}`,
+      );
+    }
+    return found.version;
+  }
+
+  private getStorePath(type: ResourceType, name: string, version: string): string {
+    return path.join(this.paths.getStoreDir(), type, name, version);
+  }
+
+  private getProjectRulePath(projectDir: string, name: string): string {
+    return path.join(projectDir, ".cursor", "rules", name);
+  }
+
+  private async switchSymlink(targetPath: string, linkPath: string): Promise<void> {
+    await fs.mkdir(path.dirname(linkPath), { recursive: true });
+    await fs.rm(linkPath, { recursive: true, force: true });
+    await fs.symlink(targetPath, linkPath, "dir");
+  }
+
+  private async readInstalledPath(linkPath: string): Promise<string> {
+    if (!(await this.exists(linkPath))) {
+      throw new HimanError(
+        errorCodes.INSTALL_NOT_FOUND,
+        `Installed resource link not found: ${linkPath}. Run install first.`,
+      );
+    }
+    return fs.realpath(linkPath);
+  }
+
+  private async exists(targetPath: string): Promise<boolean> {
+    try {
+      await fs.access(targetPath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

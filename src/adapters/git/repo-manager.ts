@@ -26,11 +26,34 @@ export class RepoManager {
   }
 
   async archiveResource(
-    _tag: string,
-    _resourcePath: string,
-    _targetDir: string,
+    repoDir: string,
+    tag: string,
+    resourcePath: string,
+    targetDir: string,
   ): Promise<void> {
-    // TODO: implement with git archive.
+    await fs.rm(targetDir, { recursive: true, force: true });
+    await fs.mkdir(targetDir, { recursive: true });
+
+    const git = simpleGit(repoDir);
+    const output = await git.raw([
+      "ls-tree",
+      "-r",
+      "--name-only",
+      tag,
+      resourcePath,
+    ]);
+    const files = output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    for (const file of files) {
+      const content = await git.raw(["show", `${tag}:${file}`]);
+      const relative = path.relative(resourcePath, file);
+      const destination = path.join(targetDir, relative);
+      await fs.mkdir(path.dirname(destination), { recursive: true });
+      await fs.writeFile(destination, content, "utf8");
+    }
   }
 
   async commitTagAndPush(

@@ -84,8 +84,20 @@ export function buildCli(): Command {
     .argument("<type>", "resource type")
     .argument("<name_version>", "resource name with optional @version")
     .description("Install resource")
-    .action(async () => {
-      process.stdout.write("Install command scaffold is ready.\n");
+    .action(async (type: string, nameVersion: string) => {
+      await runAction(async () => {
+        const resourceType = ensureResourceType(type);
+        const { name, version } = parseNameVersion(nameVersion);
+        const result = await services.install(
+          resourceType,
+          name,
+          version,
+          process.cwd(),
+        );
+        process.stdout.write(
+          `Installed ${result.type}/${result.name}@${result.version}\n`,
+        );
+      });
     });
 
   program
@@ -93,8 +105,14 @@ export function buildCli(): Command {
     .argument("<type>", "resource type")
     .argument("<name>", "resource name")
     .description("Switch resource to development mode")
-    .action(async () => {
-      process.stdout.write("Dev command scaffold is ready.\n");
+    .action(async (type: string, name: string) => {
+      await runAction(async () => {
+        const resourceType = ensureResourceType(type);
+        const result = await services.dev(resourceType, name, process.cwd());
+        process.stdout.write(
+          `Switched ${result.type}/${result.name} to dev mode: ${result.devPath}\n`,
+        );
+      });
     });
 
   program
@@ -117,6 +135,12 @@ function ensureResourceType(type: string): ResourceType {
     throw new Error(`Unsupported resource type: ${type}`);
   }
   return type;
+}
+
+function parseNameVersion(input: string): { name: string; version?: string } {
+  const idx = input.lastIndexOf("@");
+  if (idx <= 0) return { name: input };
+  return { name: input.slice(0, idx), version: input.slice(idx + 1) };
 }
 
 async function runAction(action: () => Promise<void>): Promise<void> {

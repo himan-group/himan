@@ -51,12 +51,18 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
   }
 
   async pull(
-    _type: ResourceType,
-    _name: string,
-    _version: string,
-    _targetDir: string,
+    type: ResourceType,
+    name: string,
+    version: string,
+    targetDir: string,
   ): Promise<void> {
-    // TODO: git archive and materialize into store target.
+    const tag = `${type}/${name}@${version}`;
+    await this.repoManager.archiveResource(
+      this.getRepoDir(),
+      tag,
+      `${type}s/${name}`,
+      targetDir,
+    );
   }
 
   async publish(
