@@ -6,6 +6,7 @@ export interface HimanConfig {
   source: {
     type: "git" | "registry";
     repo?: string;
+    repoId?: string;
     endpoint?: string;
   };
 }
@@ -25,5 +26,14 @@ export class StateStore {
   async saveConfig(config: HimanConfig): Promise<void> {
     await fs.mkdir(path.dirname(this.getConfigPath()), { recursive: true });
     await fs.writeFile(this.getConfigPath(), JSON.stringify(config, null, 2));
+  }
+
+  async loadConfig(): Promise<HimanConfig | null> {
+    try {
+      const raw = await fs.readFile(this.getConfigPath(), "utf8");
+      return JSON.parse(raw) as HimanConfig;
+    } catch {
+      return null;
+    }
   }
 }

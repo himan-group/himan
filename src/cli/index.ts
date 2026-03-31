@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { ServiceFactory } from "../services/index.js";
+import type { ResourceType } from "../domain/resource.js";
 
 export function buildCli(): Command {
   const program = new Command();
@@ -14,25 +15,68 @@ export function buildCli(): Command {
     .command("init")
     .argument("<git_repo>", "Git repository URL")
     .action(async (gitRepo: string) => {
-      await services.initSource("git", gitRepo);
-      process.stdout.write(`Initialized source repo: ${gitRepo}\n`);
+      await runAction(async () => {
+        const result = await services.initSource("git", gitRepo);
+        process.stdout.write(
+          `Initialized ${result.sourceType} source: ${result.repo}\n`,
+        );
+      });
     });
 
   program
     .command("list")
     .argument("[type]", "resource type", "rule")
+    .option("--json", "output json format")
     .description("List resources")
-    .action(async () => {
-      process.stdout.write("List command scaffold is ready.\n");
+    .action(async (type: string, options: { json?: boolean }) => {
+      await runAction(async () => {
+        const resourceType = ensureResourceType(type);
+        const resources = await services.list(resourceType);
+        if (options.json) {
+          process.stdout.write(`${JSON.stringify(resources, null, 2)}\n`);
+          return;
+        }
+
+        if (resources.length === 0) {
+          process.stdout.write("No resources found.\n");
+          return;
+        }
+
+        for (const resource of resources) {
+          process.stdout.write(
+            `- ${resource.type}/${resource.name}${
+              resource.description ? `: ${resource.description}` : ""
+            }\n`,
+          );
+        }
+      });
     });
 
   program
     .command("history")
     .argument("<type>", "resource type")
     .argument("<name>", "resource name")
+    .option("--json", "output json format")
     .description("Show resource history")
-    .action(async () => {
-      process.stdout.write("History command scaffold is ready.\n");
+    .action(async (type: string, name: string, options: { json?: boolean }) => {
+      await runAction(async () => {
+        const resourceType = ensureResourceType(type);
+        const versions = await services.history(resourceType, name);
+
+        if (options.json) {
+          process.stdout.write(`${JSON.stringify(versions, null, 2)}\n`);
+          return;
+        }
+
+        if (versions.length === 0) {
+          process.stdout.write(`No history found for ${resourceType}/${name}.\n`);
+          return;
+        }
+
+        for (const version of versions) {
+          process.stdout.write(`- ${version.raw}\n`);
+        }
+      });
     });
 
   program
@@ -66,4 +110,21 @@ export function buildCli(): Command {
     });
 
   return program;
+}
+
+function ensureResourceType(type: string): ResourceType {
+  if (type !== "rule") {
+    throw new Error(`Unsupported resource type: ${type}`);
+  }
+  return type;
+}
+
+async function runAction(action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`${message}\n`);
+    process.exitCode = 1;
+  }
 }

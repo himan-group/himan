@@ -8,6 +8,8 @@ import type {
 export interface SourceConfig {
   type: "git" | "registry";
   repo?: string;
+  repoId?: string;
+  repoDir?: string;
   endpoint?: string;
 }
 
