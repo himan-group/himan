@@ -5,6 +5,14 @@
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.32.1",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "himan": "dist/index.js"
   },
@@ -13,7 +21,11 @@
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "release:check": "pnpm run typecheck && pnpm run test && pnpm run build",
+    "release:dry-run": "pnpm run release:check && npm publish --dry-run",
+    "release:test": "pnpm run release:check && npm version prerelease --preid test --no-git-tag-version && npm publish --tag test",
+    "release:latest": "pnpm run release:check && npm publish"
   },
   "dependencies": {
     "commander": "^14.0.3",
