@@ -126,6 +126,24 @@
 
 ---
 
+### 2.7 `himan create <type> <name> [options]`（设计中）
+
+目标：
+- 新建 `rule/command/skill` 资源骨架，统一结构与元数据
+
+实现要点：
+1. 参数校验（`type/name/options`）
+2. 解析目标路径（`rules|commands|skills/<name>`）
+3. 生成 `himan.yaml` 与 entry 模板文件
+4. 冲突处理（`--force`）与试运行（`--dry-run`）
+5. 输出可追踪结果（`--json`）
+
+关键点：
+- 与 `ResourceSourceAdapter` 对齐，Git 先实现、Registry 预留
+- 创建后不自动发布，遵循 `create -> edit -> publish` 工作流
+
+---
+
 ## 3. 模块设计
 
 建议模块：
@@ -173,6 +191,10 @@
 - MVP 快速落地，不增加过多实现成本
 - 二期接入 registry 时无需重写命令层与安装/开发工作流
 
+与 `create` 的关系：
+- `create` 同样应通过 `ResourceSourceAdapter` 抽象实现
+- Git/Registry 切换时，命令层无需改动，仅替换适配器实现
+
 ---
 
 ## 4. 关键实现细节
@@ -203,3 +225,6 @@ MVP 实现阶段建议同步产出：
 - 模块依赖图（Service/Domain/Infra）
 - 最小可运行示例仓库
 - 回归测试清单与结果记录
+
+补充设计文档：
+- [资源创建命令技术设计](./create-resource.md)

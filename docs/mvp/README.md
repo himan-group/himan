@@ -94,6 +94,18 @@ MVP 不覆盖：
 
 ---
 
+### 2.7 `create`（设计中）
+
+命令（规划）：
+- `himan create <type> <name> [options]`
+
+目标：
+- 支持创建 `rule/command/skill` 资源骨架
+- 标准化生成 `himan.yaml` 与模板文件
+- 衔接后续 `publish` 流程
+
+---
+
 ## 3. MVP 技术架构
 
 ### 3.1 分层结构
@@ -136,6 +148,7 @@ MVP 不覆盖：
 
 详细实现请参考：
 - [MVP 详细技术实现方案](./impl.md)
+- [资源创建命令技术设计](./create-resource.md)
 
 ---
 

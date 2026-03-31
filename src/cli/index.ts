@@ -86,7 +86,7 @@ export function buildCli(): Command {
     .description("Install resource")
     .action(async (type: string, nameVersion: string) => {
       await runAction(async () => {
-        const resourceType = ensureResourceType(type);
+        const resourceType = ensureRuleResourceType(type);
         const { name, version } = parseNameVersion(nameVersion);
         const result = await services.install(
           resourceType,
@@ -107,7 +107,7 @@ export function buildCli(): Command {
     .description("Switch resource to development mode")
     .action(async (type: string, name: string) => {
       await runAction(async () => {
-        const resourceType = ensureResourceType(type);
+        const resourceType = ensureRuleResourceType(type);
         const result = await services.dev(resourceType, name, process.cwd());
         process.stdout.write(
           `Switched ${result.type}/${result.name} to dev mode: ${result.devPath}\n`,
@@ -145,10 +145,66 @@ export function buildCli(): Command {
       },
     );
 
+  program
+    .command("create")
+    .argument("<type>", "resource type")
+    .argument("<name>", "resource name")
+    .option("--description <text>", "resource description")
+    .option("--target <list>", "targets list, comma separated")
+    .option("--entry <file>", "entry file name")
+    .option("--template <name>", "template name", "basic")
+    .option("--force", "overwrite existing resource")
+    .option("--dry-run", "show files without writing")
+    .option("--json", "output json format")
+    .description("Create resource scaffold")
+    .action(
+      async (
+        type: string,
+        name: string,
+        options: {
+          description?: string;
+          target?: string;
+          entry?: string;
+          template?: string;
+          force?: boolean;
+          dryRun?: boolean;
+          json?: boolean;
+        },
+      ) => {
+        await runAction(async () => {
+          const resourceType = ensureCreateResourceType(type);
+          const result = await services.create(resourceType, name, {
+            description: options.description,
+            targets: parseTargets(options.target),
+            entry: options.entry,
+            template: options.template,
+            force: options.force,
+            dryRun: options.dryRun,
+          });
+          if (options.json) {
+            process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+            return;
+          }
+          process.stdout.write(
+            `Created ${result.type}/${result.name} at ${result.resourceDir}${
+              result.dryRun ? " (dry-run)" : ""
+            }\n`,
+          );
+        });
+      },
+    );
+
   return program;
 }
 
 function ensureResourceType(type: string): ResourceType {
+  if (type !== "rule" && type !== "command" && type !== "skill") {
+    throw new Error(`Unsupported resource type: ${type}`);
+  }
+  return type;
+}
+
+function ensureRuleResourceType(type: string): "rule" {
   if (type !== "rule") {
     throw new Error(`Unsupported resource type: ${type}`);
   }
@@ -186,4 +242,19 @@ function resolveReleaseType(options: {
     throw new Error("Use only one of --patch, --minor or --major.");
   }
   return selected[0] ?? "patch";
+}
+
+function ensureCreateResourceType(type: string): ResourceType {
+  if (type !== "rule" && type !== "command" && type !== "skill") {
+    throw new Error(`Unsupported resource type: ${type}`);
+  }
+  return type;
+}
+
+function parseTargets(input?: string): string[] | undefined {
+  if (!input) return undefined;
+  return input
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

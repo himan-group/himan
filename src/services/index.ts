@@ -4,7 +4,13 @@ import type {
   ResourceSourceAdapter,
   SourceConfig,
 } from "../adapters/source/resource-source-adapter.js";
-import type { ResourceMeta, ResourceType, VersionInfo } from "../domain/resource.js";
+import type {
+  CreateOptions,
+  CreateResult,
+  ResourceMeta,
+  ResourceType,
+  VersionInfo,
+} from "../domain/resource.js";
 import { StateStore } from "../state/state-store.js";
 import { PathResolver } from "../utils/path-resolver.js";
 import { toRepoId } from "../utils/repo-id.js";
@@ -101,26 +107,13 @@ export class ServiceFactory {
     releaseType: "patch" | "minor" | "major",
     projectDir: string,
   ): Promise<{ type: ResourceType; name: string; version: string; tag: string }> {
-    if (type !== "rule") {
-      throw new HimanError(
-        errorCodes.INVALID_INPUT,
-        `Unsupported resource type: ${type}`,
-      );
-    }
-
     const source = await this.loadSourceFromConfig();
-    const devPath = path.join(projectDir, ".himan", "dev", name);
-    if (!(await this.exists(devPath))) {
-      throw new HimanError(
-        errorCodes.INSTALL_NOT_FOUND,
-        `Dev resource not found: ${devPath}. Run dev command first.`,
-      );
-    }
+    const sourceDir = await this.resolvePublishSourceDir(type, name, projectDir);
 
     const history = await source.history(type, name);
     const latest = history[0]?.version ?? "0.0.0";
     const nextVersion = this.versions.nextVersion(latest, releaseType);
-    const result = await source.publish(type, name, nextVersion, devPath, {
+    const result = await source.publish(type, name, nextVersion, sourceDir, {
       releaseType,
     });
 
@@ -128,9 +121,28 @@ export class ServiceFactory {
     if (!(await this.exists(storePath))) {
       await source.pull(type, name, nextVersion, storePath);
     }
-    await this.switchSymlink(storePath, this.getProjectRulePath(projectDir, name));
+    if (type === "rule") {
+      await this.switchSymlink(storePath, this.getProjectRulePath(projectDir, name));
+    }
 
     return { type, name, version: result.version, tag: result.tag };
+  }
+
+  async create(
+    type: ResourceType,
+    name: string,
+    options: CreateOptions,
+  ): Promise<CreateResult> {
+    this.validateCreateInput(type, name, options);
+    const source = await this.loadSourceFromConfig();
+    return source.create(type, name, {
+      description: options.description,
+      targets: options.targets,
+      entry: options.entry,
+      template: options.template ?? "basic",
+      force: options.force,
+      dryRun: options.dryRun,
+    });
   }
 
   private async loadSourceFromConfig(): Promise<ResourceSourceAdapter> {
@@ -224,6 +236,83 @@ export class ServiceFactory {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private async resolvePublishSourceDir(
+    type: ResourceType,
+    name: string,
+    projectDir: string,
+  ): Promise<string> {
+    const devPath = path.join(projectDir, ".himan", "dev", name);
+    if (await this.exists(devPath)) {
+      return devPath;
+    }
+
+    const repoResourceDir = await this.getRepoResourceDir(type, name);
+    if (await this.exists(repoResourceDir)) {
+      return repoResourceDir;
+    }
+
+    throw new HimanError(
+      errorCodes.RESOURCE_NOT_FOUND,
+      `No publish source found for ${type}/${name}. Create resource or switch to dev mode first.`,
+    );
+  }
+
+  private async getRepoResourceDir(type: ResourceType, name: string): Promise<string> {
+    const config = await this.stateStore.loadConfig();
+    if (!config) {
+      throw new HimanError(
+        errorCodes.CONFIG_NOT_FOUND,
+        "Source config not found. Please run `himan init <git_repo>` first.",
+      );
+    }
+
+    const sourceConfig = this.buildSourceConfig(
+      config.source.type,
+      config.source.repo,
+      config.source.repoId,
+    );
+    if (!sourceConfig.repoDir) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "Current source does not support repo directory publish.",
+      );
+    }
+    return path.join(sourceConfig.repoDir, `${this.getTypeDir(type)}`, name);
+  }
+
+  private getTypeDir(type: ResourceType): string {
+    if (type === "rule") return "rules";
+    if (type === "command") return "commands";
+    return "skills";
+  }
+
+  private validateCreateInput(
+    type: ResourceType,
+    name: string,
+    options: CreateOptions,
+  ): void {
+    if (!["rule", "command", "skill"].includes(type)) {
+      throw new HimanError(
+        errorCodes.UNSUPPORTED_RESOURCE_TYPE,
+        `Unsupported resource type for create: ${type}`,
+      );
+    }
+
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_NAME,
+        `Invalid resource name: ${name}. Use kebab-case only.`,
+      );
+    }
+
+    if (options.template && options.template !== "basic") {
+      throw new HimanError(
+        errorCodes.TEMPLATE_NOT_FOUND,
+        `Template not found: ${options.template}`,
+      );
     }
   }
 }

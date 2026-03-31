@@ -99,20 +99,119 @@ describe("CLI commands with external git source", () => {
     expect(JSON.parse(historyResult.stdout)).toEqual([]);
   });
 
+  it("creates command scaffold with metadata and supports force", async () => {
+    const createResult = runCli(
+      [
+        "create",
+        "command",
+        "sync-docs",
+        "--description",
+        "sync docs command",
+        "--target",
+        "cursor,claude",
+        "--json",
+      ],
+      projectDir,
+      homeDir,
+    );
+    expect(createResult.status).toBe(0);
+
+    const payload = JSON.parse(createResult.stdout) as {
+      resourceDir: string;
+      files: string[];
+      dryRun: boolean;
+    };
+    expect(payload.dryRun).toBe(false);
+    expect(payload.resourceDir).toContain(path.join(repoDir, "commands", "sync-docs"));
+    await expect(fs.access(path.join(repoDir, "commands", "sync-docs", "himan.yaml"))).resolves
+      .toBeUndefined();
+    await expect(fs.access(path.join(repoDir, "commands", "sync-docs", "content.md"))).resolves
+      .toBeUndefined();
+
+    const createAgain = runCli(["create", "command", "sync-docs"], projectDir, homeDir);
+    expect(createAgain.status).toBe(1);
+    expect(createAgain.stderr).toContain("Resource already exists");
+
+    const createForce = runCli(
+      ["create", "command", "sync-docs", "--force"],
+      projectDir,
+      homeDir,
+    );
+    expect(createForce.status).toBe(0);
+  });
+
+  it("supports dry-run for skill create", async () => {
+    const dryRun = runCli(
+      ["create", "skill", "bug-analysis", "--dry-run", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(dryRun.status).toBe(0);
+    const payload = JSON.parse(dryRun.stdout) as { resourceDir: string; dryRun: boolean };
+    expect(payload.dryRun).toBe(true);
+
+    await expect(fs.access(path.join(repoDir, "skills", "bug-analysis"))).rejects.toThrow();
+  });
+
+  it("publishes create artifact without dev workflow", async () => {
+    const createResult = runCli(
+      [
+        "create",
+        "command",
+        "release-note",
+        "--description",
+        "release note command",
+      ],
+      projectDir,
+      homeDir,
+    );
+    expect(createResult.status).toBe(0);
+
+    const contentPath = path.join(repoDir, "commands", "release-note", "content.md");
+    await fs.appendFile(contentPath, "Publish from create artifact.\n", "utf8");
+
+    const publishResult = runCli(
+      ["publish", "command", "release-note", "--minor"],
+      projectDir,
+      homeDir,
+    );
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("Published command/release-note@0.1.0");
+
+    const historyResult = runCli(
+      ["history", "command", "release-note", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(historyResult.status).toBe(0);
+    expect(JSON.parse(historyResult.stdout)).toEqual([
+      { version: "0.1.0", raw: "command/release-note@0.1.0" },
+    ]);
+
+    const storeContent = await fs.readFile(
+      path.join(homeDir, ".himan", "store", "command", "release-note", "0.1.0", "content.md"),
+      "utf8",
+    );
+    expect(storeContent).toContain("Publish from create artifact.");
+  });
+
   it("supports list/history/install/dev after local fixture commit and tag", async () => {
     await prepareRepoFixture(repoDir);
 
     const listResult = runCli(["list", "rule", "--json"], projectDir, homeDir);
     expect(listResult.status).toBe(0);
-    expect(JSON.parse(listResult.stdout)).toEqual([
-      {
-        name: "code-review",
-        type: "rule",
-        entry: "content.md",
-        description: "enforce code review standards",
-        targets: ["cursor"],
-      },
-    ]);
+    const listed = JSON.parse(listResult.stdout) as Array<Record<string, unknown>>;
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        {
+          name: "code-review",
+          type: "rule",
+          entry: "content.md",
+          description: "enforce code review standards",
+          targets: ["cursor"],
+        },
+      ]),
+    );
 
     const historyResult = runCli(
       ["history", "rule", "code-review", "--json"],

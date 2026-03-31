@@ -1,4 +1,6 @@
 import type {
+  CreateOptions,
+  CreateResult,
   PublishResult,
   ResourceMeta,
   ResourceType,
@@ -39,7 +41,6 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
   }
 
   async history(type: ResourceType, name: string): Promise<VersionInfo[]> {
-    if (type !== "rule") return [];
     const tags = await this.repoManager.listTags(
       this.getRepoDir(),
       `${type}/${name}@*`,
@@ -76,9 +77,12 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
   ): Promise<PublishResult> {
     const repoDir = this.getRepoDir();
     const targetDir = path.join(repoDir, `${type}s`, name);
-    await fs.rm(targetDir, { recursive: true, force: true });
-    await fs.mkdir(path.dirname(targetDir), { recursive: true });
-    await fs.cp(sourceDir, targetDir, { recursive: true });
+    const sameDir = await this.isSameDirectory(sourceDir, targetDir);
+    if (!sameDir) {
+      await fs.rm(targetDir, { recursive: true, force: true });
+      await fs.mkdir(path.dirname(targetDir), { recursive: true });
+      await fs.cp(sourceDir, targetDir, { recursive: true });
+    }
 
     const yamlPath = path.join(targetDir, "himan.yaml");
     if (await this.exists(yamlPath)) {
@@ -95,6 +99,55 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       tag,
     );
     return { version, tag };
+  }
+
+  async create(
+    type: ResourceType,
+    name: string,
+    options: CreateOptions,
+  ): Promise<CreateResult> {
+    const repoDir = this.getRepoDir();
+    const resourceDir = path.join(repoDir, this.getTypeDir(type), name);
+    const entry = options.entry ?? this.getDefaultEntry(type);
+    const targets = options.targets?.length ? options.targets : ["cursor"];
+
+    if ((await this.exists(resourceDir)) && !options.force) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Resource already exists: ${type}/${name}`,
+      );
+    }
+
+    const files = [path.join(resourceDir, "himan.yaml"), path.join(resourceDir, entry)];
+    if (!options.dryRun) {
+      await fs.rm(resourceDir, { recursive: true, force: true });
+      await fs.mkdir(resourceDir, { recursive: true });
+      await fs.writeFile(
+        path.join(resourceDir, "himan.yaml"),
+        YAML.stringify({
+          name,
+          type,
+          version: "0.1.0",
+          entry,
+          description: options.description ?? `${type} resource ${name}`,
+          targets,
+        }),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(resourceDir, entry),
+        this.getDefaultContent(type, name),
+        "utf8",
+      );
+    }
+
+    return {
+      type,
+      name,
+      resourceDir,
+      files,
+      dryRun: Boolean(options.dryRun),
+    };
   }
 
   private getRepoDir(): string {
@@ -114,5 +167,34 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     } catch {
       return false;
     }
+  }
+
+  private async isSameDirectory(a: string, b: string): Promise<boolean> {
+    try {
+      const [ra, rb] = await Promise.all([fs.realpath(a), fs.realpath(b)]);
+      return ra === rb;
+    } catch {
+      return false;
+    }
+  }
+
+  private getTypeDir(type: ResourceType): string {
+    if (type === "rule") return "rules";
+    if (type === "command") return "commands";
+    return "skills";
+  }
+
+  private getDefaultEntry(type: ResourceType): string {
+    return type === "skill" ? "SKILL.md" : "content.md";
+  }
+
+  private getDefaultContent(type: ResourceType, name: string): string {
+    if (type === "rule") {
+      return `# ${name}\n\nDescribe rule instructions here.\n`;
+    }
+    if (type === "command") {
+      return `# ${name}\n\nDescribe command behavior here.\n`;
+    }
+    return `# ${name}\n\nDescribe skill workflow here.\n`;
   }
 }

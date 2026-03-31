@@ -1,4 +1,6 @@
 import type {
+  CreateOptions,
+  CreateResult,
   PublishResult,
   ResourceMeta,
   ResourceType,
@@ -50,6 +52,17 @@ export class RegistrySourceAdapter implements ResourceSourceAdapter {
     _version: string,
     _sourceDir: string,
   ): Promise<PublishResult> {
+    throw new HimanError(
+      errorCodes.NOT_IMPLEMENTED,
+      "Registry source is reserved for phase 2.",
+    );
+  }
+
+  async create(
+    _type: ResourceType,
+    _name: string,
+    _options: CreateOptions,
+  ): Promise<CreateResult> {
     throw new HimanError(
       errorCodes.NOT_IMPLEMENTED,
       "Registry source is reserved for phase 2.",

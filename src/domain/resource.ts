@@ -1,4 +1,4 @@
-export type ResourceType = "rule";
+export type ResourceType = "rule" | "command" | "skill";
 
 export interface ResourceRef {
   type: ResourceType;
@@ -22,4 +22,21 @@ export interface VersionInfo {
 export interface PublishResult {
   version: string;
   tag: string;
+}
+
+export interface CreateOptions {
+  description?: string;
+  targets?: string[];
+  entry?: string;
+  template?: string;
+  force?: boolean;
+  dryRun?: boolean;
+}
+
+export interface CreateResult {
+  type: ResourceType;
+  name: string;
+  resourceDir: string;
+  files: string[];
+  dryRun: boolean;
 }

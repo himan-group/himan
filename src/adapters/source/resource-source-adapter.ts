@@ -1,4 +1,6 @@
 import type {
+  CreateOptions,
+  CreateResult,
   PublishResult,
   ResourceMeta,
   ResourceType,
@@ -30,4 +32,9 @@ export interface ResourceSourceAdapter {
     sourceDir: string,
     options?: Record<string, unknown>,
   ): Promise<PublishResult>;
+  create(
+    type: ResourceType,
+    name: string,
+    options: CreateOptions,
+  ): Promise<CreateResult>;
 }
