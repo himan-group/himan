@@ -2,16 +2,18 @@
 
 ## 1. MVP 目标
 
-在 1 周内交付一个可实际使用的最小版本，完成 `rule` 资产的管理与发布闭环。
+在 1 周内交付一个可实际使用的最小版本，完成资源资产的管理与发布闭环。
 
-MVP 只覆盖：
-- 单 repo
-- 仅 `rule`
+MVP 当前覆盖：
+- 单 repo（Git source）
 - 本地 CLI
 - Git Tag 资源级版本
+- 资源类型能力分层：
+  - `rule`：`create/list/history/install/dev/publish`
+  - `command`：`create/list/history/publish`
+  - `skill`：`create/list/history/publish`
 
 MVP 不覆盖：
-- `command` / `skill`
 - 多 repo
 - 远程 registry
 - AI 搜索
@@ -35,22 +37,22 @@ MVP 不覆盖：
 ### 2.2 `list`
 
 命令：
-- `himan list rule`
+- `himan list [type]`
 - `himan list --json`（可选增强）
 
 行为：
-- 扫描 repo 中 `rules/*/himan.yaml`
-- 返回资源名、描述、目标平台、当前可用版本
+- 扫描 repo 中 `<types>/*/himan.yaml`（`rules|commands|skills`）
+- 返回资源名、描述、目标平台、入口文件等元数据
 
 ---
 
 ### 2.3 `history`
 
 命令：
-- `himan history rule <name>`
+- `himan history <type> <name>`
 
 行为：
-- 读取并过滤 tag：`rule/<name>@*`
+- 读取并过滤 tag：`<type>/<name>@*`
 - 按 semver 排序输出历史版本
 
 ---
@@ -83,26 +85,27 @@ MVP 不覆盖：
 ### 2.6 `publish`
 
 命令：
-- `himan publish rule <name> --patch|--minor|--major`
+- `himan publish <type> <name> --patch|--minor|--major`
 
 行为：
-- diff 检测 dev 与 repo 差异
+- 发布源优先使用 `.himan/dev/<name>`，否则使用 repo 资源目录
 - 按 semver 计算新版本
 - 回写 repo、commit、tag、push
-- 同步新版本至本地 store
-- 项目软链切回新发布版本
+- 同步新版本至本地 store（按 `<type>/<name>/<version>`）
+- 当 `type=rule` 时，项目软链切回新发布版本
 
 ---
 
-### 2.7 `create`（设计中）
+### 2.7 `create`
 
-命令（规划）：
+命令：
 - `himan create <type> <name> [options]`
 
-目标：
-- 支持创建 `rule/command/skill` 资源骨架
+当前实现：
+- 已支持创建 `rule/command/skill` 资源骨架
 - 标准化生成 `himan.yaml` 与模板文件
-- 衔接后续 `publish` 流程
+- 支持 `--force`、`--dry-run`、`--json`
+- 与现有 `publish` 工作流衔接（`create -> edit -> publish`）
 
 ---
 
@@ -126,15 +129,16 @@ MVP 不覆盖：
 
 全局目录：
 - `~/.himan/repos`：仓库缓存
-- `~/.himan/store/rule/<name>/<version>`：不可变版本缓存
+- `~/.himan/store/<type>/<name>/<version>`：不可变版本缓存
 
 项目目录：
-- `.cursor/rules`：运行态软链
+- `.cursor/rules`：`rule` 运行态软链
 - `.himan/dev`：开发态可编辑目录
 
 资源目录约定：
-- `rules/<name>/himan.yaml`
-- `rules/<name>/content.md`
+- `rules/<name>/himan.yaml`、`rules/<name>/content.md`
+- `commands/<name>/himan.yaml`、`commands/<name>/content.md`
+- `skills/<name>/himan.yaml`、`skills/<name>/SKILL.md`
 
 ---
 

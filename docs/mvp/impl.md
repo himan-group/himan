@@ -41,30 +41,30 @@
 
 ---
 
-### 2.2 `himan list rule`
+### 2.2 `himan list [type]`
 
 目标：
-- 列出可用 rule 资源
+- 列出可用资源（`rule|command|skill`）
 
 实现：
-- 扫描 `<repo>/rules/*/himan.yaml`
+- 按类型扫描 `<repo>/<types>/*/himan.yaml`（`rules|commands|skills`）
 - 解析字段：`name/type/version/entry/targets/description`
-- 过滤 `type=rule`
+- 过滤 `type=<input type>`
 - 支持标准输出与 `--json`
 
 关键点：
-- 对 `himan.yaml` 做 schema 校验
-- 无效资源跳过并输出 warning
+- 做最小字段校验（`name/type/entry`）
+- 无效资源跳过，不阻断主流程
 
 ---
 
-### 2.3 `himan history rule <name>`
+### 2.3 `himan history <type> <name>`
 
 目标：
-- 查询 rule 历史版本
+- 查询指定类型资源历史版本
 
 实现：
-- 执行 `git tag --list "rule/<name>@*"`
+- 执行 `git tag --list "<type>/<name>@*"`
 - 通过正则提取版本号
 - 使用 `semver.valid` 过滤合法版本
 - 使用 `semver.rsort` 倒序输出
@@ -103,30 +103,30 @@
 
 关键点：
 - dev 目录已存在默认不覆盖
-- 通过状态文件记录当前引用来源（store/dev）
+- 通过软链真实路径判断当前引用来源（store/dev）
 
 ---
 
-### 2.6 `himan publish rule <name> --patch|--minor|--major`
+### 2.6 `himan publish <type> <name> --patch|--minor|--major`
 
 目标：
-- 将 dev 变更发布为新版本并同步本地安装态
+- 将资源变更发布为新版本并同步本地安装态
 
 实现：
-1. preflight：检查 repo 状态、dev 目录、工作区条件
-2. diff：比较 `.himan/dev/<name>` 与 `rules/<name>`
-3. 版本：取最新 tag，`semver.inc` 计算 next version
-4. 回写：用 dev 内容覆盖 repo 目标资源
-5. Git：`add`、`commit`、`tag rule/<name>@<version>`、`push --tags`
-6. 同步：写入 store 新版本并切换项目软链
+1. 发布源解析：优先 `.himan/dev/<name>`，否则使用 repo 内资源目录
+2. 版本：取最新 tag，`semver.inc` 计算 next version
+3. 回写：将发布源内容同步到 repo 目标目录
+4. 元数据：更新 `himan.yaml` 中 `version` 字段
+5. Git：`add`、`commit`、`tag <type>/<name>@<version>`、`push --tags`
+6. 同步：写入 store 新版本；若 `type=rule` 则切换项目软链到新版本
 
 关键点：
-- 同版本发布直接拒绝
+- `command/skill` 无 dev 命令，也可直接发布 `create` 后资源目录
 - 发布失败可重试，不破坏已有 store 版本
 
 ---
 
-### 2.7 `himan create <type> <name> [options]`（设计中）
+### 2.7 `himan create <type> <name> [options]`
 
 目标：
 - 新建 `rule/command/skill` 资源骨架，统一结构与元数据
@@ -168,7 +168,7 @@
 
 - `GitSourceAdapter`（当前默认实现）
   - 内部复用 `RepoManager`、`ResourceScanner`、`VersionResolver`
-  - `history` 对应 Git Tag（`rule/<name>@<version>`）
+  - `history` 对应 Git Tag（`<type>/<name>@<version>`）
   - `pull` 对应 `git archive` 导出资源
   - `publish` 对应 commit/tag/push 流程
 
@@ -192,7 +192,7 @@
 - 二期接入 registry 时无需重写命令层与安装/开发工作流
 
 与 `create` 的关系：
-- `create` 同样应通过 `ResourceSourceAdapter` 抽象实现
+- `create` 已通过 `ResourceSourceAdapter` 抽象实现
 - Git/Registry 切换时，命令层无需改动，仅替换适配器实现
 
 ---

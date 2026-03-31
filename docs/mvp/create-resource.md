@@ -1,6 +1,6 @@
-# himan `create` 命令技术设计（rule / command / skill）
+# himan `create` 命令实现说明（rule / command / skill）
 
-本文档定义“新建资源”能力的命令、数据结构和实现方案，用于补齐当前 CLI 在资源生产侧的缺口。
+本文档说明“新建资源”能力的命令、数据结构和实现方案。该能力在 MVP 中已落地，用于标准化 `create -> edit -> publish` 工作流。
 
 ---
 

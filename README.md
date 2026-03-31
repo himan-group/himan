@@ -3,7 +3,10 @@ himan（含义为"Hey, man"），AI Coding 时代的 Prompt / Agent 资产管理
 
 ## 快速上手
 
-当前 MVP 已实现并可用的资源类型：`rule`。
+当前 MVP 已实现的资源能力：
+- `rule`：支持 `create/list/history/install/dev/publish` 全流程
+- `command`：支持 `create/list/history/publish`
+- `skill`：支持 `create/list/history/publish`
 
 ### 1) 安装依赖并构建
 
@@ -48,7 +51,7 @@ node dist/index.js init https://github.com/lidetao/himan-test.git
 用途：列出当前源仓库中的资源。
 
 参数：
-- `type`：资源类型，当前仅支持 `rule`（默认值也是 `rule`）
+- `type`：资源类型，支持 `rule | command | skill`（默认 `rule`）
 - `--json`：JSON 输出
 
 示例：
@@ -65,7 +68,7 @@ node dist/index.js list rule --json
 用途：查看资源历史版本（基于 Git tag）。
 
 参数：
-- `type`：资源类型（`rule`）
+- `type`：资源类型（`rule | command | skill`）
 - `name`：资源名（例如 `code-review`）
 - `--json`：JSON 输出
 
@@ -83,7 +86,7 @@ node dist/index.js history rule code-review --json
 用途：安装资源到项目，并创建项目软链引用。
 
 参数：
-- `type`：资源类型（`rule`）
+- `type`：资源类型（当前仅支持 `rule`）
 - `name[@version]`：资源名，可选指定版本（不指定则安装最新）
 
 示例：
@@ -100,7 +103,7 @@ node dist/index.js install rule code-review@1.0.0
 用途：切换资源到开发模式（复制到项目 `.himan/dev` 并切换软链）。
 
 参数：
-- `type`：资源类型（`rule`）
+- `type`：资源类型（当前仅支持 `rule`）
 - `name`：资源名
 
 示例：
@@ -160,6 +163,12 @@ node dist/index.js publish rule code-review --minor
 - 若不存在 dev 目录，则发布仓库内 `create` 产物目录（如 `commands/<name>`）
 
 > 使用 `publish` 时请确保本地 Git 环境具备提交与推送权限。
+
+## MVP 能力边界（当前）
+
+- Source：默认 `git`，`registry` 适配器仅预留接口，尚未实现
+- `install/dev`：只针对 `rule`（项目内软链目标为 `.cursor/rules/<name>`）
+- `command/skill`：当前不提供项目内激活命令，仅支持资源创建、查询与发布
 
 ## 典型使用流程
 
