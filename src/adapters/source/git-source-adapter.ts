@@ -36,8 +36,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
   }
 
   async list(type: ResourceType): Promise<ResourceMeta[]> {
-    if (type !== "rule") return [];
-    return this.scanner.scanRules(this.getRepoDir());
+    return this.scanner.scanByType(this.getRepoDir(), type);
   }
 
   async history(type: ResourceType, name: string): Promise<VersionInfo[]> {

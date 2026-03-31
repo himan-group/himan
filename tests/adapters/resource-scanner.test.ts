@@ -67,4 +67,56 @@ describe("ResourceScanner", () => {
 
     expect(resources).toEqual([]);
   });
+
+  it("scans command and skill resources by type", async () => {
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "himan-repo-"));
+    tmpDirs.push(repoDir);
+
+    await fs.mkdir(path.join(repoDir, "commands", "sync-docs"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, "commands", "sync-docs", "himan.yaml"),
+      [
+        "name: sync-docs",
+        "type: command",
+        "entry: content.md",
+        "description: sync docs",
+      ].join("\n"),
+      "utf8",
+    );
+
+    await fs.mkdir(path.join(repoDir, "skills", "risk-check"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, "skills", "risk-check", "himan.yaml"),
+      [
+        "name: risk-check",
+        "type: skill",
+        "entry: SKILL.md",
+        "description: check project risks",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const scanner = new ResourceScanner();
+    const commands = await scanner.scanByType(repoDir, "command");
+    const skills = await scanner.scanByType(repoDir, "skill");
+
+    expect(commands).toEqual([
+      {
+        name: "sync-docs",
+        type: "command",
+        entry: "content.md",
+        description: "sync docs",
+        targets: undefined,
+      },
+    ]);
+    expect(skills).toEqual([
+      {
+        name: "risk-check",
+        type: "skill",
+        entry: "SKILL.md",
+        description: "check project risks",
+        targets: undefined,
+      },
+    ]);
+  });
 });

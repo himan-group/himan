@@ -138,6 +138,25 @@ describe("CLI commands with external git source", () => {
       homeDir,
     );
     expect(createForce.status).toBe(0);
+
+    const listCommandResult = runCli(
+      ["list", "command", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(listCommandResult.status).toBe(0);
+    const listedCommands = JSON.parse(listCommandResult.stdout) as Array<Record<string, unknown>>;
+    expect(listedCommands).toEqual(
+      expect.arrayContaining([
+        {
+          name: "sync-docs",
+          type: "command",
+          entry: "content.md",
+          description: expect.any(String),
+          targets: expect.any(Array),
+        },
+      ]),
+    );
   });
 
   it("supports dry-run for skill create", async () => {
@@ -151,6 +170,24 @@ describe("CLI commands with external git source", () => {
     expect(payload.dryRun).toBe(true);
 
     await expect(fs.access(path.join(repoDir, "skills", "bug-analysis"))).rejects.toThrow();
+
+    const createSkill = runCli(["create", "skill", "bug-analysis"], projectDir, homeDir);
+    expect(createSkill.status).toBe(0);
+
+    const listSkillResult = runCli(["list", "skill", "--json"], projectDir, homeDir);
+    expect(listSkillResult.status).toBe(0);
+    const listedSkills = JSON.parse(listSkillResult.stdout) as Array<Record<string, unknown>>;
+    expect(listedSkills).toEqual(
+      expect.arrayContaining([
+        {
+          name: "bug-analysis",
+          type: "skill",
+          entry: "SKILL.md",
+          description: expect.any(String),
+          targets: expect.any(Array),
+        },
+      ]),
+    );
   });
 
   it("publishes create artifact without dev workflow", async () => {
@@ -193,6 +230,42 @@ describe("CLI commands with external git source", () => {
       "utf8",
     );
     expect(storeContent).toContain("Publish from create artifact.");
+  });
+
+  it("publishes skill create artifact without dev workflow", async () => {
+    const createResult = runCli(
+      ["create", "skill", "risk-check", "--description", "risk check skill"],
+      projectDir,
+      homeDir,
+    );
+    expect(createResult.status).toBe(0);
+
+    const skillContentPath = path.join(repoDir, "skills", "risk-check", "SKILL.md");
+    await fs.appendFile(skillContentPath, "Skill published from create artifact.\n", "utf8");
+
+    const publishResult = runCli(
+      ["publish", "skill", "risk-check", "--patch"],
+      projectDir,
+      homeDir,
+    );
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("Published skill/risk-check@0.0.1");
+
+    const historyResult = runCli(
+      ["history", "skill", "risk-check", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(historyResult.status).toBe(0);
+    expect(JSON.parse(historyResult.stdout)).toEqual([
+      { version: "0.0.1", raw: "skill/risk-check@0.0.1" },
+    ]);
+
+    const storedSkillContent = await fs.readFile(
+      path.join(homeDir, ".himan", "store", "skill", "risk-check", "0.0.1", "SKILL.md"),
+      "utf8",
+    );
+    expect(storedSkillContent).toContain("Skill published from create artifact.");
   });
 
   it("supports list/history/install/dev after local fixture commit and tag", async () => {
