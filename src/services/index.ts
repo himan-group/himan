@@ -11,10 +11,12 @@ import { toRepoId } from "../utils/repo-id.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
 import path from "node:path";
 import { promises as fs } from "node:fs";
+import { VersionResolver } from "../adapters/version/version-resolver.js";
 
 export class ServiceFactory {
   private readonly stateStore = new StateStore();
   private readonly paths = new PathResolver();
+  private readonly versions = new VersionResolver();
 
   async initSource(
     type: "git" | "registry",
@@ -62,7 +64,9 @@ export class ServiceFactory {
     const resolvedVersion = this.resolveVersion(history, version);
     const storePath = this.getStorePath(type, name, resolvedVersion);
     const linkPath = this.getProjectRulePath(projectDir, name);
-    await source.pull(type, name, resolvedVersion, storePath);
+    if (!(await this.exists(storePath))) {
+      await source.pull(type, name, resolvedVersion, storePath);
+    }
     await this.switchSymlink(storePath, linkPath);
 
     return { type, name, version: resolvedVersion, linkPath };
@@ -89,6 +93,44 @@ export class ServiceFactory {
     }
     await this.switchSymlink(devPath, linkPath);
     return { type, name, devPath, linkPath };
+  }
+
+  async publish(
+    type: ResourceType,
+    name: string,
+    releaseType: "patch" | "minor" | "major",
+    projectDir: string,
+  ): Promise<{ type: ResourceType; name: string; version: string; tag: string }> {
+    if (type !== "rule") {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Unsupported resource type: ${type}`,
+      );
+    }
+
+    const source = await this.loadSourceFromConfig();
+    const devPath = path.join(projectDir, ".himan", "dev", name);
+    if (!(await this.exists(devPath))) {
+      throw new HimanError(
+        errorCodes.INSTALL_NOT_FOUND,
+        `Dev resource not found: ${devPath}. Run dev command first.`,
+      );
+    }
+
+    const history = await source.history(type, name);
+    const latest = history[0]?.version ?? "0.0.0";
+    const nextVersion = this.versions.nextVersion(latest, releaseType);
+    const result = await source.publish(type, name, nextVersion, devPath, {
+      releaseType,
+    });
+
+    const storePath = this.getStorePath(type, name, nextVersion);
+    if (!(await this.exists(storePath))) {
+      await source.pull(type, name, nextVersion, storePath);
+    }
+    await this.switchSymlink(storePath, this.getProjectRulePath(projectDir, name));
+
+    return { type, name, version: result.version, tag: result.tag };
   }
 
   private async loadSourceFromConfig(): Promise<ResourceSourceAdapter> {

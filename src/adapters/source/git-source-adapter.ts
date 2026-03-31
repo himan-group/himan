@@ -12,6 +12,9 @@ import { RepoManager } from "../git/repo-manager.js";
 import { ResourceScanner } from "../resource/resource-scanner.js";
 import semver from "semver";
 import { HimanError, errorCodes } from "../../utils/errors.js";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import YAML from "yaml";
 
 export class GitSourceAdapter implements ResourceSourceAdapter {
   private readonly repoManager = new RepoManager();
@@ -66,13 +69,31 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
   }
 
   async publish(
-    _type: ResourceType,
+    type: ResourceType,
     name: string,
     version: string,
-    _sourceDir: string,
+    sourceDir: string,
   ): Promise<PublishResult> {
-    const tag = `rule/${name}@${version}`;
-    // TODO: perform commit/tag/push and return result.
+    const repoDir = this.getRepoDir();
+    const targetDir = path.join(repoDir, `${type}s`, name);
+    await fs.rm(targetDir, { recursive: true, force: true });
+    await fs.mkdir(path.dirname(targetDir), { recursive: true });
+    await fs.cp(sourceDir, targetDir, { recursive: true });
+
+    const yamlPath = path.join(targetDir, "himan.yaml");
+    if (await this.exists(yamlPath)) {
+      const raw = await fs.readFile(yamlPath, "utf8");
+      const parsed = YAML.parse(raw) as Record<string, unknown>;
+      parsed.version = version;
+      await fs.writeFile(yamlPath, YAML.stringify(parsed), "utf8");
+    }
+
+    const tag = `${type}/${name}@${version}`;
+    await this.repoManager.commitTagAndPush(
+      repoDir,
+      `publish ${type}/${name}@${version}`,
+      tag,
+    );
     return { version, tag };
   }
 
@@ -84,5 +105,14 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       );
     }
     return this.sourceConfig.repoDir;
+  }
+
+  private async exists(targetPath: string): Promise<boolean> {
+    try {
+      await fs.access(targetPath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

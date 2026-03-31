@@ -57,11 +57,27 @@ export class RepoManager {
   }
 
   async commitTagAndPush(
-    _message: string,
-    _tag: string,
-    _branch = "main",
+    repoDir: string,
+    message: string,
+    tag: string,
+    branch?: string,
   ): Promise<void> {
-    // TODO: implement git add/commit/tag/push.
+    const git = simpleGit(repoDir);
+    await git.add(["."]);
+    const status = await git.status();
+    if (status.isClean()) {
+      throw new Error("No changes to publish.");
+    }
+
+    await git.commit(message);
+    await git.addTag(tag);
+
+    const currentBranch = (
+      await git.raw(["rev-parse", "--abbrev-ref", "HEAD"])
+    ).trim();
+    const targetBranch = branch ?? currentBranch;
+    await git.push("origin", targetBranch);
+    await git.pushTags("origin");
   }
 
   private async exists(targetPath: string): Promise<boolean> {

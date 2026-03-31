@@ -123,9 +123,27 @@ export function buildCli(): Command {
     .option("--minor", "minor release")
     .option("--major", "major release")
     .description("Publish resource")
-    .action(async () => {
-      process.stdout.write("Publish command scaffold is ready.\n");
-    });
+    .action(
+      async (
+        type: string,
+        name: string,
+        options: { patch?: boolean; minor?: boolean; major?: boolean },
+      ) => {
+        await runAction(async () => {
+          const resourceType = ensureResourceType(type);
+          const releaseType = resolveReleaseType(options);
+          const result = await services.publish(
+            resourceType,
+            name,
+            releaseType,
+            process.cwd(),
+          );
+          process.stdout.write(
+            `Published ${result.type}/${result.name}@${result.version}\n`,
+          );
+        });
+      },
+    );
 
   return program;
 }
@@ -151,4 +169,21 @@ async function runAction(action: () => Promise<void>): Promise<void> {
     process.stderr.write(`${message}\n`);
     process.exitCode = 1;
   }
+}
+
+function resolveReleaseType(options: {
+  patch?: boolean;
+  minor?: boolean;
+  major?: boolean;
+}): "patch" | "minor" | "major" {
+  const selected = [
+    options.patch ? "patch" : undefined,
+    options.minor ? "minor" : undefined,
+    options.major ? "major" : undefined,
+  ].filter(Boolean) as Array<"patch" | "minor" | "major">;
+
+  if (selected.length > 1) {
+    throw new Error("Use only one of --patch, --minor or --major.");
+  }
+  return selected[0] ?? "patch";
 }
