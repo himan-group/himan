@@ -4,20 +4,17 @@
 
 在 1 周内交付一个可实际使用的最小版本，完成资源资产的管理与发布闭环。
 
-MVP 当前覆盖：
-- 单 repo（Git source）
-- 本地 CLI
-- Git Tag 资源级版本
-- 资源类型能力分层：
-  - `rule`：`create/list/history/install/dev/publish`
-  - `command`：`create/list/history/publish`
-  - `skill`：`create/list/history/publish`
+**当前实现范围：**
+- 单一默认源：Git（`himan init <git_repo>`，本地缓存仓库并写配置）
+- 本地 CLI，命令说明见仓库根目录 [README.md](../../README.md)
+- 资源版本以 Git Tag 为准，格式 `<type>/<name>@<semver>`
+- 资源类型能力：
+  - `rule`：`create` / `list` / `history` / `install` / `dev` / `publish`
+  - `command`：`create` / `list` / `history` / `publish`
+  - `skill`：`create` / `list` / `history` / `publish`
+- 远程 Registry 源：仅占位，二期实现
 
-MVP 不覆盖：
-- 多 repo
-- 远程 registry
-- AI 搜索
-- PR 自动化发布
+**不包含：** 多仓库切换、可用 Registry、AI 搜索、PR 自动发布。
 
 ---
 
@@ -25,160 +22,104 @@ MVP 不覆盖：
 
 ### 2.1 `init`
 
-命令：
 - `himan init <git_repo>`
-
-行为：
-- clone 远程仓库到 `~/.himan/repos/<repo-id>`
-- 建立本地元信息（默认仓库、基础目录）
-
----
+- 克隆或更新远程仓库到用户目录下的缓存路径，并记录默认源配置。
 
 ### 2.2 `list`
 
-命令：
-- `himan list [type]`
-- `himan list --json`（可选增强）
-
-行为：
-- 扫描 repo 中 `<types>/*/himan.yaml`（`rules|commands|skills`）
-- 返回资源名、描述、目标平台、入口文件等元数据
-
----
+- `himan list [type]`，`--json` 可选
+- 扫描源仓库中各类型目录下的 `himan.yaml`，返回名称、描述、目标平台、入口文件等。
 
 ### 2.3 `history`
 
-命令：
 - `himan history <type> <name>`
-
-行为：
-- 读取并过滤 tag：`<type>/<name>@*`
-- 按 semver 排序输出历史版本
-
----
+- 按 tag 模式 `<type>/<name>@*` 列出历史，semver 合法项排序输出。
 
 ### 2.4 `install`
 
-命令：
-- `himan install rule <name>`
-- `himan install rule <name>@<version>`
-
-行为：
-- 若未指定版本，默认安装最新稳定版本
-- 从 repo 导出对应版本资源到 store
-- 创建项目软链：`.cursor/rules/<name> -> ~/.himan/store/...`
-
----
+- `himan install rule <name>` 或 `name@version`
+- **仅支持 rule**；command/skill 在命令层即不可用。
+- 未指定版本则安装该资源最新 tag 对应版本。
+- 若本地 store 中已有该版本缓存，则复用、不重新从 Git 导出；否则导出到 store。
+- 在项目下创建软链：`.cursor/rules/<name>` → store 中对应版本目录。
 
 ### 2.5 `dev`
 
-命令：
 - `himan dev rule <name>`
-
-行为：
-- 将已安装版本复制到 `project/.himan/dev/<name>`
-- 项目软链切换到 dev 目录
-- 支持本地可编辑调试
-
----
+- **仅支持 rule**；需先 `install`。
+- 将当前安装内容复制到项目 `.himan/dev/<name>`（已存在则默认不覆盖），软链切到 dev 目录便于编辑。
 
 ### 2.6 `publish`
 
-命令：
-- `himan publish <type> <name> --patch|--minor|--major`
-
-行为：
-- 发布源优先使用 `.himan/dev/<name>`，否则使用 repo 资源目录
-- 按 semver 计算新版本
-- 回写 repo、commit、tag、push
-- 同步新版本至本地 store（按 `<type>/<name>/<version>`）
-- 当 `type=rule` 时，项目软链切回新发布版本
-
----
+- `himan publish <type> <name> --patch|--minor|--major`（默认 patch，三选一）
+- 发布内容优先取项目 `.himan/dev/<name>`，否则取源仓库内对应资源目录。
+- 新版本：基于已有 tag 最新 semver 递增；无任何历史时从 `0.0.0` 起算。
+- 写回源仓库、提交、打 tag、推送，并将该版本同步到本地 store。
+- **仅 rule** 会同时把项目 `.cursor/rules/<name>` 指到新版本；command/skill 只更新仓库与 store。
 
 ### 2.7 `create`
 
-命令：
-- `himan create <type> <name> [options]`
-
-当前实现：
-- 已支持创建 `rule/command/skill` 资源骨架
-- 标准化生成 `himan.yaml` 与模板文件
-- 支持 `--force`、`--dry-run`、`--json`
-- 与现有 `publish` 工作流衔接（`create -> edit -> publish`）
+- `himan create <type> <name>` 及常用选项（描述、目标平台、dry-run、force、json 等）
+- 生成 `rule` / `command` / `skill` 标准目录与 `himan.yaml`、入口模板
+- 与 `publish` 衔接：`create → 编辑 → publish`
 
 ---
 
 ## 3. MVP 技术架构
 
-### 3.1 分层结构
+### 3.1 分层（概念）
 
-- CLI 层：命令解析、参数校验、输出格式化
-- Service 层：`InitService`、`InstallService`、`PublishService` 等
-- Domain 层：资源模型、版本策略、路径策略
-- Infra 层：Git/Fs/Semver/Yaml 适配器
+- **CLI**：解析参数、限制 `install`/`dev` 仅 rule、格式化输出
+- **编排**：初始化源、列表、历史、安装、开发态、发布、创建等资源生命周期
+- **领域**：资源类型、版本、路径约定
+- **适配**：Git 实现 + Registry 预留；扫描与解析元数据；版本计算；配置与全局路径
 
-设计原则：
-- store 不可变
-- 开发态与运行态分离
-- 项目目录只保留引用（软链）
+**原则：** store 按版本目录追加、不覆盖已有缓存；开发目录与 Cursor rules 软链分离；rule 在项目侧以软链引用为主。
 
----
+### 3.2 目录与数据
 
-### 3.2 目录与数据结构
+**用户目录（如 `~/.himan`）：**
+- `repos/…`：Git 源缓存
+- `store/<type>/<name>/<version>/`：按版本的资源快照
+- `config.json`：当前源类型（git / registry 预留）、仓库地址等
 
-全局目录：
-- `~/.himan/repos`：仓库缓存
-- `~/.himan/store/<type>/<name>/<version>`：不可变版本缓存
+**项目目录：**
+- `.cursor/rules/<name>`：rule 运行态软链
+- `.himan/dev/<name>`：rule 开发态可编辑副本
 
-项目目录：
-- `.cursor/rules`：`rule` 运行态软链
-- `.himan/dev`：开发态可编辑目录
+**源仓库内资源布局：**
+- `rules/<name>/`、`commands/<name>/`、`skills/<name>/`，各含 `himan.yaml` 与约定入口文件（如 `content.md`、`SKILL.md`）。
 
-资源目录约定：
-- `rules/<name>/himan.yaml`、`rules/<name>/content.md`
-- `commands/<name>/himan.yaml`、`commands/<name>/content.md`
-- `skills/<name>/himan.yaml`、`skills/<name>/SKILL.md`
+### 3.3 技术依赖（概要）
 
----
+- Git：克隆、拉取、tag、按 tag 导出目录、提交与推送
+- Semver：排序与下一版本计算
+- YAML：资源元数据
+- 文件系统：目录复制、符号链接
 
-### 3.3 核心技术点
-
-- Git：clone/fetch/tag/archive/push
-- Semver：版本计算与排序
-- YAML：资源元数据解析和校验
-- Symbolic Link：安装与切换
-- Diff：发布前变更检测
-
-详细实现请参考：
-- [MVP 详细技术实现方案](./impl.md)
-- [资源创建命令技术设计](./create-resource.md)
+更细的实现说明见 [impl.md](./impl.md)；创建资源见 [create-resource.md](./create-resource.md)。
 
 ---
 
-## 4. MVP 非功能要求
+## 4. 非功能要求
 
-- 幂等：重复执行 `install/dev` 不破坏状态
-- 可恢复：发布失败后可重新执行，不遗留半状态
-- 可诊断：错误信息清晰（repo、tag、路径、权限）
-- 可测试：关键流程具备最小集成测试
-
----
-
-## 5. MVP 测试策略
-
-最小测试集：
-- 版本解析：tag 过滤、排序、next version 计算
-- 安装流程：latest 与指定版本安装
-- dev 流程：软链切换与本地编辑可见
-- publish 流程：commit/tag/store 同步正确
-- 异常流程：版本不存在、仓库不可达、工作区脏
+- 幂等：`install` / `dev` 重复执行不破坏合理预期状态
+- 可恢复：发布失败可重试，不依赖未文档化的中间态
+- 可诊断：错误信息能指向仓库、tag、路径或权限问题
+- 可测试：主流程有自动化测试覆盖
 
 ---
 
-## 6. MVP 交付标准
+## 5. 测试策略
 
-- 命令可执行且帮助信息完整
-- 主流程可在真实项目中成功运行
-- 有基础文档（快速开始 + 常见错误）
-- 具备向阶段 2 扩展的数据与接口基础
+- 自动化测试覆盖：版本解析、元数据扫描、配置、以及 CLI 主流程（含临时用户目录与模拟 Git 远端）。
+- 建议人工补充：真实网络 clone、鉴权失败、推送拒绝、脏工作区等。
+
+---
+
+## 6. 交付标准
+
+- 命令可执行，帮助信息完整
+- 主流程在自动化测试中可回归
+- 用户文档（根 README）与本 MVP 文档一致
+- 配置与适配层为二期 Registry 预留扩展空间

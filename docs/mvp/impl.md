@@ -1,230 +1,102 @@
 # himan MVP 详细技术实现方案
 
-本文档描述 MVP 阶段每个功能点通过什么技术实现，以及关键模块与实现细节。
+本文档从**行为与技术选型**说明 MVP 如何实现，不绑定具体源码文件或符号名。
 
 ---
 
-## 1. 技术栈与实现原则
+## 1. 技术栈与原则
 
-技术栈：
-- TypeScript + Node.js LTS
-- `commander`：CLI 命令解析
-- `simple-git`：Git 操作封装
-- `yaml`：资源元数据解析
-- `semver`：版本计算与排序
-- `fs/promises`：文件、目录、软链处理
+- TypeScript，运行于 Node.js LTS
+- CLI 解析、Git 封装、YAML 解析、Semver、基于 Promise 的文件与软链操作
 
-实现原则：
-- `~/.himan/store` 必须不可变（immutable）
-- 开发态（`.himan/dev`）与运行态（`.cursor/rules`）分离
-- 项目目录只保留引用，不复制发布态资源
-- 版本唯一事实来源是 Git Tag
+**原则：**
+
+- 本地 store 按版本存放，已存在的版本目录不被覆盖（安装时复用缓存）
+- 开发目录 `.himan/dev` 与运行态 `.cursor/rules` 分离
+- 正式发布版本以 **Git Tag** 为唯一事实来源；`himan.yaml` 中的 version 在发布时会与 tag 对齐
 
 ---
 
-## 2. 功能到技术映射
+## 2. 功能到实现要点
 
-### 2.1 `himan init <git_repo>`
+### 2.1 `init <git_repo>`
 
-目标：
-- 初始化本地仓库缓存与基础配置
+- 确保全局目录（缓存仓库、store、配置）存在
+- 由仓库 URL 推导稳定 id，首次克隆、后续拉取（含 tags）
+- 写入本地配置：当前源为 Git、仓库地址与 id
+- CLI 仅提供「Git URL」初始化；Registry 类型虽可在配置中预留，但尚无可用实现
 
-实现：
-- 规范化 `repo-id`（由 URL 推导）
-- `simple-git.clone(repo, ~/.himan/repos/<repo-id>)`
-- 若目录已存在，则执行 `git fetch --tags`
-- 写入 `~/.himan/config.json`（默认仓库、更新时间等）
+### 2.2 `list [type]`
 
-关键点：
-- 初始化过程幂等
-- 对网络不可达、鉴权失败提供明确错误码
+- 在缓存仓库内按类型扫描子目录，读取 `himan.yaml`
+- 校验类型与必填字段（如 name、entry），不符的目录跳过
+- 支持人类可读与 `--json` 输出
 
----
+### 2.3 `history <type> <name>`
 
-### 2.2 `himan list [type]`
+- 列出匹配 `<type>/<name>@*` 的 tag，解析 semver，非法 tag 忽略
+- 按版本倒序输出
 
-目标：
-- 列出可用资源（`rule|command|skill`）
+### 2.4 `install rule <name>[@version]`
 
-实现：
-- 按类型扫描 `<repo>/<types>/*/himan.yaml`（`rules|commands|skills`）
-- 解析字段：`name/type/version/entry/targets/description`
-- 过滤 `type=<input type>`
-- 支持标准输出与 `--json`
+- 命令层仅接受 `rule`
+- 无版本则取该资源历史中的最新 semver
+- 若本地 store 已有该版本目录则不再从 Git 导出；否则从对应 tag 导出资源树到 store
+- 在项目中创建/更新软链，指向 store 中该版本
 
-关键点：
-- 做最小字段校验（`name/type/entry`）
-- 无效资源跳过，不阻断主流程
+### 2.5 `dev rule <name>`
 
----
+- 命令层仅接受 `rule`；依赖已安装（能解析当前软链目标）
+- 将当前安装内容复制到 `.himan/dev/<name>`（目录已存在则默认不覆盖）
+- 软链改为指向 dev 目录
 
-### 2.3 `himan history <type> <name>`
+### 2.6 `publish <type> <name>`
 
-目标：
-- 查询指定类型资源历史版本
+- 发布源：优先项目 `.himan/dev/<name>`，否则缓存仓库内该资源目录
+- 下一版本：基于历史最新 tag；无历史则从 `0.0.0` 按 patch/minor/major 递增
+- 将内容同步回缓存仓库中的规范路径，更新元数据中的版本字段，提交、打 tag、推送
+- 将新 tag 对应内容拉取到 store 新版本目录
+- 仅 **rule** 同时更新项目内 `.cursor/rules` 软链；command/skill 不操作项目软链
 
-实现：
-- 执行 `git tag --list "<type>/<name>@*"`
-- 通过正则提取版本号
-- 使用 `semver.valid` 过滤合法版本
-- 使用 `semver.rsort` 倒序输出
+### 2.7 `create <type> <name>`
 
-关键点：
-- 忽略非法 tag，不影响主流程
-- 空历史返回友好提示
+- 校验类型与资源命名规则
+- 在缓存仓库中创建 `rules|commands|skills/<name>` 及 `himan.yaml`、入口模板
+- 支持覆盖、试运行、JSON 输出；创建后不自动发布
 
 ---
 
-### 2.4 `himan install rule <name>[@version]`
+## 3. 架构：源适配与编排
 
-目标：
-- 安装指定版本或最新版本 rule 并在项目生效
+为避免上层与「一定是 Git」强耦合：
 
-实现：
-1. 解析目标版本（无版本时取历史最新）
-2. 用 `git archive <tag> rules/<name>` 导出资源目录
-3. 写入 `~/.himan/store/rule/<name>/<version>`
-4. 创建软链 `.cursor/rules/<name> -> store/...`
+- 抽象一层 **资源源**：初始化、列表、历史、按版本拉取内容、发布、创建
+- **Git** 为当前唯一完整实现
+- **Registry** 为占位：调用即提示未实现，二期对接 API 与下载/上传
 
-关键点：
-- store 目录已存在时进行校验后复用
-- 软链采用原子替换，避免中间态
+编排层负责：解析配置选择源、rule 的 store 路径、dev 拷贝、`.cursor/rules` 软链；与具体 Git 子命令细节隔离。
+
+配置中可区分源类型并预留 Registry 所需字段（如 endpoint）；当前 CLI 初始化路径只写入 Git 源。
 
 ---
 
-### 2.5 `himan dev rule <name>`
+## 4. 其他实现注意点
 
-目标：
-- 切换到可编辑开发态
-
-实现：
-- 从当前安装版本复制到 `.himan/dev/<name>`
-- 更新软链 `.cursor/rules/<name> -> .himan/dev/<name>`
-
-关键点：
-- dev 目录已存在默认不覆盖
-- 通过软链真实路径判断当前引用来源（store/dev）
+- 全局路径与用户主目录约定一致，避免魔法字符串散落
+- 错误应能区分：未初始化、资源不存在、版本不存在、模板不支持、重复创建等
+- 幂等与重试：安装、dev、发布在合理重复执行下行为可预期
+- 平台：优先保证 macOS/Linux；Windows 软链与路径差异可后续单独验证
 
 ---
 
-### 2.6 `himan publish <type> <name> --patch|--minor|--major`
+## 5. 测试
 
-目标：
-- 将资源变更发布为新版本并同步本地安装态
-
-实现：
-1. 发布源解析：优先 `.himan/dev/<name>`，否则使用 repo 内资源目录
-2. 版本：取最新 tag，`semver.inc` 计算 next version
-3. 回写：将发布源内容同步到 repo 目标目录
-4. 元数据：更新 `himan.yaml` 中 `version` 字段
-5. Git：`add`、`commit`、`tag <type>/<name>@<version>`、`push --tags`
-6. 同步：写入 store 新版本；若 `type=rule` 则切换项目软链到新版本
-
-关键点：
-- `command/skill` 无 dev 命令，也可直接发布 `create` 后资源目录
-- 发布失败可重试，不破坏已有 store 版本
+- 运行仓库内测试脚本（如 `pnpm test`），包含单元场景与 CLI 端到端场景（临时 HOME、本地裸仓库模拟远端等）
+- 仍建议补充：真实网络失败、Windows、并发安装等
 
 ---
 
-### 2.7 `himan create <type> <name> [options]`
+## 6. 文档与示例
 
-目标：
-- 新建 `rule/command/skill` 资源骨架，统一结构与元数据
-
-实现要点：
-1. 参数校验（`type/name/options`）
-2. 解析目标路径（`rules|commands|skills/<name>`）
-3. 生成 `himan.yaml` 与 entry 模板文件
-4. 冲突处理（`--force`）与试运行（`--dry-run`）
-5. 输出可追踪结果（`--json`）
-
-关键点：
-- 与 `ResourceSourceAdapter` 对齐，Git 先实现、Registry 预留
-- 创建后不自动发布，遵循 `create -> edit -> publish` 工作流
-
----
-
-## 3. 模块设计
-
-建议模块：
-- `RepoManager`：clone、fetch、tag、archive、push
-- `ResourceScanner`：扫描与解析资源元数据
-- `VersionResolver`：历史版本、最新版本、next version
-- `Installer`：store 写入与软链管理
-- `DevWorkspace`：dev 拷贝、状态切换
-- `Publisher`：发布流程编排（含 preflight 与补偿）
-- `StateStore`：配置与项目状态读写
-
-### 3.1 存储源适配层（兼容 Git 与未来 Registry）
-
-为避免业务层直接依赖 Git 命令语义，MVP 阶段引入统一的资源源接口：
-
-- `ResourceSourceAdapter`（统一抽象）
-  - `init(sourceConfig): Promise<void>`
-  - `list(type): Promise<ResourceMeta[]>`
-  - `history(type, name): Promise<VersionInfo[]>`
-  - `pull(type, name, version, targetDir): Promise<void>`
-  - `publish(type, name, version, sourceDir, options): Promise<PublishResult>`
-
-- `GitSourceAdapter`（当前默认实现）
-  - 内部复用 `RepoManager`、`ResourceScanner`、`VersionResolver`
-  - `history` 对应 Git Tag（`<type>/<name>@<version>`）
-  - `pull` 对应 `git archive` 导出资源
-  - `publish` 对应 commit/tag/push 流程
-
-- `RegistrySourceAdapter`（未来实现，MVP 预留）
-  - `history/list` 对接 registry API
-  - `pull` 对接包下载或内容拉取接口
-  - `publish` 对接上传、版本登记与权限校验
-
-业务层调用规则：
-- `InitService/ListService/InstallService/PublishService` 只依赖 `ResourceSourceAdapter`
-- 通过配置选择实现（默认 `git`，后续可切换 `registry`）
-- `store`、`dev`、软链逻辑保持不变，仅替换“资源来源”
-
-最小配置建议：
-- `~/.himan/config.json` 增加 `source.type` 字段
-  - `source.type = "git"`（MVP 默认）
-  - `source.type = "registry"`（二期启用）
-
-这样可以保证：
-- MVP 快速落地，不增加过多实现成本
-- 二期接入 registry 时无需重写命令层与安装/开发工作流
-
-与 `create` 的关系：
-- `create` 已通过 `ResourceSourceAdapter` 抽象实现
-- Git/Registry 切换时，命令层无需改动，仅替换适配器实现
-
----
-
-## 4. 关键实现细节
-
-- 路径统一：集中在 `PathResolver`，避免路径散落
-- 错误模型：定义错误码（例如 `E_TAG_NOT_FOUND`、`E_SCHEMA_INVALID`）
-- 幂等策略：重复执行 `install/dev` 不破坏既有状态
-- 失败恢复：流程中断后支持继续重试
-- 平台策略：MVP 明确支持 macOS/Linux，Windows 后续扩展
-
----
-
-## 5. 测试建议（围绕实现）
-
-- 单元测试：
-  - tag 解析与 semver 计算
-  - 元数据校验与路径解析
-- 集成测试：
-  - `init/list/history/install/dev/publish` 全链路
-  - 异常场景：tag 不存在、仓库不可达、软链冲突、权限不足
-
----
-
-## 6. 实施输出物
-
-MVP 实现阶段建议同步产出：
-- 命令级接口定义（参数、返回、错误）
-- 模块依赖图（Service/Domain/Infra）
-- 最小可运行示例仓库
-- 回归测试清单与结果记录
-
-补充设计文档：
-- [资源创建命令技术设计](./create-resource.md)
+- 命令参数与快速上手以根 README 为准
+- 创建资源字段与目录约定见 [create-resource.md](./create-resource.md)
