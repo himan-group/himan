@@ -268,6 +268,52 @@ describe("CLI commands with external git source", () => {
     expect(storedSkillContent).toContain("Skill published from create artifact.");
   });
 
+  it("supports install and dev for command and skill", async () => {
+    const installCommand = runCli(
+      ["install", "command", "release-note@0.1.0"],
+      projectDir,
+      homeDir,
+    );
+    expect(installCommand.status).toBe(0);
+    expect(installCommand.stdout).toContain("Installed command/release-note@0.1.0");
+
+    const commandLinkPath = path.join(projectDir, ".cursor", "commands", "release-note");
+    const commandLinkedRealPath = await fs.realpath(commandLinkPath);
+    expect(commandLinkedRealPath).toContain(
+      path.join(homeDir, ".himan", "store", "command", "release-note", "0.1.0"),
+    );
+
+    const devCommand = runCli(["dev", "command", "release-note"], projectDir, homeDir);
+    expect(devCommand.status).toBe(0);
+    expect(devCommand.stdout).toContain("Switched command/release-note to dev mode");
+
+    const commandDevLinkedRealPath = await fs.realpath(commandLinkPath);
+    const expectedCommandDevPath = await fs.realpath(
+      path.join(projectDir, ".himan", "dev", "command", "release-note"),
+    );
+    expect(commandDevLinkedRealPath).toBe(expectedCommandDevPath);
+
+    const installSkill = runCli(["install", "skill", "risk-check@0.0.1"], projectDir, homeDir);
+    expect(installSkill.status).toBe(0);
+    expect(installSkill.stdout).toContain("Installed skill/risk-check@0.0.1");
+
+    const skillLinkPath = path.join(projectDir, ".cursor", "skills", "risk-check");
+    const skillLinkedRealPath = await fs.realpath(skillLinkPath);
+    expect(skillLinkedRealPath).toContain(
+      path.join(homeDir, ".himan", "store", "skill", "risk-check", "0.0.1"),
+    );
+
+    const devSkill = runCli(["dev", "skill", "risk-check"], projectDir, homeDir);
+    expect(devSkill.status).toBe(0);
+    expect(devSkill.stdout).toContain("Switched skill/risk-check to dev mode");
+
+    const skillDevLinkedRealPath = await fs.realpath(skillLinkPath);
+    const expectedSkillDevPath = await fs.realpath(
+      path.join(projectDir, ".himan", "dev", "skill", "risk-check"),
+    );
+    expect(skillDevLinkedRealPath).toBe(expectedSkillDevPath);
+  });
+
   it("supports list/history/install/dev after local fixture commit and tag", async () => {
     await prepareRepoFixture(repoDir);
 

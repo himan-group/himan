@@ -69,7 +69,7 @@ export class ServiceFactory {
 
     const resolvedVersion = this.resolveVersion(history, version);
     const storePath = this.getStorePath(type, name, resolvedVersion);
-    const linkPath = this.getProjectRulePath(projectDir, name);
+    const linkPath = this.getProjectResourcePath(projectDir, type, name);
     if (!(await this.exists(storePath))) {
       await source.pull(type, name, resolvedVersion, storePath);
     }
@@ -83,16 +83,9 @@ export class ServiceFactory {
     name: string,
     projectDir: string,
   ): Promise<{ type: ResourceType; name: string; devPath: string; linkPath: string }> {
-    if (type !== "rule") {
-      throw new HimanError(
-        errorCodes.INVALID_INPUT,
-        `Unsupported resource type: ${type}`,
-      );
-    }
-
-    const linkPath = this.getProjectRulePath(projectDir, name);
+    const linkPath = this.getProjectResourcePath(projectDir, type, name);
     const installedPath = await this.readInstalledPath(linkPath);
-    const devPath = path.join(projectDir, ".himan", "dev", name);
+    const devPath = this.getProjectDevPath(projectDir, type, name);
     if (!(await this.exists(devPath))) {
       await fs.mkdir(path.dirname(devPath), { recursive: true });
       await fs.cp(installedPath, devPath, { recursive: true });
@@ -122,7 +115,10 @@ export class ServiceFactory {
       await source.pull(type, name, nextVersion, storePath);
     }
     if (type === "rule") {
-      await this.switchSymlink(storePath, this.getProjectRulePath(projectDir, name));
+      await this.switchSymlink(
+        storePath,
+        this.getProjectResourcePath(projectDir, type, name),
+      );
     }
 
     return { type, name, version: result.version, tag: result.tag };
@@ -210,8 +206,20 @@ export class ServiceFactory {
     return path.join(this.paths.getStoreDir(), type, name, version);
   }
 
-  private getProjectRulePath(projectDir: string, name: string): string {
-    return path.join(projectDir, ".cursor", "rules", name);
+  private getProjectResourcePath(
+    projectDir: string,
+    type: ResourceType,
+    name: string,
+  ): string {
+    if (type === "rule") return path.join(projectDir, ".cursor", "rules", name);
+    if (type === "command") return path.join(projectDir, ".cursor", "commands", name);
+    return path.join(projectDir, ".cursor", "skills", name);
+  }
+
+  private getProjectDevPath(projectDir: string, type: ResourceType, name: string): string {
+    // Keep rule path unchanged for backward compatibility with existing projects.
+    if (type === "rule") return path.join(projectDir, ".himan", "dev", name);
+    return path.join(projectDir, ".himan", "dev", type, name);
   }
 
   private async switchSymlink(targetPath: string, linkPath: string): Promise<void> {
@@ -244,7 +252,7 @@ export class ServiceFactory {
     name: string,
     projectDir: string,
   ): Promise<string> {
-    const devPath = path.join(projectDir, ".himan", "dev", name);
+    const devPath = this.getProjectDevPath(projectDir, type, name);
     if (await this.exists(devPath)) {
       return devPath;
     }

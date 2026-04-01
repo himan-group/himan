@@ -86,7 +86,7 @@ export function buildCli(): Command {
     .description("Install resource")
     .action(async (type: string, nameVersion: string) => {
       await runAction(async () => {
-        const resourceType = ensureRuleResourceType(type);
+        const resourceType = ensureResourceType(type);
         const { name, version } = parseNameVersion(nameVersion);
         const result = await services.install(
           resourceType,
@@ -107,7 +107,7 @@ export function buildCli(): Command {
     .description("Switch resource to development mode")
     .action(async (type: string, name: string) => {
       await runAction(async () => {
-        const resourceType = ensureRuleResourceType(type);
+        const resourceType = ensureResourceType(type);
         const result = await services.dev(resourceType, name, process.cwd());
         process.stdout.write(
           `Switched ${result.type}/${result.name} to dev mode: ${result.devPath}\n`,
@@ -199,13 +199,6 @@ export function buildCli(): Command {
 
 function ensureResourceType(type: string): ResourceType {
   if (type !== "rule" && type !== "command" && type !== "skill") {
-    throw new Error(`Unsupported resource type: ${type}`);
-  }
-  return type;
-}
-
-function ensureRuleResourceType(type: string): "rule" {
-  if (type !== "rule") {
     throw new Error(`Unsupported resource type: ${type}`);
   }
   return type;
