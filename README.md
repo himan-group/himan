@@ -44,7 +44,7 @@ himan publish rule my-rule --patch
 | `init <git_url>`                 | 克隆/更新源仓库，写入 `~/.himan/config.json`                                        |
 | `source add <name> <git_url>`    | 添加命名 Git 源                                                                       |
 | `source use <name>`              | 切换默认源                                                                             |
-| `source list [--json]`           | 查看已配置源                                                                           |
+| `source list [--json]`           | 查看已配置源（标记当前 default）                                                      |
 | `list [type] [--json]`           | 列出资源；`type` 为 `rule` / `command` / `skill`，默认 `rule`                       |
 | `history <type> <name> [--json]` | 按 tag 查看版本历史                                                                 |
 | `install [type] [name[@version]]` | 有参数时安装指定资源；**无参数**时按 `himan.lock` 批量安装                         |
@@ -55,9 +55,24 @@ himan publish rule my-rule --patch
 
 `publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。需要可推送的 Git 权限。若该资源已在 lock 中，发布后会同步更新 lock 版本。
 
+多源说明：当前是「**多来源可配置，单来源生效**」模型。业务命令（`list/install/history/dev/publish`）只作用于当前 default source；切换后再执行命令。
+
 ## 当前范围
 
 - 源：**仅 Git**（`init`）。Registry 适配器已预留，尚未实现。
+
+## FAQ
+
+**Q: 为什么执行 `source add` 之后，`list` 结果没有变化？**  
+A: `source add` 只是在本地新增一个可用来源，不会自动切换当前生效来源。当前模型是“多来源可配置，单来源生效（default）”。  
+请执行：
+
+```bash
+himan source use <name>
+himan source list
+```
+
+确认目标来源已成为 `(default)` 后，再执行 `list/install/history/dev/publish`。
 
 ## 开发与测试
 

@@ -66,9 +66,9 @@ v1.0 仍以 Git 为主。在多源层面，当前已落地基础能力：
 
 - 配置中支持多个命名源（source alias）
 - 命令支持 `source add/use/list`
-- 业务命令默认读取 current/default source
+- 业务命令默认读取 current/default source（单来源生效）
 
-下一步待补：跨源聚合索引与按命令显式指定 source（可选参数）。
+下一步待补：跨源同时生效、跨源聚合索引与按命令显式指定 source（可选参数）。
 
 ---
 
@@ -79,7 +79,7 @@ v1.0 仍以 Git 为主。在多源层面，当前已落地基础能力：
 - `~/.himan/repos/`：多源仓库缓存
 - `~/.himan/store/<type>/<name>/<version>/`：不可变版本快照
 - `~/.himan/config.json`：默认源与命名源列表
-- `~/.himan/index.json`（可选）：多源合并索引缓存
+- `~/.himan/index.json`（可选）：当前默认源优先的索引缓存
 
 ### 4.2 项目目录
 
