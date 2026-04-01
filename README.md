@@ -42,6 +42,9 @@ himan publish rule my-rule --patch
 | 命令                             | 说明                                                                                |
 | -------------------------------- | ----------------------------------------------------------------------------------- |
 | `init <git_url>`                 | 克隆/更新源仓库，写入 `~/.himan/config.json`                                        |
+| `source add <name> <git_url>`    | 添加命名 Git 源                                                                       |
+| `source use <name>`              | 切换默认源                                                                             |
+| `source list [--json]`           | 查看已配置源                                                                           |
 | `list [type] [--json]`           | 列出资源；`type` 为 `rule` / `command` / `skill`，默认 `rule`                       |
 | `history <type> <name> [--json]` | 按 tag 查看版本历史                                                                 |
 | `install [type] [name[@version]]` | 有参数时安装指定资源；**无参数**时按 `himan.lock` 批量安装                         |

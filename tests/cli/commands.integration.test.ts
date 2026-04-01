@@ -85,6 +85,40 @@ describe("CLI commands with external git source", () => {
     await expect(fs.access(repoDir)).resolves.toBeUndefined();
   });
 
+  it("manages multiple sources and switches default source", () => {
+    const addResult = runCli(["source", "add", "mirror", TEST_REPO], projectDir, homeDir);
+    expect(addResult.status).toBe(0);
+    expect(addResult.stdout).toContain("Added source mirror");
+
+    const listResult = runCli(["source", "list", "--json"], projectDir, homeDir);
+    expect(listResult.status).toBe(0);
+    const sources = JSON.parse(listResult.stdout) as Array<{
+      name: string;
+      repo?: string;
+      isDefault: boolean;
+    }>;
+    expect(sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "default", isDefault: true }),
+        expect.objectContaining({ name: "mirror", repo: TEST_REPO }),
+      ]),
+    );
+
+    const useResult = runCli(["source", "use", "mirror"], projectDir, homeDir);
+    expect(useResult.status).toBe(0);
+    expect(useResult.stdout).toContain("Using source: mirror");
+
+    const listAfterUse = runCli(["source", "list", "--json"], projectDir, homeDir);
+    expect(listAfterUse.status).toBe(0);
+    const sourcesAfterUse = JSON.parse(listAfterUse.stdout) as Array<{
+      name: string;
+      isDefault: boolean;
+    }>;
+    expect(sourcesAfterUse).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "mirror", isDefault: true })]),
+    );
+  });
+
   it("returns empty list and history before resources are prepared", () => {
     const listResult = runCli(["list", "rule", "--json"], projectDir, homeDir);
     expect(listResult.status).toBe(0);
@@ -97,6 +131,19 @@ describe("CLI commands with external git source", () => {
     );
     expect(historyResult.status).toBe(0);
     expect(JSON.parse(historyResult.stdout)).toEqual([]);
+  });
+
+  it("creates local index cache when listing resources", async () => {
+    const listResult = runCli(["list", "rule", "--json"], projectDir, homeDir);
+    expect(listResult.status).toBe(0);
+
+    const indexPath = path.join(homeDir, ".himan", "index.json");
+    const raw = await fs.readFile(indexPath, "utf8");
+    const parsed = JSON.parse(raw) as { version: number; entries: Array<{ type: string }> };
+    expect(parsed.version).toBe(1);
+    expect(parsed.entries).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "rule" })]),
+    );
   });
 
   it("creates command scaffold with metadata and supports force", async () => {

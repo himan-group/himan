@@ -17,10 +17,12 @@ import { HimanError, errorCodes } from "../../utils/errors.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
+import { IndexCacheStore } from "../../state/index-cache-store.js";
 
 export class GitSourceAdapter implements ResourceSourceAdapter {
   private readonly repoManager = new RepoManager();
   private readonly scanner = new ResourceScanner();
+  private readonly indexStore = new IndexCacheStore();
   private sourceConfig: SourceConfig | null = null;
 
   async init(sourceConfig: SourceConfig): Promise<void> {
@@ -36,7 +38,20 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
   }
 
   async list(type: ResourceType): Promise<ResourceMeta[]> {
-    return this.scanner.scanByType(this.getRepoDir(), type);
+    const repoDir = this.getRepoDir();
+    const repoId = this.sourceConfig?.repoId ?? "default";
+    const typeDir = this.getTypeDir(type);
+    const baseDir = path.join(repoDir, typeDir);
+    const baseDirMtimeMs = await this.getMtimeMs(baseDir);
+
+    const cached = await this.indexStore.get(repoId, type);
+    if (cached && cached.baseDirMtimeMs === baseDirMtimeMs) {
+      return cached.resources;
+    }
+
+    const scanned = await this.scanner.scanByType(repoDir, type);
+    await this.indexStore.upsert(repoId, type, baseDirMtimeMs, scanned);
+    return scanned;
   }
 
   async history(type: ResourceType, name: string): Promise<VersionInfo[]> {
@@ -174,6 +189,15 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       return ra === rb;
     } catch {
       return false;
+    }
+  }
+
+  private async getMtimeMs(targetPath: string): Promise<number> {
+    try {
+      const stat = await fs.stat(targetPath);
+      return stat.mtimeMs;
+    } catch {
+      return 0;
     }
   }
 

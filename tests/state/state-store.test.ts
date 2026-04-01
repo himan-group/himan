@@ -38,6 +38,16 @@ describe("StateStore", () => {
         repo: "https://github.com/acme/himan.git",
         repoId: "github_com_acme_himan",
       },
+      sources: {
+        default: "default",
+        items: {
+          default: {
+            type: "git" as const,
+            repo: "https://github.com/acme/himan.git",
+            repoId: "github_com_acme_himan",
+          },
+        },
+      },
     };
 
     await stateStore.saveConfig(config);
@@ -50,5 +60,30 @@ describe("StateStore", () => {
     const stateStore = new StateStore();
     const loaded = await stateStore.loadConfig();
     expect(loaded).toBeNull();
+  });
+
+  it("normalizes legacy config with only source", async () => {
+    const stateStore = new StateStore();
+    const configPath = stateStore.getConfigPath();
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          source: {
+            type: "git",
+            repo: "https://github.com/acme/himan.git",
+            repoId: "github_com_acme_himan",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const loaded = await stateStore.loadConfig();
+    expect(loaded?.sources?.default).toBe("default");
+    expect(loaded?.sources?.items.default.repo).toBe("https://github.com/acme/himan.git");
   });
 });

@@ -13,6 +13,7 @@ import type {
 } from "../domain/resource.js";
 import { StateStore } from "../state/state-store.js";
 import { ProjectLockStore } from "../state/project-lock-store.js";
+import type { SourceState } from "../state/state-store.js";
 import { PathResolver } from "../utils/path-resolver.js";
 import { toRepoId } from "../utils/repo-id.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
@@ -34,14 +35,91 @@ export class ServiceFactory {
     const sourceConfig = this.buildSourceConfig(type, repo);
     const source = this.createSource(type);
     await source.init(sourceConfig);
+    const stateSource: SourceState = {
+      type,
+      repo: sourceConfig.repo,
+      repoId: sourceConfig.repoId,
+    };
     await this.stateStore.saveConfig({
-      source: { type, repo: sourceConfig.repo, repoId: sourceConfig.repoId },
+      source: stateSource,
+      sources: {
+        default: "default",
+        items: { default: stateSource },
+      },
     });
     return {
       sourceType: type,
       repo: sourceConfig.repo,
       repoId: sourceConfig.repoId,
     };
+  }
+
+  async addSource(
+    name: string,
+    type: "git" | "registry",
+    repo?: string,
+  ): Promise<{ name: string; type: "git" | "registry"; repo?: string; repoId?: string }> {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+      throw new HimanError(errorCodes.INVALID_INPUT, `Invalid source name: ${name}`);
+    }
+    await this.stateStore.ensureBaseDirs();
+    const sourceConfig = this.buildSourceConfig(type, repo);
+    const source = this.createSource(type);
+    await source.init(sourceConfig);
+
+    const stateSource: SourceState = {
+      type,
+      repo: sourceConfig.repo,
+      repoId: sourceConfig.repoId,
+    };
+
+    const current = await this.stateStore.loadConfig();
+    const items = { ...(current?.sources?.items ?? {}) };
+    items[name] = stateSource;
+    const defaultName = current?.sources?.default ?? name;
+    const defaultSource = items[defaultName] ?? stateSource;
+    await this.stateStore.saveConfig({
+      source: defaultSource,
+      sources: {
+        default: defaultName,
+        items,
+      },
+    });
+
+    return { name, type, repo: sourceConfig.repo, repoId: sourceConfig.repoId };
+  }
+
+  async useSource(name: string): Promise<{ name: string }> {
+    const config = await this.stateStore.loadConfig();
+    if (!config?.sources) {
+      throw new HimanError(errorCodes.CONFIG_NOT_FOUND, "No source configured.");
+    }
+    const target = config.sources.items[name];
+    if (!target) {
+      throw new HimanError(errorCodes.RESOURCE_NOT_FOUND, `Source not found: ${name}`);
+    }
+    await this.stateStore.saveConfig({
+      source: target,
+      sources: {
+        default: name,
+        items: config.sources.items,
+      },
+    });
+    return { name };
+  }
+
+  async listSources(): Promise<
+    Array<{ name: string; type: "git" | "registry"; repo?: string; repoId?: string; isDefault: boolean }>
+  > {
+    const config = await this.stateStore.loadConfig();
+    if (!config?.sources) return [];
+    return Object.entries(config.sources.items).map(([name, source]) => ({
+      name,
+      type: source.type,
+      repo: source.repo,
+      repoId: source.repoId,
+      isDefault: name === config.sources?.default,
+    }));
   }
 
   async list(type: ResourceType): Promise<ResourceMeta[]> {
