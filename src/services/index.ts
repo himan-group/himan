@@ -12,6 +12,7 @@ import type {
   VersionInfo,
 } from "../domain/resource.js";
 import { StateStore } from "../state/state-store.js";
+import { ProjectLockStore } from "../state/project-lock-store.js";
 import { PathResolver } from "../utils/path-resolver.js";
 import { toRepoId } from "../utils/repo-id.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
@@ -21,6 +22,7 @@ import { VersionResolver } from "../adapters/version/version-resolver.js";
 
 export class ServiceFactory {
   private readonly stateStore = new StateStore();
+  private readonly lockStore = new ProjectLockStore();
   private readonly paths = new PathResolver();
   private readonly versions = new VersionResolver();
 
@@ -59,6 +61,7 @@ export class ServiceFactory {
     projectDir: string,
   ): Promise<{ type: ResourceType; name: string; version: string; linkPath: string }> {
     const source = await this.loadSourceFromConfig();
+    const sourceInfo = await this.getLockSourceInfo();
     const history = await source.history(type, name);
     if (history.length === 0) {
       throw new HimanError(
@@ -74,6 +77,11 @@ export class ServiceFactory {
       await source.pull(type, name, resolvedVersion, storePath);
     }
     await this.switchSymlink(storePath, linkPath);
+    await this.lockStore.upsertResource(projectDir, sourceInfo, {
+      type,
+      name,
+      version: resolvedVersion,
+    });
 
     return { type, name, version: resolvedVersion, linkPath };
   }
@@ -92,6 +100,24 @@ export class ServiceFactory {
     }
     await this.switchSymlink(devPath, linkPath);
     return { type, name, devPath, linkPath };
+  }
+
+  async uninstall(
+    type: ResourceType,
+    name: string,
+    projectDir: string,
+  ): Promise<{ type: ResourceType; name: string; linkPath: string }> {
+    const linkPath = this.getProjectResourcePath(projectDir, type, name);
+    if (!(await this.exists(linkPath))) {
+      throw new HimanError(
+        errorCodes.INSTALL_NOT_FOUND,
+        `Installed resource link not found: ${linkPath}.`,
+      );
+    }
+
+    await fs.rm(linkPath, { recursive: true, force: true });
+    await this.lockStore.removeResource(projectDir, { type, name });
+    return { type, name, linkPath };
   }
 
   async publish(
@@ -114,11 +140,18 @@ export class ServiceFactory {
     if (!(await this.exists(storePath))) {
       await source.pull(type, name, nextVersion, storePath);
     }
-    if (type === "rule") {
-      await this.switchSymlink(
-        storePath,
-        this.getProjectResourcePath(projectDir, type, name),
-      );
+    const linkPath = this.getProjectResourcePath(projectDir, type, name);
+    if (await this.exists(linkPath)) {
+      await this.switchSymlink(storePath, linkPath);
+    }
+
+    if (await this.isResourceLocked(projectDir, type, name)) {
+      const sourceInfo = await this.getLockSourceInfo();
+      await this.lockStore.upsertResource(projectDir, sourceInfo, {
+        type,
+        name,
+        version: nextVersion,
+      });
     }
 
     return { type, name, version: result.version, tag: result.tag };
@@ -139,6 +172,30 @@ export class ServiceFactory {
       force: options.force,
       dryRun: options.dryRun,
     });
+  }
+
+  async installFromLock(projectDir: string): Promise<
+    Array<{ type: ResourceType; name: string; version: string; linkPath: string }>
+  > {
+    const lock = await this.lockStore.load(projectDir);
+    if (!lock || lock.resources.length === 0) {
+      throw new HimanError(
+        errorCodes.LOCK_NOT_FOUND,
+        `Lock file not found or empty: ${this.lockStore.getLockPath(projectDir)}`,
+      );
+    }
+
+    const results: Array<{
+      type: ResourceType;
+      name: string;
+      version: string;
+      linkPath: string;
+    }> = [];
+    for (const item of lock.resources) {
+      const result = await this.install(item.type, item.name, item.version, projectDir);
+      results.push(result);
+    }
+    return results;
   }
 
   private async loadSourceFromConfig(): Promise<ResourceSourceAdapter> {
@@ -164,6 +221,35 @@ export class ServiceFactory {
     return type === "registry"
       ? new RegistrySourceAdapter()
       : new GitSourceAdapter();
+  }
+
+  private async getLockSourceInfo(): Promise<{
+    type: "git" | "registry";
+    repo?: string;
+    repoId?: string;
+  }> {
+    const config = await this.stateStore.loadConfig();
+    if (!config) {
+      throw new HimanError(
+        errorCodes.CONFIG_NOT_FOUND,
+        "Source config not found. Please run `himan init <git_repo>` first.",
+      );
+    }
+    return {
+      type: config.source.type,
+      repo: config.source.repo,
+      repoId: config.source.repoId,
+    };
+  }
+
+  private async isResourceLocked(
+    projectDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<boolean> {
+    const lock = await this.lockStore.load(projectDir);
+    if (!lock) return false;
+    return lock.resources.some((item) => item.type === type && item.name === name);
   }
 
   private buildSourceConfig(

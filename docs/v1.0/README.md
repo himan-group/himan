@@ -23,6 +23,16 @@
 5. PR 驱动发布（可选）
 6. 本地索引缓存（如 `index.json`）
 
+### 当前进展（已实现）
+
+- 已完成：`command` / `skill` 的 `install` / `dev` / `publish` / `uninstall` 主流程
+- 已完成：`himan.lock` 基础能力
+  - `install <type> <name[@version]>` 自动写入/更新 lock
+  - `install`（无参数）按 lock 批量复现安装
+  - `uninstall` 删除项目链接并同步移除 lock 条目
+  - `publish` 在资源已锁定时同步更新 lock 版本
+- 待完成：多 repo、发布前校验、本地索引、PR 驱动发布
+
 ---
 
 ## 3. v1.0 命令面（冻结目标）

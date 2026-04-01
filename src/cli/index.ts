@@ -81,11 +81,29 @@ export function buildCli(): Command {
 
   program
     .command("install")
-    .argument("<type>", "resource type")
-    .argument("<name_version>", "resource name with optional @version")
-    .description("Install resource")
-    .action(async (type: string, nameVersion: string) => {
+    .argument("[type]", "resource type")
+    .argument("[name_version]", "resource name with optional @version")
+    .description("Install resource, or install from himan.lock")
+    .action(async (type?: string, nameVersion?: string) => {
       await runAction(async () => {
+        if (!type && !nameVersion) {
+          const results = await services.installFromLock(process.cwd());
+          if (results.length === 0) {
+            process.stdout.write("No resources in lock file.\n");
+            return;
+          }
+          for (const item of results) {
+            process.stdout.write(`Installed ${item.type}/${item.name}@${item.version}\n`);
+          }
+          return;
+        }
+
+        if (!type || !nameVersion) {
+          throw new Error(
+            "Install usage: `himan install` (from lock) or `himan install <type> <name[@version]>`.",
+          );
+        }
+
         const resourceType = ensureResourceType(type);
         const { name, version } = parseNameVersion(nameVersion);
         const result = await services.install(
@@ -112,6 +130,19 @@ export function buildCli(): Command {
         process.stdout.write(
           `Switched ${result.type}/${result.name} to dev mode: ${result.devPath}\n`,
         );
+      });
+    });
+
+  program
+    .command("uninstall")
+    .argument("<type>", "resource type")
+    .argument("<name>", "resource name")
+    .description("Uninstall resource from project and lock")
+    .action(async (type: string, name: string) => {
+      await runAction(async () => {
+        const resourceType = ensureResourceType(type);
+        const result = await services.uninstall(resourceType, name, process.cwd());
+        process.stdout.write(`Uninstalled ${result.type}/${result.name}\n`);
       });
     });
 

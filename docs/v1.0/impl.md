@@ -10,16 +10,15 @@
 
 - Git 源初始化、资源扫描、历史版本查询
 - `create` / `list` / `history` / `publish` 支持 `rule`、`command`、`skill`
-- `install` / `dev` 仅支持 `rule`
+- `install` / `dev` / `uninstall` 已支持 `rule`、`command`、`skill`
 - 版本事实来源是 Git Tag：`<type>/<name>@<semver>`
 - 全局目录已形成：仓库缓存、版本 store、配置文件
+- 已引入 `himan.lock`（安装写入、无参 install 复现、卸载删除条目、发布后更新锁定条目）
 
 当前主要缺口（对比 v1.0 目标）：
 
-- 缺少 `uninstall`
-- `command` / `skill` 缺少项目侧 install/dev 引用闭环
 - 发布前校验能力较弱（缺少统一 preflight）
-- lock 文件、多 repo、本地索引尚未落地
+- 多 repo、本地索引尚未落地
 
 ---
 
@@ -84,9 +83,13 @@ Registry 继续保留接口，不纳入 v1.0 主路径。
 
 - `.himan/dev/`：开发态副本
 - 运行态安装目标按类型约定（v1.0 冻结）：
-  - `rule`：项目规则目录（沿用现有）
-  - `command`：项目命令目录（新增）
-  - `skill`：项目技能目录（新增）
+  - `rule`：`.cursor/rules/<name>`
+  - `command`：`.cursor/commands/<name>`
+  - `skill`：`.cursor/skills/<name>`
+- 开发态目录：
+  - `rule`：`.himan/dev/<name>`（兼容历史）
+  - `command`：`.himan/dev/command/<name>`
+  - `skill`：`.himan/dev/skill/<name>`
 
 > 注：命令与 skill 的具体路径在 v1.0 实施前冻结，并在 README 中与工具平台约定保持一致。
 
@@ -128,6 +131,7 @@ v1.0 统一支持三类资源：
 - store 复用：已存在版本直接复用，不重复导出
 - 项目引用：按类型创建软链/引用到对应目录
 - lock 联动：写入当前安装状态
+- 无参数安装：`himan install` 从 `himan.lock` 批量复现安装
 
 ### 6.2 `dev`
 
@@ -152,7 +156,8 @@ v1.0 统一支持三类资源：
 3. 版本计算：按 patch/minor/major 递增
 4. 写回源仓库并提交、打 tag、推送
 5. 同步新版本到 store
-6. 若当前项目安装该资源，则更新项目引用与 lock
+6. 若当前项目安装该资源，则更新项目引用
+7. 若该资源存在于 lock，则同步更新 lock 中版本
 
 可选扩展：PR 驱动发布（生成分支与 PR，而非直接推送主分支）。
 

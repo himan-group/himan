@@ -371,6 +371,101 @@ describe("CLI commands with external git source", () => {
     expect(devLinkedRealPath).toBe(expectedDevPath);
   });
 
+  it("writes himan.lock on install and can reproduce installs", async () => {
+    const lockPath = path.join(projectDir, "himan.lock");
+    const lockRaw = await fs.readFile(lockPath, "utf8");
+    const lock = JSON.parse(lockRaw) as {
+      version: number;
+      source: { type: string };
+      resources: Array<{ type: string; name: string; version: string }>;
+    };
+
+    expect(lock.version).toBe(1);
+    expect(lock.source.type).toBe("git");
+    expect(lock.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "rule",
+          name: "code-review",
+          version: "1.0.0",
+        }),
+        expect.objectContaining({
+          type: "command",
+          name: "release-note",
+          version: "0.1.0",
+        }),
+        expect.objectContaining({
+          type: "skill",
+          name: "risk-check",
+          version: "0.0.1",
+        }),
+      ]),
+    );
+
+    await fs.rm(path.join(projectDir, ".cursor", "rules", "code-review"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.rm(path.join(projectDir, ".cursor", "commands", "release-note"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.rm(path.join(projectDir, ".cursor", "skills", "risk-check"), {
+      recursive: true,
+      force: true,
+    });
+
+    const result = runCli(["install"], projectDir, homeDir);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Installed rule/code-review@1.0.0");
+    expect(result.stdout).toContain("Installed command/release-note@0.1.0");
+    expect(result.stdout).toContain("Installed skill/risk-check@0.0.1");
+
+    await expect(
+      fs.realpath(path.join(projectDir, ".cursor", "rules", "code-review")),
+    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"));
+    await expect(
+      fs.realpath(path.join(projectDir, ".cursor", "commands", "release-note")),
+    ).resolves.toContain(
+      path.join(homeDir, ".himan", "store", "command", "release-note", "0.1.0"),
+    );
+    await expect(
+      fs.realpath(path.join(projectDir, ".cursor", "skills", "risk-check")),
+    ).resolves.toContain(path.join(homeDir, ".himan", "store", "skill", "risk-check", "0.0.1"));
+  });
+
+  it("updates lock and project link after publish when resource is locked", async () => {
+    const devCommandPath = path.join(projectDir, ".himan", "dev", "command", "release-note");
+    await fs.appendFile(path.join(devCommandPath, "content.md"), "lock sync on publish.\n", "utf8");
+
+    const publishResult = runCli(
+      ["publish", "command", "release-note", "--patch"],
+      projectDir,
+      homeDir,
+    );
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("Published command/release-note@0.1.1");
+
+    const commandLinkPath = path.join(projectDir, ".cursor", "commands", "release-note");
+    await expect(fs.realpath(commandLinkPath)).resolves.toContain(
+      path.join(homeDir, ".himan", "store", "command", "release-note", "0.1.1"),
+    );
+
+    const lockRaw = await fs.readFile(path.join(projectDir, "himan.lock"), "utf8");
+    const lock = JSON.parse(lockRaw) as {
+      resources: Array<{ type: string; name: string; version: string }>;
+    };
+    expect(lock.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "command",
+          name: "release-note",
+          version: "0.1.1",
+        }),
+      ]),
+    );
+  });
+
   it("keeps store immutable when reinstalling same version", async () => {
     const installResult = runCli(
       ["install", "rule", "code-review@1.0.0"],
@@ -447,6 +542,28 @@ describe("CLI commands with external git source", () => {
       "rule/code-review@1.0.0",
       "rule/code-review@1.0.1",
     ]);
+  });
+
+  it("uninstalls resource and removes it from lock", async () => {
+    const uninstallResult = runCli(
+      ["uninstall", "skill", "risk-check"],
+      projectDir,
+      homeDir,
+    );
+    expect(uninstallResult.status).toBe(0);
+    expect(uninstallResult.stdout).toContain("Uninstalled skill/risk-check");
+
+    await expect(
+      fs.realpath(path.join(projectDir, ".cursor", "skills", "risk-check")),
+    ).rejects.toThrow();
+
+    const lockRaw = await fs.readFile(path.join(projectDir, "himan.lock"), "utf8");
+    const lock = JSON.parse(lockRaw) as {
+      resources: Array<{ type: string; name: string; version: string }>;
+    };
+    expect(
+      lock.resources.some((item) => item.type === "skill" && item.name === "risk-check"),
+    ).toBe(false);
   });
 });
 
