@@ -9,12 +9,12 @@
 - 本地 CLI，命令说明见仓库根目录 [README.md](../../README.md)
 - 资源版本以 Git Tag 为准，格式 `<type>/<name>@<semver>`
 - 资源类型能力：
-  - `rule`：`create` / `list` / `history` / `install` / `dev` / `publish`
-  - `command`：`create` / `list` / `history` / `publish`
-  - `skill`：`create` / `list` / `history` / `publish`
+- `rule`：`create` / `list` / `history` / `install` / `dev` / `publish` / `uninstall`
+- `command`：`create` / `list` / `history` / `install` / `dev` / `publish` / `uninstall`
+- `skill`：`create` / `list` / `history` / `install` / `dev` / `publish` / `uninstall`
 - 远程 Registry 源：仅占位，二期实现
 
-**不包含：** 多仓库切换、可用 Registry、AI 搜索、PR 自动发布。
+**不包含：** 可用 Registry、AI 搜索、PR 自动发布。
 
 ---
 
@@ -37,25 +37,30 @@
 
 ### 2.4 `install`
 
-- `himan install rule <name>` 或 `name@version`
-- **仅支持 rule**；command/skill 在命令层即不可用。
+- `himan install <type> <name>` 或 `<name>@version`，`type` 支持 `rule|command|skill`
+- 也支持 `himan install`（无参数）按 `himan.lock` 批量复现安装。
 - 未指定版本则安装该资源最新 tag 对应版本。
 - 若本地 store 中已有该版本缓存，则复用、不重新从 Git 导出；否则导出到 store。
-- 在项目下创建软链：`.cursor/rules/<name>` → store 中对应版本目录。
+- 在项目下创建软链：
+  - `rule`：`.cursor/rules/<name>`
+  - `command`：`.cursor/commands/<name>`
+  - `skill`：`.cursor/skills/<name>`
 
 ### 2.5 `dev`
 
-- `himan dev rule <name>`
-- **仅支持 rule**；需先 `install`。
-- 将当前安装内容复制到项目 `.himan/dev/<name>`（已存在则默认不覆盖），软链切到 dev 目录便于编辑。
+- `himan dev <type> <name>`，`type` 支持 `rule|command|skill`；需先 `install`。
+- 将当前安装内容复制到项目开发目录（已存在则默认不覆盖），软链切到 dev 目录便于编辑：
+  - `rule`：`.himan/dev/rule/<name>`
+  - `command`：`.himan/dev/command/<name>`
+  - `skill`：`.himan/dev/skill/<name>`
 
 ### 2.6 `publish`
 
 - `himan publish <type> <name> --patch|--minor|--major`（默认 patch，三选一）
-- 发布内容优先取项目 `.himan/dev/<name>`，否则取源仓库内对应资源目录。
+- 发布内容优先取项目 `.himan/dev/<type>/<name>`，否则取源仓库内对应资源目录。
 - 新版本：基于已有 tag 最新 semver 递增；无任何历史时从 `0.0.0` 起算。
 - 写回源仓库、提交、打 tag、推送，并将该版本同步到本地 store。
-- **仅 rule** 会同时把项目 `.cursor/rules/<name>` 指到新版本；command/skill 只更新仓库与 store。
+- 若该资源在项目中已有安装链接，会同步把项目链接切到新版本目录。
 
 ### 2.7 `create`
 
@@ -69,7 +74,7 @@
 
 ### 3.1 分层（概念）
 
-- **CLI**：解析参数、限制 `install`/`dev` 仅 rule、格式化输出
+- **CLI**：解析参数、格式化输出、帮助与错误信息
 - **编排**：初始化源、列表、历史、安装、开发态、发布、创建等资源生命周期
 - **领域**：资源类型、版本、路径约定
 - **适配**：Git 实现 + Registry 预留；扫描与解析元数据；版本计算；配置与全局路径
@@ -85,7 +90,7 @@
 
 **项目目录：**
 - `.cursor/rules/<name>`：rule 运行态软链
-- `.himan/dev/<name>`：rule 开发态可编辑副本
+- `.himan/dev/rule/<name>`：rule 开发态可编辑副本
 
 **源仓库内资源布局：**
 - `rules/<name>/`、`commands/<name>/`、`skills/<name>/`，各含 `himan.yaml` 与约定入口文件（如 `content.md`、`SKILL.md`）。

@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { ServiceFactory } from "../services/index.js";
 import type { ResourceType } from "../domain/resource.js";
+import { HimanError } from "../utils/errors.js";
 
 export function buildCli(): Command {
   const program = new Command();
@@ -53,7 +54,7 @@ export function buildCli(): Command {
   sourceCmd
     .command("list")
     .option("--json", "output json format")
-    .description("List configured sources")
+    .description("List configured sources and current default")
     .action(async (options: { json?: boolean }) => {
       await runAction(async () => {
         const sources = await services.listSources();
@@ -79,7 +80,7 @@ export function buildCli(): Command {
     .command("list")
     .argument("[type]", "resource type", "rule")
     .option("--json", "output json format")
-    .description("List resources")
+    .description("List resources from current default source")
     .action(async (type: string, options: { json?: boolean }) => {
       await runAction(async () => {
         const resourceType = ensureResourceType(type);
@@ -134,7 +135,7 @@ export function buildCli(): Command {
   program
     .command("install")
     .argument("[type]", "resource type")
-    .argument("[name_version]", "resource name with optional @version")
+    .argument("[name[@version]]", "resource name with optional @version")
     .description("Install resource, or install from himan.lock")
     .action(async (type?: string, nameVersion?: string) => {
       await runAction(async () => {
@@ -152,7 +153,9 @@ export function buildCli(): Command {
 
         if (!type || !nameVersion) {
           throw new Error(
-            "Install usage: `himan install` (from lock) or `himan install <type> <name[@version]>`.",
+            "Install usage:\n"
+              + "  - himan install  # install from himan.lock\n"
+              + "  - himan install <type> <name[@version]>  # install single resource",
           );
         }
 
@@ -205,7 +208,7 @@ export function buildCli(): Command {
     .option("--patch", "patch release")
     .option("--minor", "minor release")
     .option("--major", "major release")
-    .description("Publish resource")
+    .description("Publish resource (default: --patch)")
     .action(
       async (
         type: string,
@@ -297,8 +300,13 @@ async function runAction(action: () => Promise<void>): Promise<void> {
   try {
     await action();
   } catch (error) {
+    if (error instanceof HimanError) {
+      process.stderr.write(`[${error.code}] ${error.message}\n`);
+      process.exitCode = 1;
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`${message}\n`);
+    process.stderr.write(`[E_UNKNOWN] ${message}\n`);
     process.exitCode = 1;
   }
 }

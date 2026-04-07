@@ -89,7 +89,7 @@ v1.0 仍以 Git 为主。在多源层面，当前已落地基础能力：
   - `command`：`.cursor/commands/<name>`
   - `skill`：`.cursor/skills/<name>`
 - 开发态目录：
-  - `rule`：`.himan/dev/<name>`（兼容历史）
+  - `rule`：`.himan/dev/rule/<name>`
   - `command`：`.himan/dev/command/<name>`
   - `skill`：`.himan/dev/skill/<name>`
 

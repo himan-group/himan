@@ -413,7 +413,7 @@ describe("CLI commands with external git source", () => {
 
     const devLinkedRealPath = await fs.realpath(linkedPath);
     const expectedDevPath = await fs.realpath(
-      path.join(projectDir, ".himan", "dev", "code-review"),
+      path.join(projectDir, ".himan", "dev", "rule", "code-review"),
     );
     expect(devLinkedRealPath).toBe(expectedDevPath);
   });
@@ -548,6 +548,7 @@ describe("CLI commands with external git source", () => {
       projectDir,
       ".himan",
       "dev",
+      "rule",
       "code-review",
       "content.md",
     );

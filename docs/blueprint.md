@@ -203,7 +203,7 @@ himan dev rule code-review
 
 行为：
 
-.himan/dev/code-review
+.himan/dev/rule/code-review
 
 并替换软链
 

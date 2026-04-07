@@ -27,17 +27,29 @@ export class ProjectLockStore {
     return path.join(projectDir, "himan.lock");
   }
 
-  async load(projectDir: string): Promise<ProjectLock | null> {
+  async loadWithState(
+    projectDir: string,
+  ): Promise<{ lock: ProjectLock | null; state: "ok" | "missing" | "invalid" }> {
+    const lockPath = this.getLockPath(projectDir);
     try {
-      const raw = await fs.readFile(this.getLockPath(projectDir), "utf8");
+      const raw = await fs.readFile(lockPath, "utf8");
       const parsed = JSON.parse(raw) as ProjectLock;
       if (parsed.version !== 1 || !Array.isArray(parsed.resources)) {
-        return null;
+        return { lock: null, state: "invalid" };
       }
-      return parsed;
-    } catch {
-      return null;
+      return { lock: parsed, state: "ok" };
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err?.code === "ENOENT") {
+        return { lock: null, state: "missing" };
+      }
+      return { lock: null, state: "invalid" };
     }
+  }
+
+  async load(projectDir: string): Promise<ProjectLock | null> {
+    const result = await this.loadWithState(projectDir);
+    return result.lock;
   }
 
   async upsertResource(

@@ -24,7 +24,7 @@ himan init https://github.com/your-org/your-himan-registry.git
 himan list rule
 himan install rule my-rule
 himan dev rule my-rule
-# 编辑项目下 .himan/dev/my-rule/
+# 编辑项目下 .himan/dev/rule/my-rule/
 himan publish rule my-rule --patch
 ```
 
@@ -33,6 +33,10 @@ himan publish rule my-rule --patch
   - `rule` -> `.cursor/rules/<name>`
   - `command` -> `.cursor/commands/<name>`
   - `skill` -> `.cursor/skills/<name>`
+- 开发态目录：
+  - `rule` -> `.himan/dev/rule/<name>`
+  - `command` -> `.himan/dev/command/<name>`
+  - `skill` -> `.himan/dev/skill/<name>`
 - lock 文件：`install <type> <name[@version]>` 会写入 `himan.lock`；`himan install`（无参数）会按 lock 批量恢复安装。
 
 版本以 Git tag 为准，格式：`rule/my-rule@1.0.0`。更多设计见 [docs/mvp](./docs/mvp/README.md)。
@@ -45,7 +49,7 @@ himan publish rule my-rule --patch
 | `source add <name> <git_url>`    | 添加命名 Git 源                                                                       |
 | `source use <name>`              | 切换默认源                                                                             |
 | `source list [--json]`           | 查看已配置源（标记当前 default）                                                      |
-| `list [type] [--json]`           | 列出资源；`type` 为 `rule` / `command` / `skill`，默认 `rule`                       |
+| `list [type] [--json]`           | 列出当前 default source 的资源；`type` 为 `rule` / `command` / `skill`，默认 `rule` |
 | `history <type> <name> [--json]` | 按 tag 查看版本历史                                                                 |
 | `install [type] [name[@version]]` | 有参数时安装指定资源；**无参数**时按 `himan.lock` 批量安装                         |
 | `dev <type> <name>`                | 切换到开发态并把项目链接指向 `.himan/dev/...`                                      |
@@ -73,6 +77,9 @@ himan source list
 ```
 
 确认目标来源已成为 `(default)` 后，再执行 `list/install/history/dev/publish`。
+
+**Q: `list` 和 `source list` 有什么区别？**  
+A: `source list` 查看「我配置了哪些来源」；`list` 查看「当前 default source 里有哪些资源」。
 
 ## 开发与测试
 

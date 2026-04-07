@@ -120,7 +120,7 @@ rule 常见路径还可插入 `dev`：
 ```bash
 himan create rule code-review --description "enforce standards"
 himan dev rule code-review
-# 编辑 .himan/dev/code-review/
+# 编辑 .himan/dev/rule/code-review/
 himan publish rule code-review --patch
 ```
 

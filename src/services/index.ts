@@ -255,11 +255,23 @@ export class ServiceFactory {
   async installFromLock(projectDir: string): Promise<
     Array<{ type: ResourceType; name: string; version: string; linkPath: string }>
   > {
-    const lock = await this.lockStore.load(projectDir);
-    if (!lock || lock.resources.length === 0) {
+    const { lock, state } = await this.lockStore.loadWithState(projectDir);
+    if (state === "missing") {
       throw new HimanError(
         errorCodes.LOCK_NOT_FOUND,
-        `Lock file not found or empty: ${this.lockStore.getLockPath(projectDir)}`,
+        `Lock file not found: ${this.lockStore.getLockPath(projectDir)}`,
+      );
+    }
+    if (state === "invalid" || !lock) {
+      throw new HimanError(
+        errorCodes.LOCK_INVALID,
+        `Lock file is invalid: ${this.lockStore.getLockPath(projectDir)}`,
+      );
+    }
+    if (lock.resources.length === 0) {
+      throw new HimanError(
+        errorCodes.LOCK_NOT_FOUND,
+        `Lock file has no resources: ${this.lockStore.getLockPath(projectDir)}`,
       );
     }
 
@@ -381,8 +393,6 @@ export class ServiceFactory {
   }
 
   private getProjectDevPath(projectDir: string, type: ResourceType, name: string): string {
-    // Keep rule path unchanged for backward compatibility with existing projects.
-    if (type === "rule") return path.join(projectDir, ".himan", "dev", name);
     return path.join(projectDir, ".himan", "dev", type, name);
   }
 
