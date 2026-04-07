@@ -133,6 +133,23 @@ describe("CLI commands with external git source", () => {
     expect(JSON.parse(historyResult.stdout)).toEqual([]);
   });
 
+  it("returns structured json for CLI usage errors", () => {
+    const result = runCli(["history", "rule", "--json"], projectDir, homeDir);
+    expect(result.status).toBe(1);
+    const payload = JSON.parse(result.stderr) as {
+      ok: boolean;
+      error: {
+        code: string;
+        message: string;
+        details?: { commanderCode?: string; exitCode?: number };
+      };
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.error.code).toBe("E_CLI_USAGE");
+    expect(payload.error.message).toContain("missing required argument");
+    expect(payload.error.details?.commanderCode).toBe("commander.missingArgument");
+  });
+
   it("creates local index cache when listing resources", async () => {
     const listResult = runCli(["list", "rule", "--json"], projectDir, homeDir);
     expect(listResult.status).toBe(0);
@@ -178,6 +195,20 @@ describe("CLI commands with external git source", () => {
     const createAgain = runCli(["create", "command", "sync-docs"], projectDir, homeDir);
     expect(createAgain.status).toBe(1);
     expect(createAgain.stderr).toContain("Resource already exists");
+
+    const createAgainJson = runCli(
+      ["create", "command", "sync-docs", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(createAgainJson.status).toBe(1);
+    const errorPayload = JSON.parse(createAgainJson.stderr) as {
+      ok: boolean;
+      error: { code: string; message: string };
+    };
+    expect(errorPayload.ok).toBe(false);
+    expect(errorPayload.error.code).toBe("E_RESOURCE_EXISTS");
+    expect(errorPayload.error.message).toContain("Resource already exists");
 
     const createForce = runCli(
       ["create", "command", "sync-docs", "--force"],

@@ -1,11 +1,29 @@
-import { Command } from "commander";
+import { Command, CommanderError } from "commander";
 import { ServiceFactory } from "../services/index.js";
 import type { ResourceType } from "../domain/resource.js";
-import { HimanError } from "../utils/errors.js";
+import { errorCodes, HimanError } from "../utils/errors.js";
+
+interface CliErrorPayload {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  };
+}
 
 export function buildCli(): Command {
   const program = new Command();
   const services = new ServiceFactory();
+  program.exitOverride();
+  program.configureOutput({
+    writeOut: (str: string) => {
+      process.stdout.write(str);
+    },
+    writeErr: () => {
+      // Parse/usage errors are unified by writeCliError().
+    },
+  });
 
   program
     .name("himan")
@@ -300,15 +318,55 @@ async function runAction(action: () => Promise<void>): Promise<void> {
   try {
     await action();
   } catch (error) {
-    if (error instanceof HimanError) {
-      process.stderr.write(`[${error.code}] ${error.message}\n`);
-      process.exitCode = 1;
-      return;
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`[E_UNKNOWN] ${message}\n`);
+    writeCliError(error);
     process.exitCode = 1;
   }
+}
+
+export function writeCliError(error: unknown): void {
+  const payload = toCliErrorPayload(error);
+  if (shouldOutputJsonError()) {
+    process.stderr.write(`${JSON.stringify(payload, null, 2)}\n`);
+    return;
+  }
+  process.stderr.write(`[${payload.error.code}] ${payload.error.message}\n`);
+}
+
+function toCliErrorPayload(error: unknown): CliErrorPayload {
+  if (error instanceof CommanderError) {
+    return {
+      ok: false,
+      error: {
+        code: errorCodes.CLI_USAGE,
+        message: error.message,
+        details: {
+          commanderCode: error.code,
+          exitCode: error.exitCode,
+        },
+      },
+    };
+  }
+  if (error instanceof HimanError) {
+    return {
+      ok: false,
+      error: {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      },
+    };
+  }
+  return {
+    ok: false,
+    error: {
+      code: "E_UNKNOWN",
+      message: error instanceof Error ? error.message : String(error),
+    },
+  };
+}
+
+function shouldOutputJsonError(): boolean {
+  return process.argv.includes("--json");
 }
 
 function resolveReleaseType(options: {
