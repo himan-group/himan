@@ -115,20 +115,20 @@ pnpm test
    Git 标签约定：与 `version` 对应、带前缀 **`v`**（如 `1.2.0` → 标签 `v1.2.0`）。
 
 3. **合并到 `master`**  
-   推送合并后的 `master` 会触发 GitHub Actions 工作流 [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml)：安装依赖后执行 **`pnpm run publish`**（即再次 `verify` + `npm publish`）。  
+   推送合并后的 `master` 会触发 GitHub Actions 工作流 [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml)：安装依赖后执行 **`pnpm run release`**（即再次 `verify` + `npm publish`）。  
    需在仓库 **Settings → Secrets → Actions** 中配置 **`NPM_TOKEN`**（npm 侧「Access Tokens」，建议 Automation / 具备发包权限的 granular token）。
 
 4. **手动从 CI 再发一次（可选）**  
    在 GitHub **Actions → Publish to npm → Run workflow** 可手动运行同一流程（例如在修复密钥后重试）。
 
-### 本地命令（与 CI 中的 `pnpm run publish` 一致）
+### 本地命令（与 CI 中的 `pnpm run release` 一致）
 
 | 命令 | 作用 |
 |------|------|
 | `pnpm run verify` | 仅检查（类型 / 测试 / 构建） |
-| `pnpm run publish:dry` | 检查 + `npm publish --dry-run`（演练，不上传） |
-| `pnpm run publish:test` | 检查 + 将版本打成 `*-test.*` 预发布号并发布到 **`@test` 标签** |
-| `pnpm run publish` | 检查 + 发布 **latest**（维护者本地发包时用；**请写 `pnpm run publish`**，勿用裸命令 `pnpm publish`，二者不是同一套流程） |
+| `pnpm run release:dry` | 检查 + `npm publish --dry-run`（演练，不上传） |
+| `pnpm run release:test` | 检查 + 将版本打成 `*-test.*` 预发布号并发布到 **`@test` 标签** |
+| `pnpm run release` | 检查 + 发布 **latest**（维护者本地发包时用；**请写 `pnpm run release`**，勿用裸命令 `pnpm publish`，二者不是同一套流程） |
 | `pnpm run version:patch` / `version:minor` / `version:major` | 仅提升 `package.json` 版本号，不发包 |
 
 发测试标签后，安装示例：`npm i himan@test`。

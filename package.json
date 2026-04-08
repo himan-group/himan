@@ -32,9 +32,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "pnpm run typecheck && pnpm run test && pnpm run build",
-    "publish": "pnpm run verify && npm publish",
-    "publish:dry": "pnpm run verify && npm publish --dry-run",
-    "publish:test": "pnpm run verify && npm version prerelease --preid test --no-git-tag-version && npm publish --tag test",
+    "release": "pnpm run verify && npm publish",
+    "release:dry": "pnpm run verify && npm publish --dry-run",
+    "release:test": "pnpm run verify && npm version prerelease --preid test --no-git-tag-version && npm publish --tag test",
     "version:patch": "npm version patch --no-git-tag-version",
     "version:minor": "npm version minor --no-git-tag-version",
     "version:major": "npm version major --no-git-tag-version"
