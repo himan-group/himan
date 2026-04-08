@@ -2,6 +2,7 @@ import { Command, CommanderError } from "commander";
 import { ServiceFactory } from "../services/index.js";
 import type { ResourceType } from "../domain/resource.js";
 import { errorCodes, HimanError } from "../utils/errors.js";
+import { PACKAGE_VERSION } from "../version.js";
 
 interface CliErrorPayload {
   ok: false;
@@ -28,7 +29,7 @@ export function buildCli(): Command {
   program
     .name("himan")
     .description("Prompt and agent asset management CLI")
-    .version("0.1.0");
+    .version(PACKAGE_VERSION);
   appendCommandGroupsHelp(program);
 
   program
