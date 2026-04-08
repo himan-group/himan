@@ -103,10 +103,31 @@ pnpm test
 
 ## 发布 npm 包（维护者）
 
-```bash
-pnpm run release:dry-run   # 检查 + dry-run 发布
-pnpm run release:test      # 测试 tag
-pnpm run release:latest    # latest
-```
+### 流程概览
 
-测试版安装：`npm i himan@test`。
+1. **在分支上完成开发与合并前检查**  
+   本地可执行 `pnpm run verify`（类型检查、单测、`build`），确认通过后再提 PR。
+
+2. **更新 `package.json` 中的 `version`**  
+   npm 不允许重复发布同一版本号。合并进 `master` 前，在 PR 里把版本改成 registry 上尚未存在的号。  
+   - 手动改 `version` 字段，或  
+   - 在分支上执行其一（只改版本号，**不会**发包）：`pnpm run version:patch` / `version:minor` / `version:major`（使用 `npm version … --no-git-tag-version`，需自行 `git add` / `commit` 版本变更）。
+
+3. **合并到 `master`**  
+   推送合并后的 `master` 会触发 GitHub Actions 工作流 [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml)：安装依赖后执行 **`pnpm run publish`**（即再次 `verify` + `npm publish`）。  
+   需在仓库 **Settings → Secrets → Actions** 中配置 **`NPM_TOKEN`**（npm 侧「Access Tokens」，建议 Automation / 具备发包权限的 granular token）。
+
+4. **手动从 CI 再发一次（可选）**  
+   在 GitHub **Actions → Publish to npm → Run workflow** 可手动运行同一流程（例如在修复密钥后重试）。
+
+### 本地命令（与 CI 中的 `pnpm run publish` 一致）
+
+| 命令 | 作用 |
+|------|------|
+| `pnpm run verify` | 仅检查（类型 / 测试 / 构建） |
+| `pnpm run publish:dry` | 检查 + `npm publish --dry-run`（演练，不上传） |
+| `pnpm run publish:test` | 检查 + 将版本打成 `*-test.*` 预发布号并发布到 **`@test` 标签** |
+| `pnpm run publish` | 检查 + 发布 **latest**（维护者本地发包时用；**请写 `pnpm run publish`**，勿用裸命令 `pnpm publish`，二者不是同一套流程） |
+| `pnpm run version:patch` / `version:minor` / `version:major` | 仅提升 `package.json` 版本号，不发包 |
+
+发测试标签后，安装示例：`npm i himan@test`。
