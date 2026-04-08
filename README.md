@@ -131,7 +131,7 @@ pnpm test
 | `pnpm run release` | 检查 + 发布 **latest**（维护者本地发包时用；**请写 `pnpm run release`**，勿用裸命令 `pnpm publish`，二者不是同一套流程） |
 | `pnpm run version:patch` / `version:minor` / `version:major` | 仅提升 `package.json` 版本号，不发包 |
 
-发测试标签后，安装示例：`npm i himan@test`。
+发测试标签后，安装示例：`npm i @hi-man/himan@test`。
 
 ### CI：合并前校验与合并后打 Git 标签
 
