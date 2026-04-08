@@ -43,19 +43,31 @@ himan publish rule my-rule --patch
 
 ## 常用命令
 
+### 1) source（数据源）
+
+| 命令                          | 说明                                             |
+| ----------------------------- | ------------------------------------------------ |
+| `init <git_url>`              | 初始化默认源（当前为 Git）并写入 `~/.himan/config.json` |
+| `source add <name> <git_url>` | 添加命名 Git 源                                    |
+| `source use <name>`           | 切换默认源                                          |
+| `source list [--json]`        | 查看已配置源（标记当前 default）                     |
+
+### 2) resource（资源）
+
 | 命令                             | 说明                                                                                |
 | -------------------------------- | ----------------------------------------------------------------------------------- |
-| `init <git_url>`                 | 克隆/更新源仓库，写入 `~/.himan/config.json`                                        |
-| `source add <name> <git_url>`    | 添加命名 Git 源                                                                       |
-| `source use <name>`              | 切换默认源                                                                             |
-| `source list [--json]`           | 查看已配置源（标记当前 default）                                                      |
 | `list [type] [--json]`           | 列出当前 default source 的资源；`type` 为 `rule` / `command` / `skill`，默认 `rule` |
 | `history <type> <name> [--json]` | 按 tag 查看版本历史                                                                 |
-| `install [type] [name[@version]]` | 有参数时安装指定资源；**无参数**时按 `himan.lock` 批量安装                         |
-| `dev <type> <name>`                | 切换到开发态并把项目链接指向 `.himan/dev/...`                                      |
-| `uninstall <type> <name>`          | 从项目移除安装链接，并同步删除 `himan.lock` 条目                                   |
 | `create <type> <name>`           | 脚手架；常用选项：`--description`、`--target a,b`、`--dry-run`、`--force`、`--json` |
-| `publish <type> <name>`          | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个）                        |
+
+### 3) project（当前项目）
+
+| 命令                              | 说明                                                      |
+| --------------------------------- | --------------------------------------------------------- |
+| `install [type] [name[@version]]` | 有参数时安装指定资源；**无参数**时按 `himan.lock` 批量安装 |
+| `dev <type> <name>`               | 切换到开发态并把项目链接指向 `.himan/dev/...`              |
+| `uninstall <type> <name>`         | 从项目移除安装链接，并同步删除 `himan.lock` 条目           |
+| `publish <type> <name>`           | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个） |
 
 `publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。需要可推送的 Git 权限。若该资源已在 lock 中，发布后会同步更新 lock 版本。
 

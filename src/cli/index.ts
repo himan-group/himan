@@ -29,6 +29,7 @@ export function buildCli(): Command {
     .name("himan")
     .description("Prompt and agent asset management CLI")
     .version("0.1.0");
+  appendCommandGroupsHelp(program);
 
   program
     .command("init")
@@ -367,6 +368,21 @@ function toCliErrorPayload(error: unknown): CliErrorPayload {
 
 function shouldOutputJsonError(): boolean {
   return process.argv.includes("--json");
+}
+
+function appendCommandGroupsHelp(program: Command): void {
+  program.addHelpText(
+    "after",
+    `
+Command groups:
+  source   Data source management (git now, registry reserved)
+           init, source add, source use, source list
+  resource Source resource discovery and metadata
+           list, history, create
+  project  Resource usage lifecycle in current project
+           install, dev, uninstall, publish
+`,
+  );
 }
 
 function resolveReleaseType(options: {
