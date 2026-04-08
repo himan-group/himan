@@ -1,0 +1,40 @@
+# 合并到 master 前：若 package.json 的 version 对应标签 v{version} 已在远端存在，则失败（用于分支保护拦截 merge）。
+# 标签约定：与 package.json 的 version 一致，前缀 v（例如 1.2.3 → v1.2.3）。
+
+name: PR version tag check
+
+on:
+  pull_request:
+    branches:
+      - master
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: pr-version-tag-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version-tag-available:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Ensure version tag is not already on remote
+        run: |
+          set -euo pipefail
+          VERSION=$(jq -r .version package.json)
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "::error::Could not read version from package.json"
+            exit 1
+          fi
+          TAG="v${VERSION}"
+          if git ls-remote origin "refs/tags/${TAG}" | grep -q .; then
+            echo "::error::Git 远端已存在标签 \`${TAG}\`，与当前 \`package.json\` 中的版本 \`${VERSION}\` 冲突。"
+            echo "::error::请先提升版本号（例如 \`pnpm run version:patch\` / \`version:minor\` / \`version:major\`）并提交后再合并。"
+            exit 1
+          fi
+          echo "Remote tag \`${TAG}\` does not exist — OK to merge (from version-tag perspective)."

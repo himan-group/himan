@@ -1,0 +1,58 @@
+# 合并到 master 后：根据 package.json 的 version 创建并推送 v{version}。
+# 若打标签或推送失败，仅告警，工作流仍成功（不阻断已完成的 merge）。
+
+name: Tag version on master
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: tag-version-master
+  cancel-in-progress: false
+
+jobs:
+  push-version-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create and push version tag
+        run: |
+          set -euo pipefail
+          VERSION=$(jq -r .version package.json)
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "::warning::无法读取 package.json 的 version，跳过打标签。请手动按版本创建标签。"
+            exit 0
+          fi
+          TAG="v${VERSION}"
+          SHA="${GITHUB_SHA}"
+
+          git fetch origin --tags --quiet || true
+
+          if git ls-remote origin "refs/tags/${TAG}" | grep -q .; then
+            echo "::warning::远端已存在标签 \`${TAG}\`，跳过推送。请确认标签是否指向本次合并提交 \`${SHA:0:7}\`。"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if ! git tag -a "$TAG" -m "Release $TAG" "$SHA"; then
+            echo "::warning::创建标签 \`${TAG}\` 失败。merge 已完成，请手动执行:"
+            echo "::warning::  git fetch origin && git tag -a $TAG -m \"Release $TAG\" $SHA && git push origin $TAG"
+            exit 0
+          fi
+
+          if ! git push origin "$TAG"; then
+            echo "::warning::推送标签 \`${TAG}\` 失败（权限、分支策略或网络等）。merge 已完成，请手动推送:"
+            echo "::warning::  git push origin $TAG"
+            exit 0
+          fi
+
+          echo "Pushed tag $TAG at $SHA"

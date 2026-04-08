@@ -111,7 +111,8 @@ pnpm test
 2. **更新 `package.json` 中的 `version`**  
    npm 不允许重复发布同一版本号。合并进 `master` 前，在 PR 里把版本改成 registry 上尚未存在的号。  
    - 手动改 `version` 字段，或  
-   - 在分支上执行其一（只改版本号，**不会**发包）：`pnpm run version:patch` / `version:minor` / `version:major`（使用 `npm version … --no-git-tag-version`，需自行 `git add` / `commit` 版本变更）。
+   - 在分支上执行其一（只改版本号，**不会**发包）：`pnpm run version:patch` / `version:minor` / `version:major`（使用 `npm version … --no-git-tag-version`，需自行 `git add` / `commit` 版本变更）。  
+   Git 标签约定：与 `version` 对应、带前缀 **`v`**（如 `1.2.0` → 标签 `v1.2.0`）。
 
 3. **合并到 `master`**  
    推送合并后的 `master` 会触发 GitHub Actions 工作流 [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml)：安装依赖后执行 **`pnpm run publish`**（即再次 `verify` + `npm publish`）。  
@@ -131,3 +132,14 @@ pnpm test
 | `pnpm run version:patch` / `version:minor` / `version:major` | 仅提升 `package.json` 版本号，不发包 |
 
 发测试标签后，安装示例：`npm i himan@test`。
+
+### CI：合并前校验与合并后打 Git 标签
+
+| 工作流 | 文件 | 说明 |
+|--------|------|------|
+| **PR version tag check** | [`.github/workflows/pr-master-version-tag.yml`](.github/workflows/pr-master-version-tag.yml) | 目标分支为 `master` 的 PR：读取 **PR 头提交**上的 `package.json` 的 `version`，若远端已存在同名标签 **`v{version}`**，则 **检查失败**（用于在合并前拦截重复版本）。 |
+| **Tag version on master** | [`.github/workflows/push-master-version-tag.yml`](.github/workflows/push-master-version-tag.yml) | 向 `master` **推送**后（含合并 PR）：在 **当前推送提交**上创建并推送注释标签 **`v{version}`**。若标签已存在、创建或 `git push` 失败，仅输出 **告警**（`::warning::`），**工作流仍成功**，不撤销已发生的 merge；请按日志提示在本机补打标签并 `git push origin v{x.y.z}`。 |
+
+**启用「合并前拦截」**：在 GitHub **Settings → Branches** 中为 `master` 配置分支保护，勾选 **Require status checks to pass before merging**，并勾选必选检查 **`PR version tag check / version-tag-available`**（名称以仓库里 Actions 界面为准）。
+
+说明：来自 fork 的 PR 同样会跑上述 PR 检查；打标签工作流需要 **Actions 对仓库有写权限**（工作流内已设 `contents: write`）。若组织策略禁止 `GITHUB_TOKEN` 写标签，推送标签会失败，需按告警手动推送。
