@@ -1,0 +1,46 @@
+{
+  "name": "himan",
+  "version": "0.1.0",
+  "description": "Prompt and agent asset management CLI",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.32.1",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "himan": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "pnpm run typecheck && pnpm run test && pnpm run build",
+    "publish": "pnpm run verify && npm publish",
+    "publish:dry": "pnpm run verify && npm publish --dry-run",
+    "publish:test": "pnpm run verify && npm version prerelease --preid test --no-git-tag-version && npm publish --tag test",
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version"
+  },
+  "dependencies": {
+    "commander": "^14.0.3",
+    "semver": "^7.7.4",
+    "simple-git": "^3.33.0",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.0",
+    "@types/semver": "^7.7.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.2"
+  }
+}

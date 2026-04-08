@@ -1,0 +1,26 @@
+export class HimanError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "HimanError";
+  }
+}
+
+export const errorCodes = {
+  CONFIG_NOT_FOUND: "E_CONFIG_NOT_FOUND",
+  NOT_IMPLEMENTED: "E_NOT_IMPLEMENTED",
+  INVALID_INPUT: "E_INVALID_INPUT",
+  RESOURCE_NOT_FOUND: "E_RESOURCE_NOT_FOUND",
+  VERSION_NOT_FOUND: "E_VERSION_NOT_FOUND",
+  INSTALL_NOT_FOUND: "E_INSTALL_NOT_FOUND",
+  LOCK_NOT_FOUND: "E_LOCK_NOT_FOUND",
+  LOCK_INVALID: "E_LOCK_INVALID",
+  CLI_USAGE: "E_CLI_USAGE",
+  RESOURCE_EXISTS: "E_RESOURCE_EXISTS",
+  TEMPLATE_NOT_FOUND: "E_TEMPLATE_NOT_FOUND",
+  INVALID_RESOURCE_NAME: "E_INVALID_RESOURCE_NAME",
+  UNSUPPORTED_RESOURCE_TYPE: "E_UNSUPPORTED_RESOURCE_TYPE",
+} as const;
