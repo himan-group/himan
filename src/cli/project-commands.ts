@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import type { ResourceType } from "../domain/resource.js";
 import type { ServiceFactory } from "../services/index.js";
+import { HimanError, errorCodes } from "../utils/errors.js";
 import { runAction } from "./shared.js";
 
 export function registerProjectCommands(command: Command, services: ServiceFactory): void {
@@ -24,7 +25,8 @@ export function registerProjectCommands(command: Command, services: ServiceFacto
         }
 
         if (!type || !nameVersion) {
-          throw new Error(
+          throw new HimanError(
+            errorCodes.CLI_USAGE,
             "Install usage:\n"
               + "  - himan install  # install from himan.lock\n"
               + "  - himan install <type> <name[@version]>  # install single resource",
@@ -106,7 +108,10 @@ export function registerProjectCommands(command: Command, services: ServiceFacto
 
 function ensureResourceType(type: string): ResourceType {
   if (type !== "rule" && type !== "command" && type !== "skill") {
-    throw new Error(`Unsupported resource type: ${type}`);
+    throw new HimanError(
+      errorCodes.UNSUPPORTED_RESOURCE_TYPE,
+      `Unsupported resource type: ${type}`,
+    );
   }
   return type;
 }
@@ -129,7 +134,10 @@ function resolveReleaseType(options: {
   ].filter(Boolean) as Array<"patch" | "minor" | "major">;
 
   if (selected.length > 1) {
-    throw new Error("Use only one of --patch, --minor or --major.");
+    throw new HimanError(
+      errorCodes.CLI_USAGE,
+      "Use only one of --patch, --minor or --major.",
+    );
   }
   return selected[0] ?? "patch";
 }

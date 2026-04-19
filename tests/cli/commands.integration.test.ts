@@ -150,6 +150,36 @@ describe("CLI commands with external git source", () => {
     expect(payload.error.details?.commanderCode).toBe("commander.missingArgument");
   });
 
+  it("returns unsupported resource type code for invalid type", () => {
+    const result = runCli(["list", "unknown-type", "--json"], projectDir, homeDir);
+    expect(result.status).toBe(1);
+    const payload = JSON.parse(result.stderr) as {
+      ok: boolean;
+      error: { code: string; message: string };
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.error.code).toBe("E_UNSUPPORTED_RESOURCE_TYPE");
+    expect(payload.error.message).toContain("Unsupported resource type");
+  });
+
+  it("returns cli usage code when publish release options conflict", () => {
+    const result = runCli(
+      ["publish", "rule", "code-review", "--patch", "--minor"],
+      projectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("[E_CLI_USAGE]");
+    expect(result.stderr).toContain("Use only one of --patch, --minor or --major");
+  });
+
+  it("returns cli usage code for incomplete install arguments", () => {
+    const result = runCli(["install", "rule"], projectDir, homeDir);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("[E_CLI_USAGE]");
+    expect(result.stderr).toContain("Install usage");
+  });
+
   it("creates local index cache when listing resources", async () => {
     const listResult = runCli(["list", "rule", "--json"], projectDir, homeDir);
     expect(listResult.status).toBe(0);

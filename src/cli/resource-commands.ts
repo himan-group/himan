@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import type { ResourceType } from "../domain/resource.js";
 import type { ServiceFactory } from "../services/index.js";
+import { HimanError, errorCodes } from "../utils/errors.js";
 import { runAction } from "./shared.js";
 
 export function registerResourceCommands(command: Command, services: ServiceFactory): void {
@@ -118,7 +119,10 @@ export function registerResourceCommands(command: Command, services: ServiceFact
 
 function ensureResourceType(type: string): ResourceType {
   if (type !== "rule" && type !== "command" && type !== "skill") {
-    throw new Error(`Unsupported resource type: ${type}`);
+    throw new HimanError(
+      errorCodes.UNSUPPORTED_RESOURCE_TYPE,
+      `Unsupported resource type: ${type}`,
+    );
   }
   return type;
 }
