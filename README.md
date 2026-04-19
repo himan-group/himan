@@ -13,7 +13,13 @@ pnpm run build
 
 - 已全局安装本包：`himan <子命令>`
 - 本地开发：`pnpm run dev -- <子命令>`
-- 或直接：`node dist/index.js <子命令>`
+- 或直接：`node dist/bin/himan.js <子命令>`
+
+也支持两个独立入口：
+
+- `himan-source <子命令>`（source 相关）
+- `himan-resource <子命令>`（resource/project 相关）
+- `himan-project <子命令>`（project 相关）
 
 下文用 `himan` 代指上述入口。
 
@@ -51,6 +57,14 @@ himan publish rule my-rule --patch
 | `source add <name> <git_url>` | 添加命名 Git 源                                    |
 | `source use <name>`           | 切换默认源                                          |
 | `source list [--json]`        | 查看已配置源（标记当前 default）                     |
+| `source init <git_url>`       | 与 `init` 等价，便于统一走 `himan source ...` 入口     |
+
+等价独立命令：
+
+- `himan-source init <git_url>`
+- `himan-source add <name> <git_url>`
+- `himan-source use <name>`
+- `himan-source list [--json]`
 
 ### 2) resource（资源）
 
@@ -68,6 +82,13 @@ himan publish rule my-rule --patch
 | `dev <type> <name>`               | 切换到开发态并把项目链接指向 `.himan/dev/...`              |
 | `uninstall <type> <name>`         | 从项目移除安装链接，并同步删除 `himan.lock` 条目           |
 | `publish <type> <name>`           | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个） |
+
+也可使用分组命令（与上面等价）：
+
+- `himan resource list|history|create ...`
+- `himan-resource list|history|create ...`（兼容保留：也可执行 install/dev/uninstall/publish）
+- `himan project install|dev|uninstall|publish ...`
+- `himan-project install|dev|uninstall|publish ...`
 
 `publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。需要可推送的 Git 权限。若该资源已在 lock 中，发布后会同步更新 lock 版本。
 

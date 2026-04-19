@@ -20,7 +20,7 @@ beforeAll(async () => {
   homeDir = path.join(tmpRoot, "home");
   projectDir = path.join(tmpRoot, "project");
   repoDir = path.join(homeDir, ".himan", "repos", toRepoId(TEST_REPO));
-  cliEntry = path.join(process.cwd(), "dist", "index.js");
+  cliEntry = path.join(process.cwd(), "dist", "bin", "himan.js");
   mockedRemoteDir = path.join(tmpRoot, "mocked-remote.git");
   seedRepoDir = path.join(tmpRoot, "seed-remote");
 

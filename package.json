@@ -23,11 +23,14 @@
     "registry": "https://registry.npmjs.org/"
   },
   "bin": {
-    "himan": "dist/index.js"
+    "himan": "dist/bin/himan.js",
+    "himan-source": "dist/bin/himan-source.js",
+    "himan-resource": "dist/bin/himan-resource.js",
+    "himan-project": "dist/bin/himan-project.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/index.ts",
+    "dev": "tsx src/bin/himan.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
