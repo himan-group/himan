@@ -17,9 +17,15 @@ import type { SourceState } from "../state/state-store.js";
 import { PathResolver } from "../utils/path-resolver.js";
 import { toRepoId } from "../utils/repo-id.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
+import {
+  getProjectResourcePaths,
+  getSupportedAgentNames,
+  normalizeAgents,
+} from "../utils/agent-targets.js";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { VersionResolver } from "../adapters/version/version-resolver.js";
+import YAML from "yaml";
 
 export class ServiceFactory {
   private readonly stateStore = new StateStore();
@@ -122,9 +128,14 @@ export class ServiceFactory {
     }));
   }
 
-  async list(type: ResourceType): Promise<ResourceMeta[]> {
+  async list(type: ResourceType, agents?: string[]): Promise<ResourceMeta[]> {
     const source = await this.loadSourceFromConfig();
-    return source.list(type);
+    const resources = await source.list(type);
+    if (!agents?.length) return resources;
+    const selected = normalizeAgents(agents);
+    return resources.filter((resource) =>
+      normalizeAgents(resource.agents).some((agent) => selected.includes(agent)),
+    );
   }
 
   async history(type: ResourceType, name: string): Promise<VersionInfo[]> {
@@ -137,6 +148,7 @@ export class ServiceFactory {
     name: string,
     version: string | undefined,
     projectDir: string,
+    agents?: string[],
   ): Promise<{ type: ResourceType; name: string; version: string; linkPath: string }> {
     const source = await this.loadSourceFromConfig();
     const sourceInfo = await this.getLockSourceInfo();
@@ -150,18 +162,25 @@ export class ServiceFactory {
 
     const resolvedVersion = this.resolveVersion(history, version);
     const storePath = this.getStorePath(type, name, resolvedVersion);
-    const linkPath = this.getProjectResourcePath(projectDir, type, name);
     if (!(await this.exists(storePath))) {
       await source.pull(type, name, resolvedVersion, storePath);
     }
-    await this.switchSymlink(storePath, linkPath);
+    const resourceMeta = await this.readResourceMetaFromDir(storePath);
+    const effectiveTargets = agents?.length
+      ? normalizeAgents(agents)
+      : normalizeAgents(resourceMeta?.agents);
+    const linkPaths = getProjectResourcePaths(projectDir, type, name, effectiveTargets);
+    for (const linkPath of linkPaths) {
+      await this.switchSymlink(storePath, linkPath);
+    }
     await this.lockStore.upsertResource(projectDir, sourceInfo, {
       type,
       name,
       version: resolvedVersion,
+      agents: effectiveTargets,
     });
 
-    return { type, name, version: resolvedVersion, linkPath };
+    return { type, name, version: resolvedVersion, linkPath: linkPaths[0] };
   }
 
   async dev(
@@ -169,15 +188,17 @@ export class ServiceFactory {
     name: string,
     projectDir: string,
   ): Promise<{ type: ResourceType; name: string; devPath: string; linkPath: string }> {
-    const linkPath = this.getProjectResourcePath(projectDir, type, name);
-    const installedPath = await this.readInstalledPath(linkPath);
+    const installInfo = await this.resolveInstalledResource(projectDir, type, name);
+    const installedPath = installInfo.installedPath;
     const devPath = this.getProjectDevPath(projectDir, type, name);
     if (!(await this.exists(devPath))) {
       await fs.mkdir(path.dirname(devPath), { recursive: true });
       await fs.cp(installedPath, devPath, { recursive: true });
     }
-    await this.switchSymlink(devPath, linkPath);
-    return { type, name, devPath, linkPath };
+    for (const linkPath of installInfo.linkPaths) {
+      await this.switchSymlink(devPath, linkPath);
+    }
+    return { type, name, devPath, linkPath: installInfo.linkPaths[0] };
   }
 
   async uninstall(
@@ -185,17 +206,19 @@ export class ServiceFactory {
     name: string,
     projectDir: string,
   ): Promise<{ type: ResourceType; name: string; linkPath: string }> {
-    const linkPath = this.getProjectResourcePath(projectDir, type, name);
-    if (!(await this.exists(linkPath))) {
+    const installInfo = await this.resolveInstalledResource(projectDir, type, name);
+    if (installInfo.linkPaths.length === 0) {
       throw new HimanError(
         errorCodes.INSTALL_NOT_FOUND,
-        `Installed resource link not found: ${linkPath}.`,
+        `Installed resource link not found for ${type}/${name}.`,
       );
     }
 
-    await fs.rm(linkPath, { recursive: true, force: true });
+    for (const linkPath of installInfo.linkPaths) {
+      await fs.rm(linkPath, { recursive: true, force: true });
+    }
     await this.lockStore.removeResource(projectDir, { type, name });
-    return { type, name, linkPath };
+    return { type, name, linkPath: installInfo.linkPaths[0] };
   }
 
   async publish(
@@ -218,17 +241,25 @@ export class ServiceFactory {
     if (!(await this.exists(storePath))) {
       await source.pull(type, name, nextVersion, storePath);
     }
-    const linkPath = this.getProjectResourcePath(projectDir, type, name);
-    if (await this.exists(linkPath)) {
-      await this.switchSymlink(storePath, linkPath);
+    const agentsFromMeta = normalizeAgents((await this.readResourceMetaFromDir(storePath))?.agents);
+    const linkPaths = getProjectResourcePaths(projectDir, type, name, agentsFromMeta);
+    for (const linkPath of linkPaths) {
+      if (await this.exists(linkPath)) {
+        await this.switchSymlink(storePath, linkPath);
+      }
     }
 
     if (await this.isResourceLocked(projectDir, type, name)) {
       const sourceInfo = await this.getLockSourceInfo();
+      const locked = await this.getLockedResource(projectDir, type, name);
+      const nextAgents = locked?.agents?.length
+        ? normalizeAgents(locked.agents)
+        : agentsFromMeta;
       await this.lockStore.upsertResource(projectDir, sourceInfo, {
         type,
         name,
         version: nextVersion,
+        agents: nextAgents,
       });
     }
 
@@ -244,7 +275,7 @@ export class ServiceFactory {
     const source = await this.loadSourceFromConfig();
     return source.create(type, name, {
       description: options.description,
-      targets: options.targets,
+      agents: options.agents,
       entry: options.entry,
       template: options.template ?? "basic",
       force: options.force,
@@ -252,7 +283,7 @@ export class ServiceFactory {
     });
   }
 
-  async installFromLock(projectDir: string): Promise<
+  async installFromLock(projectDir: string, agents?: string[]): Promise<
     Array<{ type: ResourceType; name: string; version: string; linkPath: string }>
   > {
     const { lock, state } = await this.lockStore.loadWithState(projectDir);
@@ -282,7 +313,7 @@ export class ServiceFactory {
       linkPath: string;
     }> = [];
     for (const item of lock.resources) {
-      const result = await this.install(item.type, item.name, item.version, projectDir);
+      const result = await this.install(item.type, item.name, item.version, projectDir, agents);
       results.push(result);
     }
     return results;
@@ -337,9 +368,14 @@ export class ServiceFactory {
     type: ResourceType,
     name: string,
   ): Promise<boolean> {
+    const item = await this.getLockedResource(projectDir, type, name);
+    return Boolean(item);
+  }
+
+  private async getLockedResource(projectDir: string, type: ResourceType, name: string) {
     const lock = await this.lockStore.load(projectDir);
-    if (!lock) return false;
-    return lock.resources.some((item) => item.type === type && item.name === name);
+    if (!lock) return undefined;
+    return lock.resources.find((item) => item.type === type && item.name === name);
   }
 
   private buildSourceConfig(
@@ -382,16 +418,6 @@ export class ServiceFactory {
     return path.join(this.paths.getStoreDir(), type, name, version);
   }
 
-  private getProjectResourcePath(
-    projectDir: string,
-    type: ResourceType,
-    name: string,
-  ): string {
-    if (type === "rule") return path.join(projectDir, ".cursor", "rules", name);
-    if (type === "command") return path.join(projectDir, ".cursor", "commands", name);
-    return path.join(projectDir, ".cursor", "skills", name);
-  }
-
   private getProjectDevPath(projectDir: string, type: ResourceType, name: string): string {
     return path.join(projectDir, ".himan", "dev", type, name);
   }
@@ -402,14 +428,60 @@ export class ServiceFactory {
     await fs.symlink(targetPath, linkPath, "dir");
   }
 
-  private async readInstalledPath(linkPath: string): Promise<string> {
-    if (!(await this.exists(linkPath))) {
+  private async resolveInstalledResource(
+    projectDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<{ installedPath: string; linkPaths: string[]; agents: string[] }> {
+    const locked = await this.getLockedResource(projectDir, type, name);
+    const lockedTargets = normalizeAgents(locked?.agents);
+    const expectedFromLock = getProjectResourcePaths(projectDir, type, name, lockedTargets);
+    const existingFromLock: string[] = [];
+    for (const candidate of expectedFromLock) {
+      if (await this.exists(candidate)) existingFromLock.push(candidate);
+    }
+    if (existingFromLock.length > 0) {
+      const installedPath = await fs.realpath(existingFromLock[0]);
+      return {
+        installedPath,
+        agents: lockedTargets,
+        linkPaths: getProjectResourcePaths(projectDir, type, name, lockedTargets),
+      };
+    }
+
+    const allCandidatePaths = getSupportedAgentNames().flatMap((agent) =>
+      getProjectResourcePaths(projectDir, type, name, [agent]),
+    );
+    const existingPaths: string[] = [];
+    for (const candidate of allCandidatePaths) {
+      if (await this.exists(candidate)) existingPaths.push(candidate);
+    }
+    if (existingPaths.length === 0) {
       throw new HimanError(
         errorCodes.INSTALL_NOT_FOUND,
-        `Installed resource link not found: ${linkPath}. Run install first.`,
+        `Installed resource link not found for ${type}/${name}. Run install first.`,
       );
     }
-    return fs.realpath(linkPath);
+
+    const installedPath = await fs.realpath(existingPaths[0]);
+    const resourceMeta = await this.readResourceMetaFromDir(installedPath);
+    const agentsFromMeta = normalizeAgents(resourceMeta?.agents);
+    return {
+      installedPath,
+      agents: agentsFromMeta,
+      linkPaths: getProjectResourcePaths(projectDir, type, name, agentsFromMeta),
+    };
+  }
+
+  private async readResourceMetaFromDir(
+    resourceDir: string,
+  ): Promise<{ agents?: string[] } | null> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (!(await this.exists(yamlPath))) return null;
+    const raw = await fs.readFile(yamlPath, "utf8");
+    const parsed = (YAML.parse(raw) as { agents?: string[]; targets?: string[] } | null) ?? null;
+    if (!parsed) return null;
+    return { agents: parsed.agents ?? parsed.targets };
   }
 
   private async exists(targetPath: string): Promise<boolean> {

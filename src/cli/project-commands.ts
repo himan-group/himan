@@ -2,6 +2,7 @@ import type { Command } from "commander";
 import type { ResourceType } from "../domain/resource.js";
 import type { ServiceFactory } from "../services/index.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
+import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-targets.js";
 import { runAction } from "./shared.js";
 
 export function registerProjectCommands(command: Command, services: ServiceFactory): void {
@@ -9,11 +10,18 @@ export function registerProjectCommands(command: Command, services: ServiceFacto
     .command("install")
     .argument("[type]", "resource type")
     .argument("[name[@version]]", "resource name with optional @version")
+    .option("--agent <list>", "install target agents, comma separated")
     .description("Install resource, or install from himan.lock")
-    .action(async (type?: string, nameVersion?: string) => {
+    .action(
+      async (
+        type: string | undefined,
+        nameVersion: string | undefined,
+        options: { agent?: string },
+      ) => {
       await runAction(async () => {
+        const agents = parseAgents(options.agent);
         if (!type && !nameVersion) {
-          const results = await services.installFromLock(process.cwd());
+          const results = await services.installFromLock(process.cwd(), agents);
           if (results.length === 0) {
             process.stdout.write("No resources in lock file.\n");
             return;
@@ -40,12 +48,14 @@ export function registerProjectCommands(command: Command, services: ServiceFacto
           name,
           version,
           process.cwd(),
+          agents,
         );
         process.stdout.write(
           `Installed ${result.type}/${result.name}@${result.version}\n`,
         );
       });
-    });
+      },
+    );
 
   command
     .command("dev")
@@ -140,4 +150,24 @@ function resolveReleaseType(options: {
     );
   }
   return selected[0] ?? "patch";
+}
+
+function parseAgents(input?: string): string[] | undefined {
+  if (!input) return undefined;
+  const agents = input
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (agents.length === 0) return undefined;
+
+  const supported = getSupportedAgentNames();
+  for (const agent of agents) {
+    if (!normalizeAgent(agent)) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Unsupported agent: ${agent}. Supported agents: ${supported.join(", ")}`,
+      );
+    }
+  }
+  return agents;
 }

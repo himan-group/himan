@@ -112,7 +112,7 @@ v1.0 仍以 Git 为主。在多源层面，当前已落地基础能力：
 v1.0 在 MVP 基础上扩展 `himan.yaml` 字段治理：
 
 - 必填：`name`、`type`、`version`、`entry`
-- 推荐：`description`、`targets`、`tags`
+- 推荐：`description`、`agents`、`tags`
 - 校验分层：
   1. 读取时最小校验（不中断全量扫描）
   2. 发布前严格校验（阻断不合法发布）

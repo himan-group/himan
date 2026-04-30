@@ -35,10 +35,11 @@ himan publish rule my-rule --patch
 ```
 
 - **rule / command / skill**：都支持 `create`、`list`、`history`、`install`、`dev`、`publish`、`uninstall`。
-- 安装后项目链接位置：
-  - `rule` -> `.cursor/rules/<name>`
-  - `command` -> `.cursor/commands/<name>`
-  - `skill` -> `.cursor/skills/<name>`
+- 安装后项目链接位置（按 `agents`，默认 `cursor`）：
+  - `cursor` -> `.cursor/{rules|commands|skills}/<name>`
+  - `claude-code` -> `.claude/{rules|commands|skills}/<name>`
+  - `codex` -> `.codex/{rules|commands|skills}/<name>`
+  - `openclaw` -> `.openclaw/{rules|commands|skills}/<name>`
 - 开发态目录：
   - `rule` -> `.himan/dev/rule/<name>`
   - `command` -> `.himan/dev/command/<name>`
@@ -70,15 +71,15 @@ himan publish rule my-rule --patch
 
 | 命令                             | 说明                                                                                |
 | -------------------------------- | ----------------------------------------------------------------------------------- |
-| `list [type] [--json]`           | 列出当前 default source 的资源；`type` 为 `rule` / `command` / `skill`，默认 `rule` |
+| `list [type] [--agent a,b] [--json]` | 列出当前 default source 的资源；可按 agent 过滤；`type` 默认 `rule` |
 | `history <type> <name> [--json]` | 按 tag 查看版本历史                                                                 |
-| `create <type> <name>`           | 脚手架；常用选项：`--description`、`--target a,b`、`--dry-run`、`--force`、`--json` |
+| `create <type> <name>`           | 脚手架；常用选项：`--description`、`--agent a,b`、`--dry-run`、`--force`、`--json` |
 
 ### 3) project（当前项目）
 
 | 命令                              | 说明                                                      |
 | --------------------------------- | --------------------------------------------------------- |
-| `install [type] [name[@version]]` | 有参数时安装指定资源；**无参数**时按 `himan.lock` 批量安装 |
+| `install [type] [name[@version]] [--agent a,b]` | 有参数时安装指定资源；**无参数**时按 `himan.lock` 批量安装；可覆盖安装目标 agent |
 | `dev <type> <name>`               | 切换到开发态并把项目链接指向 `.himan/dev/...`              |
 | `uninstall <type> <name>`         | 从项目移除安装链接，并同步删除 `himan.lock` 条目           |
 | `publish <type> <name>`           | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个） |
@@ -89,6 +90,8 @@ himan publish rule my-rule --patch
 - `himan-resource list|history|create ...`（兼容保留：也可执行 install/dev/uninstall/publish）
 - `himan project install|dev|uninstall|publish ...`
 - `himan-project install|dev|uninstall|publish ...`
+
+说明：资源与项目相关命令统一使用 `--agent` 指定目标 Agent。
 
 `publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。需要可推送的 Git 权限。若该资源已在 lock 中，发布后会同步更新 lock 版本。
 

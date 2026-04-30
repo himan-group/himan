@@ -2,18 +2,20 @@ import type { Command } from "commander";
 import type { ResourceType } from "../domain/resource.js";
 import type { ServiceFactory } from "../services/index.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
+import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-targets.js";
 import { runAction } from "./shared.js";
 
 export function registerResourceCommands(command: Command, services: ServiceFactory): void {
   command
     .command("list")
     .argument("[type]", "resource type", "rule")
+    .option("--agent <list>", "agent list filter, comma separated")
     .option("--json", "output json format")
     .description("List resources from current default source")
-    .action(async (type: string, options: { json?: boolean }) => {
+    .action(async (type: string, options: { json?: boolean; agent?: string }) => {
       await runAction(async () => {
         const resourceType = ensureResourceType(type);
-        const resources = await services.list(resourceType);
+        const resources = await services.list(resourceType, parseAgents(options.agent));
         if (options.json) {
           process.stdout.write(`${JSON.stringify(resources, null, 2)}\n`);
           return;
@@ -72,7 +74,7 @@ export function registerResourceCommands(command: Command, services: ServiceFact
     .argument("<type>", "resource type")
     .argument("<name>", "resource name")
     .option("--description <text>", "resource description")
-    .option("--target <list>", "targets list, comma separated")
+    .option("--agent <list>", "agent list, comma separated")
     .option("--entry <file>", "entry file name")
     .option("--template <name>", "template name", "basic")
     .option("--force", "overwrite existing resource")
@@ -85,7 +87,7 @@ export function registerResourceCommands(command: Command, services: ServiceFact
         name: string,
         options: {
           description?: string;
-          target?: string;
+          agent?: string;
           entry?: string;
           template?: string;
           force?: boolean;
@@ -97,7 +99,7 @@ export function registerResourceCommands(command: Command, services: ServiceFact
           const resourceType = ensureResourceType(type);
           const result = await services.create(resourceType, name, {
             description: options.description,
-            targets: parseTargets(options.target),
+            agents: parseAgents(options.agent),
             entry: options.entry,
             template: options.template,
             force: options.force,
@@ -127,10 +129,22 @@ function ensureResourceType(type: string): ResourceType {
   return type;
 }
 
-function parseTargets(input?: string): string[] | undefined {
+function parseAgents(input?: string): string[] | undefined {
   if (!input) return undefined;
-  return input
+  const agents = input
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+  if (agents.length === 0) return undefined;
+
+  const supported = getSupportedAgentNames();
+  for (const agent of agents) {
+    if (!normalizeAgent(agent)) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Unsupported agent: ${agent}. Supported agents: ${supported.join(", ")}`,
+      );
+    }
+  }
+  return agents;
 }

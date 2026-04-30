@@ -12,6 +12,7 @@ export interface LockResourceEntry {
   type: ResourceType;
   name: string;
   version: string;
+  agents?: string[];
   updatedAt: string;
 }
 
@@ -55,7 +56,7 @@ export class ProjectLockStore {
   async upsertResource(
     projectDir: string,
     source: LockSourceInfo,
-    resource: { type: ResourceType; name: string; version: string },
+    resource: { type: ResourceType; name: string; version: string; agents?: string[] },
   ): Promise<void> {
     const now = new Date().toISOString();
     const existing = await this.load(projectDir);
@@ -74,12 +75,14 @@ export class ProjectLockStore {
     );
     if (found) {
       found.version = resource.version;
+      found.agents = resource.agents;
       found.updatedAt = now;
     } else {
       lock.resources.push({
         type: resource.type,
         name: resource.name,
         version: resource.version,
+        agents: resource.agents,
         updatedAt: now,
       });
     }

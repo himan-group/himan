@@ -24,7 +24,7 @@ describe("ResourceScanner", () => {
         "type: rule",
         "entry: content.md",
         "description: enforce standards",
-        "targets:",
+        "agents:",
         "  - cursor",
       ].join("\n"),
       "utf8",
@@ -39,7 +39,7 @@ describe("ResourceScanner", () => {
         type: "rule",
         entry: "content.md",
         description: "enforce standards",
-        targets: ["cursor"],
+        agents: ["cursor"],
       },
     ]);
   });
@@ -106,7 +106,7 @@ describe("ResourceScanner", () => {
         type: "command",
         entry: "content.md",
         description: "sync docs",
-        targets: undefined,
+        agents: [],
       },
     ]);
     expect(skills).toEqual([
@@ -115,7 +115,7 @@ describe("ResourceScanner", () => {
         type: "skill",
         entry: "SKILL.md",
         description: "check project risks",
-        targets: undefined,
+        agents: [],
       },
     ]);
   });

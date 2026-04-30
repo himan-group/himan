@@ -25,7 +25,7 @@ himan create <type> <name> [options]
 **常用选项：**
 
 - `--description`：描述
-- `--target`：目标平台，逗号分隔；未指定时默认包含 `cursor`
+- `--agent`：目标 Agent，逗号分隔；未指定时默认包含 `cursor`
 - `--entry`：入口文件名（各类型有默认值）
 - `--template`：模板名；MVP 仅内置 **basic**，其它名称会报错
 - `--force`：目录已存在时覆盖
@@ -64,12 +64,12 @@ type: rule
 version: 0.1.0
 entry: content.md
 description: enforce code review standards
-targets:
+agents:
   - cursor
 ```
 
 - `version` 为初始占位；**正式发布版本以 Git Tag 为准**
-- `targets` 来自 `--target`，未传时使用默认列表
+- `agents` 来自 `--agent`，未传时使用默认列表
 
 ---
 
@@ -105,7 +105,7 @@ targets:
 
 ## 7. 测试关注点
 
-- 名称与类型校验、默认 entry/targets、重复创建与 `--force`、`--dry-run` 不写盘、创建后 `list` 可见
+- 名称与类型校验、默认 entry/agents、重复创建与 `--force`、`--dry-run` 不写盘、创建后 `list` 可见
 
 ---
 

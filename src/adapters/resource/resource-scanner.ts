@@ -32,7 +32,9 @@ export class ResourceScanner {
         type,
         entry: parsed.entry,
         description: parsed.description,
-        targets: parsed.targets,
+        agents: Array.isArray((parsed as { agents?: unknown }).agents)
+          ? ((parsed as { agents?: string[] }).agents ?? [])
+          : ((parsed as { targets?: string[] }).targets ?? []),
       });
     }
 
