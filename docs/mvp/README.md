@@ -68,6 +68,14 @@
 - 生成 `rule` / `command` / `skill` 标准目录与 `himan.yaml`、入口模板
 - 与 `publish` 衔接：`create → 编辑 → publish`
 
+### 2.8 `agent`
+
+- `himan agent list` 查看支持的 agent。
+- `himan agent use <agent[,agent]>` 设置当前项目默认 agent；加 `--global` 设置全局默认 agent。
+- `himan agent current` 查看当前项目、全局和最终生效的默认 agent。
+- `himan agent clear` 清除默认 agent 配置；默认清除当前项目，加 `--global` 清除全局配置。
+- 默认 agent 解析顺序：显式 `--agent` > 当前项目配置 > 全局配置 > 资源 metadata > `cursor`。
+
 ---
 
 ## 3. MVP 技术架构
@@ -86,10 +94,11 @@
 **用户目录（如 `~/.himan`）：**
 - `repos/…`：Git 源缓存
 - `store/<type>/<name>/<version>/`：按版本的资源快照
-- `config.json`：当前源类型（git / registry 预留）、仓库地址等
+- `config.json`：当前源类型（git / registry 预留）、仓库地址、全局默认 agent 等
 
 **项目目录：**
 - `.cursor/rules/<name>`：rule 运行态目标（软链或副本）
+- `.himan/config.json`：项目默认 agent 配置
 - `.himan/dev/rule/<name>`：rule 开发态可编辑副本
 
 **源仓库内资源布局：**

@@ -18,6 +18,8 @@ Use `docs/codex/repo-map.md` for the durable project map.
 
 There is no lint script in `package.json`.
 
+Runtime CLI commands include `himan agent list|use|current|clear` for default agent configuration.
+
 ## Architecture
 
 - Keep `src/bin/` entry files thin; they should build a CLI and call the shared runner.
@@ -35,6 +37,7 @@ The package is ESM with `moduleResolution: NodeNext`, so TypeScript source impor
 - Preserve the CLI error pattern: business failures should use `HimanError` with `errorCodes`; command actions should run through `runAction()`.
 - Do not introduce new request layers, state systems, or command frameworks unless the existing architecture changes intentionally.
 - Keep resource type handling aligned with `rule`, `command`, and `skill`.
+- Default agent resolution is project config, then global config, then resource metadata or `cursor`.
 - Treat Registry source behavior as reserved unless the task explicitly implements it.
 
 ## Entry Points And Routing
@@ -46,10 +49,12 @@ The main CLI is built by `buildCli()` and exposes `source`, `resource`, and `pro
 There is no HTTP API. The CLI works with Git and filesystem state:
 
 - `~/.himan/config.json` stores source config.
+- `~/.himan/config.json` can also store global default agents.
 - `~/.himan/repos/` stores cached Git sources.
 - `~/.himan/store/<type>/<name>/<version>/` stores immutable resource snapshots.
 - `~/.himan/index.json` caches scanned source metadata.
 - `<project>/himan.lock` records installed resources.
+- `<project>/.himan/config.json` stores project default agents.
 - `<project>/.himan/dev/<type>/<name>` stores editable dev copies.
 - Installed resources are materialized under `.cursor`, `.claude`, `.codex`, or `.openclaw`; install mode controls whether targets are symlinks or copies.
 

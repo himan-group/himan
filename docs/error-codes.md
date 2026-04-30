@@ -49,7 +49,7 @@
 ### `E_INVALID_INPUT`
 
 - **含义**：输入参数不合法。
-- **常见触发**：source 名称不符合 kebab-case、git source 未提供 repo、install mode 不是 `link|copy` 等。
+- **常见触发**：source 名称不符合 kebab-case、git source 未提供 repo、install mode 不是 `link|copy`、agent 名称不支持等。
 - **建议处理**：按命令帮助修正参数格式。
 
 ### `E_RESOURCE_NOT_FOUND`

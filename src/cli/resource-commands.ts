@@ -97,14 +97,19 @@ export function registerResourceCommands(command: Command, services: ServiceFact
       ) => {
         await runAction(async () => {
           const resourceType = ensureResourceType(type);
-          const result = await services.create(resourceType, name, {
-            description: options.description,
-            agents: parseAgents(options.agent),
-            entry: options.entry,
-            template: options.template,
-            force: options.force,
-            dryRun: options.dryRun,
-          });
+          const result = await services.create(
+            resourceType,
+            name,
+            {
+              description: options.description,
+              agents: parseAgents(options.agent),
+              entry: options.entry,
+              template: options.template,
+              force: options.force,
+              dryRun: options.dryRun,
+            },
+            process.cwd(),
+          );
           if (options.json) {
             process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
             return;

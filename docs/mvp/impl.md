@@ -64,6 +64,13 @@
 - 在缓存仓库中创建 `rules|commands|skills/<name>` 及 `himan.yaml`、入口模板
 - 支持覆盖、试运行、JSON 输出；创建后不自动发布
 
+### 2.8 `agent`
+
+- 命令层支持 `agent list|use|current|clear`
+- 当前项目默认 agent 写入 `.himan/config.json`
+- 全局默认 agent 写入 `~/.himan/config.json`
+- 默认 agent 生效顺序：显式 `--agent` > 当前项目配置 > 全局配置 > 资源 metadata > `cursor`
+
 ---
 
 ## 3. 架构：源适配与编排
@@ -74,7 +81,7 @@
 - **Git** 为当前唯一完整实现
 - **Registry** 为占位：调用即提示未实现，二期对接 API 与下载/上传
 
-编排层负责：解析配置选择源、资源 store 路径、dev 拷贝、项目目标 materialize（软链或复制）；与具体 Git 子命令细节隔离。
+编排层负责：解析配置选择源、默认 agent、资源 store 路径、dev 拷贝、项目目标 materialize（软链或复制）；与具体 Git 子命令细节隔离。
 
 配置中可区分源类型并预留 Registry 所需字段（如 endpoint）；当前 CLI 初始化路径只写入 Git 源。
 

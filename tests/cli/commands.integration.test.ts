@@ -191,6 +191,61 @@ describe("CLI commands with external git source", () => {
     expect(result.stderr).toContain("Install usage");
   });
 
+  it("configures default agents globally and for current project", async () => {
+    const supported = runCli(["agent", "list", "--json"], projectDir, homeDir);
+    expect(supported.status).toBe(0);
+    expect(JSON.parse(supported.stdout)).toEqual([
+      "cursor",
+      "claude-code",
+      "codex",
+      "openclaw",
+    ]);
+
+    const globalUse = runCli(
+      ["agent", "use", "codex", "--global", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(globalUse.status).toBe(0);
+    expect(JSON.parse(globalUse.stdout)).toEqual({
+      scope: "global",
+      agents: ["codex"],
+    });
+
+    const projectUse = runCli(
+      ["agent", "use", "open-claw", "--project"],
+      projectDir,
+      homeDir,
+    );
+    expect(projectUse.status).toBe(0);
+    expect(projectUse.stdout).toContain("Using agents (project): openclaw");
+
+    const current = runCli(["agent", "current", "--json"], projectDir, homeDir);
+    expect(current.status).toBe(0);
+    expect(JSON.parse(current.stdout)).toEqual({
+      global: ["codex"],
+      project: ["openclaw"],
+      effective: ["openclaw"],
+      supported: ["cursor", "claude-code", "codex", "openclaw"],
+    });
+
+    const createResult = runCli(
+      ["create", "rule", "project-default-agent"],
+      projectDir,
+      homeDir,
+    );
+    expect(createResult.status).toBe(0);
+    const meta = await fs.readFile(
+      path.join(repoDir, "rules", "project-default-agent", "himan.yaml"),
+      "utf8",
+    );
+    expect(meta).toContain("agents:");
+    expect(meta).toContain("- openclaw");
+
+    expect(runCli(["agent", "clear", "--project"], projectDir, homeDir).status).toBe(0);
+    expect(runCli(["agent", "clear", "--global"], projectDir, homeDir).status).toBe(0);
+  });
+
   it("creates local index cache when listing resources", async () => {
     const listResult = runCli(["list", "rule", "--json"], projectDir, homeDir);
     expect(listResult.status).toBe(0);
@@ -559,12 +614,11 @@ describe("CLI commands with external git source", () => {
     expect(cursorRules.some((item) => item.name === "code-review")).toBe(true);
   });
 
-  it("supports install override by --agent", async () => {
-    const result = runCli(
-      ["install", "rule", "code-review@1.0.0", "--agent", "codex"],
-      projectDir,
-      homeDir,
-    );
+  it("uses project agent config for install and dev", async () => {
+    const useResult = runCli(["agent", "use", "codex"], projectDir, homeDir);
+    expect(useResult.status).toBe(0);
+
+    const result = runCli(["install", "rule", "code-review@1.0.0"], projectDir, homeDir);
     expect(result.status).toBe(0);
     await expect(
       fs.realpath(path.join(projectDir, ".codex", "rules", "code-review")),
@@ -578,6 +632,7 @@ describe("CLI commands with external git source", () => {
       await fs.realpath(path.join(projectDir, ".himan", "dev", "rule", "code-review")),
     );
 
+    expect(runCli(["agent", "clear", "--project"], projectDir, homeDir).status).toBe(0);
   });
 
   it("writes himan.lock on install and can reproduce installs", async () => {

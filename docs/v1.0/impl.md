@@ -53,6 +53,7 @@
 - **CLI 层**：命令入口、参数校验、输出格式
 - **编排层**：生命周期流程（init/list/history/install/dev/uninstall/publish）
 - **领域层**：资源模型、版本策略、安装目标策略、锁文件模型
+- **配置层**：全局 source/default agent 配置、项目 default agent 配置、lock 状态
 - **适配层**：Git 操作、文件系统、元数据解析、索引读写
 
 设计原则沿用 MVP：

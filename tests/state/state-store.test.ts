@@ -62,6 +62,14 @@ describe("StateStore", () => {
     expect(loaded).toBeNull();
   });
 
+  it("saves and loads agent-only config", async () => {
+    const stateStore = new StateStore();
+    await stateStore.saveConfig({ agents: ["codex"] });
+
+    const loaded = await stateStore.loadConfig();
+    expect(loaded).toEqual({ agents: ["codex"] });
+  });
+
   it("normalizes legacy config with only source", async () => {
     const stateStore = new StateStore();
     const configPath = stateStore.getConfigPath();

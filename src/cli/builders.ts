@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { ServiceFactory } from "../services/index.js";
+import { registerAgentCommands } from "./agent-commands.js";
 import { registerProjectCommands } from "./project-commands.js";
 import { registerResourceCommands } from "./resource-commands.js";
 import { registerInitCommand, registerSourceCommands } from "./source-commands.js";
@@ -28,6 +29,11 @@ export function buildCli(): Command {
     .description("Manage installed resources in current project");
   registerProjectCommands(projectCmd, services);
 
+  const agentCmd = program
+    .command("agent")
+    .description("Manage default agent configuration");
+  registerAgentCommands(agentCmd, services);
+
   // Backward compatible top-level resource lifecycle commands.
   registerResourceCommands(program, services);
   registerProjectCommands(program, services);
@@ -52,6 +58,10 @@ export function buildResourceCli(): Command {
   );
   const services = new ServiceFactory();
   registerResourceCommands(program, services);
+  const agentCmd = program
+    .command("agent")
+    .description("Manage default agent configuration");
+  registerAgentCommands(agentCmd, services);
   // Backward compatible: keep project lifecycle commands in himan-resource.
   registerProjectCommands(program, services);
   return program;
@@ -63,6 +73,10 @@ export function buildProjectCli(): Command {
     "Project lifecycle management CLI",
   );
   const services = new ServiceFactory();
+  const agentCmd = program
+    .command("agent")
+    .description("Manage default agent configuration");
+  registerAgentCommands(agentCmd, services);
   registerProjectCommands(program, services);
   return program;
 }
@@ -79,6 +93,8 @@ Command groups:
   project  Resource usage lifecycle in current project
            install, dev, uninstall, publish,
            project install, project dev, project uninstall, project publish
+  agent    Default agent configuration
+           agent list, agent use, agent current, agent clear
 `,
   );
 }

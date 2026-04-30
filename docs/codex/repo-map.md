@@ -25,6 +25,13 @@ The npm package exposes four binaries:
 
 There is no lint script configured in `package.json`.
 
+Runtime agent configuration commands:
+
+- `himan agent list`
+- `himan agent use <agent[,agent]> [--project|--global]`
+- `himan agent current`
+- `himan agent clear [--project|--global]`
+
 ## Source Layout
 
 - `src/bin/` contains executable entry files and the shared `runCliMain` wrapper.
@@ -35,7 +42,7 @@ There is no lint script configured in `package.json`.
 - `src/adapters/git/` wraps Git operations through `simple-git`.
 - `src/adapters/resource/` scans resource metadata from source repositories.
 - `src/adapters/version/` handles semver selection and bumps.
-- `src/state/` manages global `~/.himan` config/cache and project `himan.lock`.
+- `src/state/` manages global `~/.himan` config/cache, project default config, and project `himan.lock`.
 - `src/utils/` contains path, repo id, agent config, version, and error helpers.
 - `tests/` mirrors major units and includes a CLI integration suite with temporary Git remotes and homes.
 - `docs/` contains product and implementation notes for MVP, v1.0, global source behavior, blueprints, and error codes.
@@ -48,6 +55,7 @@ There is no lint script configured in `package.json`.
 - `source init|add|use|list`
 - `resource list|history|create`
 - `project install|dev|uninstall|publish`
+- `agent list|use|current|clear`
 - Backward-compatible top-level resource/project lifecycle commands
 
 Dedicated binaries call the same builders:
@@ -66,8 +74,10 @@ The project has no HTTP API. It integrates with local Git repositories and files
 - Source repositories are cached under `~/.himan/repos/<repoId>`.
 - Versioned installed resources are stored under `~/.himan/store/<type>/<name>/<version>/`.
 - Source config is stored in `~/.himan/config.json`.
+- Global default agents are stored in `~/.himan/config.json`.
 - Resource list cache is stored in `~/.himan/index.json`.
 - Project lock state is stored in `<project>/himan.lock`.
+- Project default agents are stored in `<project>/.himan/config.json`.
 - Project development copies live under `<project>/.himan/dev/<type>/<name>`.
 - Installed resources are materialized under agent folders such as `.cursor/rules/<name>`, `.codex/skills/<name>`, `.claude/commands/<name>`, and `.openclaw/...`; install mode controls whether each target is a symlink or a copy.
 
@@ -107,6 +117,7 @@ There is no monorepo package sharing. Shared behavior is local to `src/`:
 - Keep bin files thin; command registration belongs in `src/cli/`, orchestration in `src/services/`, and Git/filesystem details in adapters or state stores.
 - Resource types are limited to `rule`, `command`, and `skill`.
 - Supported agent configs are `cursor`, `claude-code`, `codex`, and `openclaw`; aliases and base directories are normalized in `src/utils/agent-configs.ts`.
+- Default agents are configured with `himan agent use`; project config takes precedence over global config.
 - Business errors should use `HimanError` and stable `errorCodes` from `src/utils/errors.ts`.
 - Registry source is reserved and intentionally returns `E_NOT_IMPLEMENTED`.
 - Version bumps use semver through `VersionResolver`.

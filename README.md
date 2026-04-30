@@ -28,6 +28,7 @@ pnpm run build
 ```bash
 himan init https://github.com/your-org/your-himan-registry.git
 himan list rule
+himan agent use codex
 himan install rule my-rule
 himan dev rule my-rule
 # 编辑项目下 .himan/dev/rule/my-rule/
@@ -46,6 +47,7 @@ himan publish rule my-rule --patch
   - `skill` -> `.himan/dev/skill/<name>`
 - lock 文件：`install <type> <name[@version]>` 会写入 `himan.lock`；`himan install`（无参数）会按 lock 批量恢复安装。
 - 安装模式：默认 `--mode link` 使用软链；也可用 `--mode copy` 将资源复制到目标 agent 目录，lock 会记录并复现该模式。
+- 默认 agent：`agent use <agent>` 默认写当前项目 `.himan/config.json`；加 `--global` 写入 `~/.himan/config.json`。当前项目配置优先于全局配置。
 
 版本以 Git tag 为准，格式：`rule/my-rule@1.0.0`。更多设计见 [docs/mvp](./docs/mvp/README.md)。
 
@@ -85,14 +87,25 @@ himan publish rule my-rule --patch
 | `uninstall <type> <name>`         | 从项目移除安装目标，并同步删除 `himan.lock` 条目           |
 | `publish <type> <name>`           | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个） |
 
+### 4) agent（默认 Agent）
+
+| 命令 | 说明 |
+|------|------|
+| `agent list [--json]` | 查看支持的 agent |
+| `agent use <agent[,agent]> [--project\|--global] [--json]` | 设置当前项目或全局默认 agent；默认 `--project` |
+| `agent current [--json]` | 查看当前项目、全局和最终生效的默认 agent |
+| `agent clear [--project\|--global] [--json]` | 清除当前项目或全局默认 agent；默认 `--project` |
+
 也可使用分组命令（与上面等价）：
 
 - `himan resource list|history|create ...`
 - `himan-resource list|history|create ...`（兼容保留：也可执行 install/dev/uninstall/publish）
 - `himan project install|dev|uninstall|publish ...`
 - `himan-project install|dev|uninstall|publish ...`
+- `himan agent list|use|current|clear ...`
 
 说明：资源与项目相关命令统一使用 `--agent` 指定目标 Agent。
+若未显式传 `--agent`，`create` / `install` 会使用当前项目默认 agent、全局默认 agent、资源 metadata 或内置默认 `cursor` 中最合适的一项；`dev` 会优先使用 lock 中记录的 agent。
 
 `publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。需要可推送的 Git 权限。若该资源已在 lock 中，发布后会同步更新 lock 版本。
 
