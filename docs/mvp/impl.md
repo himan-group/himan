@@ -42,13 +42,13 @@
 - 命令层接受 `rule|command|skill`
 - 无版本则取该资源历史中的最新 semver
 - 若本地 store 已有该版本目录则不再从 Git 导出；否则从对应 tag 导出资源树到 store
-- 在项目中创建/更新软链（`rule -> .cursor/rules`、`command -> .cursor/commands`、`skill -> .cursor/skills`），指向 store 中该版本
+- 在项目中创建/更新安装目标（`rule -> .cursor/rules`、`command -> .cursor/commands`、`skill -> .cursor/skills`），默认软链到 store 中该版本，也可通过 `--mode copy` 复制内容
 
 ### 2.5 `dev <type> <name>`
 
-- 命令层接受 `rule|command|skill`；依赖已安装（能解析当前软链目标）
+- 命令层接受 `rule|command|skill`；依赖已安装（能解析当前安装目标）
 - 将当前安装内容复制到 `.himan/dev/<type>/<name>`（目录已存在则默认不覆盖）
-- 软链改为指向 dev 目录
+- 按安装模式将项目目标更新为 dev 目录的软链或副本
 
 ### 2.6 `publish <type> <name>`
 
@@ -56,7 +56,7 @@
 - 下一版本：基于历史最新 tag；无历史则从 `0.0.0` 按 patch/minor/major 递增
 - 将内容同步回缓存仓库中的规范路径，更新元数据中的版本字段，提交、打 tag、推送
 - 将新 tag 对应内容拉取到 store 新版本目录
-- 若当前项目已安装该资源，则同步更新项目内对应类型软链到新版本
+- 若当前项目已安装该资源，则按 lock 中的安装模式同步更新项目内对应类型目标到新版本
 
 ### 2.7 `create <type> <name>`
 
@@ -74,7 +74,7 @@
 - **Git** 为当前唯一完整实现
 - **Registry** 为占位：调用即提示未实现，二期对接 API 与下载/上传
 
-编排层负责：解析配置选择源、资源 store 路径、dev 拷贝、项目软链切换；与具体 Git 子命令细节隔离。
+编排层负责：解析配置选择源、资源 store 路径、dev 拷贝、项目目标 materialize（软链或复制）；与具体 Git 子命令细节隔离。
 
 配置中可区分源类型并预留 Registry 所需字段（如 endpoint）；当前 CLI 初始化路径只写入 Git 源。
 

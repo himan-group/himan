@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { ResourceType } from "../domain/resource.js";
+import type { InstallMode, ResourceType } from "../domain/resource.js";
 
 export interface LockSourceInfo {
   type: "git" | "registry";
@@ -13,6 +13,7 @@ export interface LockResourceEntry {
   name: string;
   version: string;
   agents?: string[];
+  mode?: InstallMode;
   updatedAt: string;
 }
 
@@ -56,7 +57,13 @@ export class ProjectLockStore {
   async upsertResource(
     projectDir: string,
     source: LockSourceInfo,
-    resource: { type: ResourceType; name: string; version: string; agents?: string[] },
+    resource: {
+      type: ResourceType;
+      name: string;
+      version: string;
+      agents?: string[];
+      mode?: InstallMode;
+    },
   ): Promise<void> {
     const now = new Date().toISOString();
     const existing = await this.load(projectDir);
@@ -76,6 +83,7 @@ export class ProjectLockStore {
     if (found) {
       found.version = resource.version;
       found.agents = resource.agents;
+      found.mode = resource.mode;
       found.updatedAt = now;
     } else {
       lock.resources.push({
@@ -83,6 +91,7 @@ export class ProjectLockStore {
         name: resource.name,
         version: resource.version,
         agents: resource.agents,
+        mode: resource.mode,
         updatedAt: now,
       });
     }

@@ -35,7 +35,7 @@ himan publish rule my-rule --patch
 ```
 
 - **rule / command / skill**：都支持 `create`、`list`、`history`、`install`、`dev`、`publish`、`uninstall`。
-- 安装后项目链接位置（按 `agents`，默认 `cursor`）：
+- 安装后项目目标位置（按 `agents`，默认 `cursor`）：
   - `cursor` -> `.cursor/{rules|commands|skills}/<name>`
   - `claude-code` -> `.claude/{rules|commands|skills}/<name>`
   - `codex` -> `.codex/{rules|commands|skills}/<name>`
@@ -45,6 +45,7 @@ himan publish rule my-rule --patch
   - `command` -> `.himan/dev/command/<name>`
   - `skill` -> `.himan/dev/skill/<name>`
 - lock 文件：`install <type> <name[@version]>` 会写入 `himan.lock`；`himan install`（无参数）会按 lock 批量恢复安装。
+- 安装模式：默认 `--mode link` 使用软链；也可用 `--mode copy` 将资源复制到目标 agent 目录，lock 会记录并复现该模式。
 
 版本以 Git tag 为准，格式：`rule/my-rule@1.0.0`。更多设计见 [docs/mvp](./docs/mvp/README.md)。
 
@@ -79,9 +80,9 @@ himan publish rule my-rule --patch
 
 | 命令                              | 说明                                                      |
 | --------------------------------- | --------------------------------------------------------- |
-| `install [type] [name[@version]] [--agent a,b]` | 有参数时安装指定资源；**无参数**时按 `himan.lock` 批量安装；可覆盖安装目标 agent |
-| `dev <type> <name>`               | 切换到开发态并把项目链接指向 `.himan/dev/...`              |
-| `uninstall <type> <name>`         | 从项目移除安装链接，并同步删除 `himan.lock` 条目           |
+| `install [type] [name[@version]] [--agent a,b] [--mode link\|copy]` | 有参数时安装指定资源；**无参数**时按 `himan.lock` 批量安装；可覆盖安装目标 agent 或安装模式 |
+| `dev <type> <name>`               | 切换到开发态，并按安装模式将项目目标指向或复制自 `.himan/dev/...` |
+| `uninstall <type> <name>`         | 从项目移除安装目标，并同步删除 `himan.lock` 条目           |
 | `publish <type> <name>`           | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个） |
 
 也可使用分组命令（与上面等价）：

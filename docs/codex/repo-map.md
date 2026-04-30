@@ -36,7 +36,7 @@ There is no lint script configured in `package.json`.
 - `src/adapters/resource/` scans resource metadata from source repositories.
 - `src/adapters/version/` handles semver selection and bumps.
 - `src/state/` manages global `~/.himan` config/cache and project `himan.lock`.
-- `src/utils/` contains path, repo id, agent target, version, and error helpers.
+- `src/utils/` contains path, repo id, agent config, version, and error helpers.
 - `tests/` mirrors major units and includes a CLI integration suite with temporary Git remotes and homes.
 - `docs/` contains product and implementation notes for MVP, v1.0, global source behavior, blueprints, and error codes.
 
@@ -69,7 +69,7 @@ The project has no HTTP API. It integrates with local Git repositories and files
 - Resource list cache is stored in `~/.himan/index.json`.
 - Project lock state is stored in `<project>/himan.lock`.
 - Project development copies live under `<project>/.himan/dev/<type>/<name>`.
-- Installed agent links point into agent folders such as `.cursor/rules/<name>`, `.codex/skills/<name>`, `.claude/commands/<name>`, and `.openclaw/...`.
+- Installed resources are materialized under agent folders such as `.cursor/rules/<name>`, `.codex/skills/<name>`, `.claude/commands/<name>`, and `.openclaw/...`; install mode controls whether each target is a symlink or a copy.
 
 Resource source layout uses plural type directories in the source repo:
 
@@ -106,7 +106,7 @@ There is no monorepo package sharing. Shared behavior is local to `src/`:
 - Because the package is ESM, source imports include `.js` extensions even when importing `.ts` source files.
 - Keep bin files thin; command registration belongs in `src/cli/`, orchestration in `src/services/`, and Git/filesystem details in adapters or state stores.
 - Resource types are limited to `rule`, `command`, and `skill`.
-- Supported agent targets are `cursor`, `claude-code`, `codex`, and `openclaw`; aliases are normalized in `src/utils/agent-targets.ts`.
+- Supported agent configs are `cursor`, `claude-code`, `codex`, and `openclaw`; aliases and base directories are normalized in `src/utils/agent-configs.ts`.
 - Business errors should use `HimanError` and stable `errorCodes` from `src/utils/errors.ts`.
 - Registry source is reserved and intentionally returns `E_NOT_IMPLEMENTED`.
 - Version bumps use semver through `VersionResolver`.

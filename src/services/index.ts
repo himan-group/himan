@@ -7,6 +7,7 @@ import type {
 import type {
   CreateOptions,
   CreateResult,
+  InstallMode,
   ResourceMeta,
   ResourceType,
   VersionInfo,
@@ -21,7 +22,7 @@ import {
   getProjectResourcePaths,
   getSupportedAgentNames,
   normalizeAgents,
-} from "../utils/agent-targets.js";
+} from "../utils/agent-configs.js";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { VersionResolver } from "../adapters/version/version-resolver.js";
@@ -149,7 +150,14 @@ export class ServiceFactory {
     version: string | undefined,
     projectDir: string,
     agents?: string[],
-  ): Promise<{ type: ResourceType; name: string; version: string; linkPath: string }> {
+    mode: InstallMode = "link",
+  ): Promise<{
+    type: ResourceType;
+    name: string;
+    version: string;
+    linkPath: string;
+    mode: InstallMode;
+  }> {
     const source = await this.loadSourceFromConfig();
     const sourceInfo = await this.getLockSourceInfo();
     const history = await source.history(type, name);
@@ -171,23 +179,30 @@ export class ServiceFactory {
       : normalizeAgents(resourceMeta?.agents);
     const linkPaths = getProjectResourcePaths(projectDir, type, name, effectiveTargets);
     for (const linkPath of linkPaths) {
-      await this.switchSymlink(storePath, linkPath);
+      await this.materializeResource(storePath, linkPath, mode);
     }
     await this.lockStore.upsertResource(projectDir, sourceInfo, {
       type,
       name,
       version: resolvedVersion,
       agents: effectiveTargets,
+      mode,
     });
 
-    return { type, name, version: resolvedVersion, linkPath: linkPaths[0] };
+    return { type, name, version: resolvedVersion, linkPath: linkPaths[0], mode };
   }
 
   async dev(
     type: ResourceType,
     name: string,
     projectDir: string,
-  ): Promise<{ type: ResourceType; name: string; devPath: string; linkPath: string }> {
+  ): Promise<{
+    type: ResourceType;
+    name: string;
+    devPath: string;
+    linkPath: string;
+    mode: InstallMode;
+  }> {
     const installInfo = await this.resolveInstalledResource(projectDir, type, name);
     const installedPath = installInfo.installedPath;
     const devPath = this.getProjectDevPath(projectDir, type, name);
@@ -196,9 +211,15 @@ export class ServiceFactory {
       await fs.cp(installedPath, devPath, { recursive: true });
     }
     for (const linkPath of installInfo.linkPaths) {
-      await this.switchSymlink(devPath, linkPath);
+      await this.materializeResource(devPath, linkPath, installInfo.mode);
     }
-    return { type, name, devPath, linkPath: installInfo.linkPaths[0] };
+    return {
+      type,
+      name,
+      devPath,
+      linkPath: installInfo.linkPaths[0],
+      mode: installInfo.mode,
+    };
   }
 
   async uninstall(
@@ -242,24 +263,26 @@ export class ServiceFactory {
       await source.pull(type, name, nextVersion, storePath);
     }
     const agentsFromMeta = normalizeAgents((await this.readResourceMetaFromDir(storePath))?.agents);
-    const linkPaths = getProjectResourcePaths(projectDir, type, name, agentsFromMeta);
+    const locked = await this.getLockedResource(projectDir, type, name);
+    const nextAgents = locked?.agents?.length
+      ? normalizeAgents(locked.agents)
+      : agentsFromMeta;
+    const installMode = this.resolveInstallMode(locked?.mode);
+    const linkPaths = getProjectResourcePaths(projectDir, type, name, nextAgents);
     for (const linkPath of linkPaths) {
       if (await this.exists(linkPath)) {
-        await this.switchSymlink(storePath, linkPath);
+        await this.materializeResource(storePath, linkPath, installMode);
       }
     }
 
-    if (await this.isResourceLocked(projectDir, type, name)) {
+    if (locked) {
       const sourceInfo = await this.getLockSourceInfo();
-      const locked = await this.getLockedResource(projectDir, type, name);
-      const nextAgents = locked?.agents?.length
-        ? normalizeAgents(locked.agents)
-        : agentsFromMeta;
       await this.lockStore.upsertResource(projectDir, sourceInfo, {
         type,
         name,
         version: nextVersion,
         agents: nextAgents,
+        mode: installMode,
       });
     }
 
@@ -283,8 +306,18 @@ export class ServiceFactory {
     });
   }
 
-  async installFromLock(projectDir: string, agents?: string[]): Promise<
-    Array<{ type: ResourceType; name: string; version: string; linkPath: string }>
+  async installFromLock(
+    projectDir: string,
+    agents?: string[],
+    mode?: InstallMode,
+  ): Promise<
+    Array<{
+      type: ResourceType;
+      name: string;
+      version: string;
+      linkPath: string;
+      mode: InstallMode;
+    }>
   > {
     const { lock, state } = await this.lockStore.loadWithState(projectDir);
     if (state === "missing") {
@@ -311,9 +344,17 @@ export class ServiceFactory {
       name: string;
       version: string;
       linkPath: string;
+      mode: InstallMode;
     }> = [];
     for (const item of lock.resources) {
-      const result = await this.install(item.type, item.name, item.version, projectDir, agents);
+      const result = await this.install(
+        item.type,
+        item.name,
+        item.version,
+        projectDir,
+        agents ?? item.agents,
+        mode ?? this.resolveInstallMode(item.mode),
+      );
       results.push(result);
     }
     return results;
@@ -361,15 +402,6 @@ export class ServiceFactory {
       repo: config.source.repo,
       repoId: config.source.repoId,
     };
-  }
-
-  private async isResourceLocked(
-    projectDir: string,
-    type: ResourceType,
-    name: string,
-  ): Promise<boolean> {
-    const item = await this.getLockedResource(projectDir, type, name);
-    return Boolean(item);
   }
 
   private async getLockedResource(projectDir: string, type: ResourceType, name: string) {
@@ -422,17 +454,34 @@ export class ServiceFactory {
     return path.join(projectDir, ".himan", "dev", type, name);
   }
 
-  private async switchSymlink(targetPath: string, linkPath: string): Promise<void> {
-    await fs.mkdir(path.dirname(linkPath), { recursive: true });
-    await fs.rm(linkPath, { recursive: true, force: true });
-    await fs.symlink(targetPath, linkPath, "dir");
+  private async materializeResource(
+    sourcePath: string,
+    targetPath: string,
+    mode: InstallMode,
+  ): Promise<void> {
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.rm(targetPath, { recursive: true, force: true });
+    if (mode === "copy") {
+      await fs.cp(sourcePath, targetPath, { recursive: true });
+      return;
+    }
+    await fs.symlink(sourcePath, targetPath, "dir");
+  }
+
+  private resolveInstallMode(mode?: string): InstallMode {
+    return mode === "copy" ? "copy" : "link";
   }
 
   private async resolveInstalledResource(
     projectDir: string,
     type: ResourceType,
     name: string,
-  ): Promise<{ installedPath: string; linkPaths: string[]; agents: string[] }> {
+  ): Promise<{
+    installedPath: string;
+    linkPaths: string[];
+    agents: string[];
+    mode: InstallMode;
+  }> {
     const locked = await this.getLockedResource(projectDir, type, name);
     const lockedTargets = normalizeAgents(locked?.agents);
     const expectedFromLock = getProjectResourcePaths(projectDir, type, name, lockedTargets);
@@ -446,6 +495,7 @@ export class ServiceFactory {
         installedPath,
         agents: lockedTargets,
         linkPaths: getProjectResourcePaths(projectDir, type, name, lockedTargets),
+        mode: this.resolveInstallMode(locked?.mode),
       };
     }
 
@@ -470,6 +520,7 @@ export class ServiceFactory {
       installedPath,
       agents: agentsFromMeta,
       linkPaths: getProjectResourcePaths(projectDir, type, name, agentsFromMeta),
+      mode: "link",
     };
   }
 

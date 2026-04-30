@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import type { ResourceType } from "../domain/resource.js";
 import type { ServiceFactory } from "../services/index.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
-import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-targets.js";
+import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-configs.js";
 import { runAction } from "./shared.js";
 
 export function registerResourceCommands(command: Command, services: ServiceFactory): void {

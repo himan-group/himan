@@ -162,6 +162,17 @@ describe("CLI commands with external git source", () => {
     expect(payload.error.message).toContain("Unsupported resource type");
   });
 
+  it("returns invalid input code for unsupported install mode", () => {
+    const result = runCli(
+      ["install", "rule", "code-review@1.0.0", "--mode", "mirror"],
+      projectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("[E_INVALID_INPUT]");
+    expect(result.stderr).toContain("Unsupported install mode");
+  });
+
   it("returns cli usage code when publish release options conflict", () => {
     const result = runCli(
       ["publish", "rule", "code-review", "--patch", "--minor"],
@@ -575,7 +586,13 @@ describe("CLI commands with external git source", () => {
     const lock = JSON.parse(lockRaw) as {
       version: number;
       source: { type: string };
-      resources: Array<{ type: string; name: string; version: string }>;
+      resources: Array<{
+        type: string;
+        name: string;
+        version: string;
+        agents?: string[];
+        mode?: string;
+      }>;
     };
 
     expect(lock.version).toBe(1);
@@ -586,21 +603,29 @@ describe("CLI commands with external git source", () => {
           type: "rule",
           name: "code-review",
           version: "1.0.0",
+          agents: ["codex"],
+          mode: "link",
         }),
         expect.objectContaining({
           type: "command",
           name: "release-note",
           version: "0.1.0",
+          mode: "link",
         }),
         expect.objectContaining({
           type: "skill",
           name: "risk-check",
           version: "0.0.1",
+          mode: "link",
         }),
       ]),
     );
 
     await fs.rm(path.join(projectDir, ".cursor", "rules", "code-review"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.rm(path.join(projectDir, ".codex", "rules", "code-review"), {
       recursive: true,
       force: true,
     });
@@ -620,7 +645,7 @@ describe("CLI commands with external git source", () => {
     expect(result.stdout).toContain("Installed skill/risk-check@0.0.1");
 
     await expect(
-      fs.realpath(path.join(projectDir, ".cursor", "rules", "code-review")),
+      fs.realpath(path.join(projectDir, ".codex", "rules", "code-review")),
     ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"));
     await expect(
       fs.realpath(path.join(projectDir, ".cursor", "commands", "release-note")),
@@ -741,6 +766,45 @@ describe("CLI commands with external git source", () => {
       "rule/code-review@1.0.0",
       "rule/code-review@1.0.1",
     ]);
+  });
+
+  it("supports copy install mode and restores it from lock", async () => {
+    const installResult = runCli(
+      ["install", "skill", "risk-check@0.0.1", "--mode", "copy"],
+      projectDir,
+      homeDir,
+    );
+    expect(installResult.status).toBe(0);
+
+    const skillPath = path.join(projectDir, ".cursor", "skills", "risk-check");
+    const copiedStat = await fs.lstat(skillPath);
+    expect(copiedStat.isSymbolicLink()).toBe(false);
+    await expect(fs.readFile(path.join(skillPath, "SKILL.md"), "utf8")).resolves.toContain(
+      "Skill published from create artifact.",
+    );
+
+    const lockRaw = await fs.readFile(path.join(projectDir, "himan.lock"), "utf8");
+    const lock = JSON.parse(lockRaw) as {
+      resources: Array<{ type: string; name: string; mode?: string }>;
+    };
+    expect(lock.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "skill",
+          name: "risk-check",
+          mode: "copy",
+        }),
+      ]),
+    );
+
+    await fs.rm(skillPath, { recursive: true, force: true });
+
+    const restoreResult = runCli(["install"], projectDir, homeDir);
+    expect(restoreResult.status).toBe(0);
+    expect(restoreResult.stdout).toContain("Installed skill/risk-check@0.0.1");
+
+    const restoredStat = await fs.lstat(skillPath);
+    expect(restoredStat.isSymbolicLink()).toBe(false);
   });
 
   it("uninstalls resource and removes it from lock", async () => {

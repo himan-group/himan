@@ -51,7 +51,7 @@ There is no HTTP API. The CLI works with Git and filesystem state:
 - `~/.himan/index.json` caches scanned source metadata.
 - `<project>/himan.lock` records installed resources.
 - `<project>/.himan/dev/<type>/<name>` stores editable dev copies.
-- Agent links are created under `.cursor`, `.claude`, `.codex`, or `.openclaw`.
+- Installed resources are materialized under `.cursor`, `.claude`, `.codex`, or `.openclaw`; install mode controls whether targets are symlinks or copies.
 
 ## Generated Files
 

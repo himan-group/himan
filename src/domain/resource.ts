@@ -1,4 +1,5 @@
 export type ResourceType = "rule" | "command" | "skill";
+export type InstallMode = "link" | "copy";
 
 export interface ResourceRef {
   type: ResourceType;

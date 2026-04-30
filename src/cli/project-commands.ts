@@ -1,8 +1,8 @@
 import type { Command } from "commander";
-import type { ResourceType } from "../domain/resource.js";
+import type { InstallMode, ResourceType } from "../domain/resource.js";
 import type { ServiceFactory } from "../services/index.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
-import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-targets.js";
+import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-configs.js";
 import { runAction } from "./shared.js";
 
 export function registerProjectCommands(command: Command, services: ServiceFactory): void {
@@ -11,49 +11,52 @@ export function registerProjectCommands(command: Command, services: ServiceFacto
     .argument("[type]", "resource type")
     .argument("[name[@version]]", "resource name with optional @version")
     .option("--agent <list>", "install target agents, comma separated")
+    .option("--mode <mode>", "install mode: link or copy")
     .description("Install resource, or install from himan.lock")
     .action(
       async (
         type: string | undefined,
         nameVersion: string | undefined,
-        options: { agent?: string },
+        options: { agent?: string; mode?: string },
       ) => {
-      await runAction(async () => {
-        const agents = parseAgents(options.agent);
-        if (!type && !nameVersion) {
-          const results = await services.installFromLock(process.cwd(), agents);
-          if (results.length === 0) {
-            process.stdout.write("No resources in lock file.\n");
+        await runAction(async () => {
+          const agents = parseAgents(options.agent);
+          const mode = parseInstallMode(options.mode);
+          if (!type && !nameVersion) {
+            const results = await services.installFromLock(process.cwd(), agents, mode);
+            if (results.length === 0) {
+              process.stdout.write("No resources in lock file.\n");
+              return;
+            }
+            for (const item of results) {
+              process.stdout.write(`Installed ${item.type}/${item.name}@${item.version}\n`);
+            }
             return;
           }
-          for (const item of results) {
-            process.stdout.write(`Installed ${item.type}/${item.name}@${item.version}\n`);
+
+          if (!type || !nameVersion) {
+            throw new HimanError(
+              errorCodes.CLI_USAGE,
+              "Install usage:\n"
+                + "  - himan install  # install from himan.lock\n"
+                + "  - himan install <type> <name[@version]> [--mode link|copy]  # install single resource",
+            );
           }
-          return;
-        }
 
-        if (!type || !nameVersion) {
-          throw new HimanError(
-            errorCodes.CLI_USAGE,
-            "Install usage:\n"
-              + "  - himan install  # install from himan.lock\n"
-              + "  - himan install <type> <name[@version]>  # install single resource",
+          const resourceType = ensureResourceType(type);
+          const { name, version } = parseNameVersion(nameVersion);
+          const result = await services.install(
+            resourceType,
+            name,
+            version,
+            process.cwd(),
+            agents,
+            mode,
           );
-        }
-
-        const resourceType = ensureResourceType(type);
-        const { name, version } = parseNameVersion(nameVersion);
-        const result = await services.install(
-          resourceType,
-          name,
-          version,
-          process.cwd(),
-          agents,
-        );
-        process.stdout.write(
-          `Installed ${result.type}/${result.name}@${result.version}\n`,
-        );
-      });
+          process.stdout.write(
+            `Installed ${result.type}/${result.name}@${result.version}\n`,
+          );
+        });
       },
     );
 
@@ -150,6 +153,18 @@ function resolveReleaseType(options: {
     );
   }
   return selected[0] ?? "patch";
+}
+
+function parseInstallMode(input?: string): InstallMode | undefined {
+  if (!input) return undefined;
+  const normalized = input.trim().toLowerCase();
+  if (normalized === "link" || normalized === "copy") {
+    return normalized;
+  }
+  throw new HimanError(
+    errorCodes.INVALID_INPUT,
+    `Unsupported install mode: ${input}. Supported modes: link, copy`,
+  );
 }
 
 function parseAgents(input?: string): string[] | undefined {
