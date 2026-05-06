@@ -154,7 +154,12 @@ pnpm test
 
 3. **合并到 `master`**  
    推送合并后的 `master` 会触发 GitHub Actions 工作流 [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml)：安装依赖后执行 **`pnpm run release`**（即再次 `verify` + `npm publish`）。  
-   需在仓库 **Settings → Secrets → Actions** 中配置 **`NPM_TOKEN`**（npm 侧「Access Tokens」，建议 Automation / 具备发包权限的 granular token）。
+   npm 发布认证使用 **Trusted Publishing**，不使用长期 `NPM_TOKEN`。需在 npmjs.com 的 `@hi-man/himan` 包设置中添加 Trusted Publisher：
+   - Provider: GitHub Actions
+   - Organization or user: `lidetao`
+   - Repository: `himan`
+   - Workflow filename: `publish-npm.yml`
+   workflow 已授予 OIDC 所需的 `id-token: write` 权限，并在发布前升级 npm CLI 到支持 Trusted Publishing 的版本。
 
 4. **手动从 CI 再发一次（可选）**  
    在 GitHub **Actions → Publish to npm → Run workflow** 可手动运行同一流程（例如在修复密钥后重试）。
