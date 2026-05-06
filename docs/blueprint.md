@@ -111,7 +111,7 @@ description: enforce code review standards
 tags:
   - frontend
 
-targets:
+agents:
   - cursor
   - claude
 

@@ -10,11 +10,12 @@ export interface SourceState {
 }
 
 export interface HimanConfig {
-  source: SourceState;
+  source?: SourceState;
   sources?: {
     default: string;
     items: Record<string, SourceState>;
   };
+  agents?: string[];
 }
 
 export class StateStore {
@@ -55,13 +56,16 @@ export class StateStore {
             default: defaultName,
             items: input.sources.items,
           },
+          agents: input.agents,
         };
       }
     }
 
     const fallback = input.source;
     if (!fallback) {
-      throw new Error("Invalid config: source is required.");
+      return {
+        agents: input.agents,
+      };
     }
 
     return {
@@ -72,6 +76,7 @@ export class StateStore {
           default: fallback,
         },
       },
+      agents: input.agents,
     };
   }
 }

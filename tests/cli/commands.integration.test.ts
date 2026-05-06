@@ -20,7 +20,7 @@ beforeAll(async () => {
   homeDir = path.join(tmpRoot, "home");
   projectDir = path.join(tmpRoot, "project");
   repoDir = path.join(homeDir, ".himan", "repos", toRepoId(TEST_REPO));
-  cliEntry = path.join(process.cwd(), "dist", "index.js");
+  cliEntry = path.join(process.cwd(), "dist", "bin", "himan.js");
   mockedRemoteDir = path.join(tmpRoot, "mocked-remote.git");
   seedRepoDir = path.join(tmpRoot, "seed-remote");
 
@@ -150,6 +150,102 @@ describe("CLI commands with external git source", () => {
     expect(payload.error.details?.commanderCode).toBe("commander.missingArgument");
   });
 
+  it("returns unsupported resource type code for invalid type", () => {
+    const result = runCli(["list", "unknown-type", "--json"], projectDir, homeDir);
+    expect(result.status).toBe(1);
+    const payload = JSON.parse(result.stderr) as {
+      ok: boolean;
+      error: { code: string; message: string };
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.error.code).toBe("E_UNSUPPORTED_RESOURCE_TYPE");
+    expect(payload.error.message).toContain("Unsupported resource type");
+  });
+
+  it("returns invalid input code for unsupported install mode", () => {
+    const result = runCli(
+      ["install", "rule", "code-review@1.0.0", "--mode", "mirror"],
+      projectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("[E_INVALID_INPUT]");
+    expect(result.stderr).toContain("Unsupported install mode");
+  });
+
+  it("returns cli usage code when publish release options conflict", () => {
+    const result = runCli(
+      ["publish", "rule", "code-review", "--patch", "--minor"],
+      projectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("[E_CLI_USAGE]");
+    expect(result.stderr).toContain("Use only one of --patch, --minor or --major");
+  });
+
+  it("returns cli usage code for incomplete install arguments", () => {
+    const result = runCli(["install", "rule"], projectDir, homeDir);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("[E_CLI_USAGE]");
+    expect(result.stderr).toContain("Install usage");
+  });
+
+  it("configures default agents globally and for current project", async () => {
+    const supported = runCli(["agent", "list", "--json"], projectDir, homeDir);
+    expect(supported.status).toBe(0);
+    expect(JSON.parse(supported.stdout)).toEqual([
+      "cursor",
+      "claude-code",
+      "codex",
+      "openclaw",
+    ]);
+
+    const globalUse = runCli(
+      ["agent", "use", "codex", "--global", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(globalUse.status).toBe(0);
+    expect(JSON.parse(globalUse.stdout)).toEqual({
+      scope: "global",
+      agents: ["codex"],
+    });
+
+    const projectUse = runCli(
+      ["agent", "use", "open-claw", "--project"],
+      projectDir,
+      homeDir,
+    );
+    expect(projectUse.status).toBe(0);
+    expect(projectUse.stdout).toContain("Using agents (project): openclaw");
+
+    const current = runCli(["agent", "current", "--json"], projectDir, homeDir);
+    expect(current.status).toBe(0);
+    expect(JSON.parse(current.stdout)).toEqual({
+      global: ["codex"],
+      project: ["openclaw"],
+      effective: ["openclaw"],
+      supported: ["cursor", "claude-code", "codex", "openclaw"],
+    });
+
+    const createResult = runCli(
+      ["create", "rule", "project-default-agent"],
+      projectDir,
+      homeDir,
+    );
+    expect(createResult.status).toBe(0);
+    const meta = await fs.readFile(
+      path.join(repoDir, "rules", "project-default-agent", "himan.yaml"),
+      "utf8",
+    );
+    expect(meta).toContain("agents:");
+    expect(meta).toContain("- openclaw");
+
+    expect(runCli(["agent", "clear", "--project"], projectDir, homeDir).status).toBe(0);
+    expect(runCli(["agent", "clear", "--global"], projectDir, homeDir).status).toBe(0);
+  });
+
   it("creates local index cache when listing resources", async () => {
     const listResult = runCli(["list", "rule", "--json"], projectDir, homeDir);
     expect(listResult.status).toBe(0);
@@ -171,7 +267,7 @@ describe("CLI commands with external git source", () => {
         "sync-docs",
         "--description",
         "sync docs command",
-        "--target",
+        "--agent",
         "cursor,claude",
         "--json",
       ],
@@ -231,7 +327,7 @@ describe("CLI commands with external git source", () => {
           type: "command",
           entry: "content.md",
           description: expect.any(String),
-          targets: expect.any(Array),
+          agents: expect.any(Array),
         },
       ]),
     );
@@ -262,7 +358,7 @@ describe("CLI commands with external git source", () => {
           type: "skill",
           entry: "SKILL.md",
           description: expect.any(String),
-          targets: expect.any(Array),
+          agents: expect.any(Array),
         },
       ]),
     );
@@ -392,6 +488,98 @@ describe("CLI commands with external git source", () => {
     expect(skillDevLinkedRealPath).toBe(expectedSkillDevPath);
   });
 
+  it("switches an existing Codex skill directory to dev mode", async () => {
+    const codexHome = path.join(tmpRoot, "codex-local-home");
+    const codexProject = path.join(tmpRoot, "codex-local-project");
+    const skillPath = path.join(
+      codexProject,
+      ".agents",
+      "skills",
+      "common-project-startup",
+    );
+    await fs.mkdir(skillPath, { recursive: true });
+    await fs.mkdir(codexHome, { recursive: true });
+    await fs.writeFile(
+      path.join(skillPath, "SKILL.md"),
+      "---\nname: common-project-startup\n---\n# common-project-startup\n",
+      "utf8",
+    );
+
+    const devSkill = runCli(
+      ["dev", "skill", "common-project-startup"],
+      codexProject,
+      codexHome,
+    );
+    expect(devSkill.status).toBe(0);
+    expect(devSkill.stdout).toContain(
+      "Switched skill/common-project-startup to dev mode",
+    );
+
+    const expectedDevPath = await fs.realpath(
+      path.join(codexProject, ".himan", "dev", "skill", "common-project-startup"),
+    );
+    await expect(fs.realpath(skillPath)).resolves.toBe(expectedDevPath);
+    await expect(
+      fs.readFile(path.join(expectedDevPath, "SKILL.md"), "utf8"),
+    ).resolves.toContain("common-project-startup");
+  });
+
+  it("supports multi-agent links for claude-code/codex/openclaw", async () => {
+    const createResult = runCli(
+      [
+        "create",
+        "rule",
+        "agent-style",
+        "--agent",
+        "claude code,codex,openclaw",
+      ],
+      projectDir,
+      homeDir,
+    );
+    expect(createResult.status).toBe(0);
+
+    const publishResult = runCli(
+      ["publish", "rule", "agent-style", "--patch"],
+      projectDir,
+      homeDir,
+    );
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("Published rule/agent-style@0.0.1");
+
+    const installResult = runCli(
+      ["install", "rule", "agent-style@0.0.1"],
+      projectDir,
+      homeDir,
+    );
+    expect(installResult.status).toBe(0);
+
+    await expect(
+      fs.realpath(path.join(projectDir, ".claude", "rules", "agent-style")),
+    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "agent-style", "0.0.1"));
+    await expect(
+      fs.realpath(path.join(projectDir, ".agents", "rules", "agent-style")),
+    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "agent-style", "0.0.1"));
+    await expect(
+      fs.realpath(path.join(projectDir, ".openclaw", "rules", "agent-style")),
+    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "agent-style", "0.0.1"));
+
+    const devResult = runCli(["dev", "rule", "agent-style"], projectDir, homeDir);
+    expect(devResult.status).toBe(0);
+
+    const expectedDevPath = await fs.realpath(
+      path.join(projectDir, ".himan", "dev", "rule", "agent-style"),
+    );
+    await expect(
+      fs.realpath(path.join(projectDir, ".claude", "rules", "agent-style")),
+    ).resolves.toBe(expectedDevPath);
+    await expect(
+      fs.realpath(path.join(projectDir, ".agents", "rules", "agent-style")),
+    ).resolves.toBe(expectedDevPath);
+    await expect(
+      fs.realpath(path.join(projectDir, ".openclaw", "rules", "agent-style")),
+    ).resolves.toBe(expectedDevPath);
+  });
+
   it("supports list/history/install/dev after local fixture commit and tag", async () => {
     await prepareRepoFixture(repoDir);
 
@@ -405,7 +593,7 @@ describe("CLI commands with external git source", () => {
           type: "rule",
           entry: "content.md",
           description: "enforce code review standards",
-          targets: ["cursor"],
+          agents: ["cursor"],
         },
       ]),
     );
@@ -449,13 +637,53 @@ describe("CLI commands with external git source", () => {
     expect(devLinkedRealPath).toBe(expectedDevPath);
   });
 
+  it("filters list by agent via --agent", () => {
+    const listClaude = runCli(["list", "rule", "--agent", "claude-code", "--json"], projectDir, homeDir);
+    expect(listClaude.status).toBe(0);
+    const claudeRules = JSON.parse(listClaude.stdout) as Array<{ name: string }>;
+    expect(claudeRules.some((item) => item.name === "agent-style")).toBe(true);
+    expect(claudeRules.some((item) => item.name === "code-review")).toBe(false);
+
+    const listCursor = runCli(["list", "rule", "--agent", "cursor", "--json"], projectDir, homeDir);
+    expect(listCursor.status).toBe(0);
+    const cursorRules = JSON.parse(listCursor.stdout) as Array<{ name: string }>;
+    expect(cursorRules.some((item) => item.name === "code-review")).toBe(true);
+  });
+
+  it("uses project agent config for install and dev", async () => {
+    const useResult = runCli(["agent", "use", "codex"], projectDir, homeDir);
+    expect(useResult.status).toBe(0);
+
+    const result = runCli(["install", "rule", "code-review@1.0.0"], projectDir, homeDir);
+    expect(result.status).toBe(0);
+    await expect(
+      fs.realpath(path.join(projectDir, ".agents", "rules", "code-review")),
+    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"));
+
+    const devResult = runCli(["dev", "rule", "code-review"], projectDir, homeDir);
+    expect(devResult.status).toBe(0);
+    await expect(
+      fs.realpath(path.join(projectDir, ".agents", "rules", "code-review")),
+    ).resolves.toBe(
+      await fs.realpath(path.join(projectDir, ".himan", "dev", "rule", "code-review")),
+    );
+
+    expect(runCli(["agent", "clear", "--project"], projectDir, homeDir).status).toBe(0);
+  });
+
   it("writes himan.lock on install and can reproduce installs", async () => {
     const lockPath = path.join(projectDir, "himan.lock");
     const lockRaw = await fs.readFile(lockPath, "utf8");
     const lock = JSON.parse(lockRaw) as {
       version: number;
       source: { type: string };
-      resources: Array<{ type: string; name: string; version: string }>;
+      resources: Array<{
+        type: string;
+        name: string;
+        version: string;
+        agents?: string[];
+        mode?: string;
+      }>;
     };
 
     expect(lock.version).toBe(1);
@@ -466,21 +694,29 @@ describe("CLI commands with external git source", () => {
           type: "rule",
           name: "code-review",
           version: "1.0.0",
+          agents: ["codex"],
+          mode: "link",
         }),
         expect.objectContaining({
           type: "command",
           name: "release-note",
           version: "0.1.0",
+          mode: "link",
         }),
         expect.objectContaining({
           type: "skill",
           name: "risk-check",
           version: "0.0.1",
+          mode: "link",
         }),
       ]),
     );
 
     await fs.rm(path.join(projectDir, ".cursor", "rules", "code-review"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.rm(path.join(projectDir, ".agents", "rules", "code-review"), {
       recursive: true,
       force: true,
     });
@@ -500,7 +736,7 @@ describe("CLI commands with external git source", () => {
     expect(result.stdout).toContain("Installed skill/risk-check@0.0.1");
 
     await expect(
-      fs.realpath(path.join(projectDir, ".cursor", "rules", "code-review")),
+      fs.realpath(path.join(projectDir, ".agents", "rules", "code-review")),
     ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"));
     await expect(
       fs.realpath(path.join(projectDir, ".cursor", "commands", "release-note")),
@@ -623,6 +859,45 @@ describe("CLI commands with external git source", () => {
     ]);
   });
 
+  it("supports copy install mode and restores it from lock", async () => {
+    const installResult = runCli(
+      ["install", "skill", "risk-check@0.0.1", "--mode", "copy"],
+      projectDir,
+      homeDir,
+    );
+    expect(installResult.status).toBe(0);
+
+    const skillPath = path.join(projectDir, ".cursor", "skills", "risk-check");
+    const copiedStat = await fs.lstat(skillPath);
+    expect(copiedStat.isSymbolicLink()).toBe(false);
+    await expect(fs.readFile(path.join(skillPath, "SKILL.md"), "utf8")).resolves.toContain(
+      "Skill published from create artifact.",
+    );
+
+    const lockRaw = await fs.readFile(path.join(projectDir, "himan.lock"), "utf8");
+    const lock = JSON.parse(lockRaw) as {
+      resources: Array<{ type: string; name: string; mode?: string }>;
+    };
+    expect(lock.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "skill",
+          name: "risk-check",
+          mode: "copy",
+        }),
+      ]),
+    );
+
+    await fs.rm(skillPath, { recursive: true, force: true });
+
+    const restoreResult = runCli(["install"], projectDir, homeDir);
+    expect(restoreResult.status).toBe(0);
+    expect(restoreResult.stdout).toContain("Installed skill/risk-check@0.0.1");
+
+    const restoredStat = await fs.lstat(skillPath);
+    expect(restoredStat.isSymbolicLink()).toBe(false);
+  });
+
   it("uninstalls resource and removes it from lock", async () => {
     const uninstallResult = runCli(
       ["uninstall", "skill", "risk-check"],
@@ -675,7 +950,7 @@ async function prepareRepoFixture(targetRepoDir: string): Promise<void> {
       "version: 1.0.0",
       "entry: content.md",
       "description: enforce code review standards",
-      "targets:",
+      "agents:",
       "  - cursor",
     ].join("\n"),
     "utf8",

@@ -27,7 +27,7 @@ describe("IndexCacheStore", () => {
         type: "rule",
         entry: "content.md",
         description: "desc",
-        targets: ["cursor"],
+        agents: ["cursor"],
       },
     ]);
 
@@ -41,7 +41,7 @@ describe("IndexCacheStore", () => {
         type: "rule",
         entry: "content.md",
         description: "desc",
-        targets: ["cursor"],
+        agents: ["cursor"],
       },
     ]);
   });

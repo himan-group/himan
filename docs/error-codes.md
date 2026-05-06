@@ -49,7 +49,7 @@
 ### `E_INVALID_INPUT`
 
 - **含义**：输入参数不合法。
-- **常见触发**：source 名称不符合 kebab-case、git source 未提供 repo 等。
+- **常见触发**：source 名称不符合 kebab-case、git source 未提供 repo、install mode 不是 `link|copy`、agent 名称不支持等。
 - **建议处理**：按命令帮助修正参数格式。
 
 ### `E_RESOURCE_NOT_FOUND`
@@ -66,8 +66,8 @@
 
 ### `E_INSTALL_NOT_FOUND`
 
-- **含义**：项目内未找到已安装链接。
-- **常见触发**：未安装直接 `dev`、或手动删除了 `.cursor/*/<name>` 链接。
+- **含义**：项目内未找到已安装目标。
+- **常见触发**：未安装直接 `dev`、或手动删除了 `.cursor/*/<name>` 等安装目标。
 - **建议处理**：先重新执行 `himan install <type> <name[@version]>`。
 
 ### `E_LOCK_NOT_FOUND`

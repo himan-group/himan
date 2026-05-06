@@ -1,4 +1,5 @@
 export type ResourceType = "rule" | "command" | "skill";
+export type InstallMode = "link" | "copy";
 
 export interface ResourceRef {
   type: ResourceType;
@@ -11,7 +12,7 @@ export interface ResourceMeta {
   type: ResourceType;
   entry: string;
   description?: string;
-  targets?: string[];
+  agents?: string[];
 }
 
 export interface VersionInfo {
@@ -26,7 +27,7 @@ export interface PublishResult {
 
 export interface CreateOptions {
   description?: string;
-  targets?: string[];
+  agents?: string[];
   entry?: string;
   template?: string;
   force?: boolean;

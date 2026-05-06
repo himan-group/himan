@@ -29,8 +29,11 @@
 - 已完成：`himan.lock` 基础能力
   - `install <type> <name[@version]>` 自动写入/更新 lock
   - `install`（无参数）按 lock 批量复现安装
-  - `uninstall` 删除项目链接并同步移除 lock 条目
+  - `uninstall` 删除项目安装目标并同步移除 lock 条目
   - `publish` 在资源已锁定时同步更新 lock 版本
+- 已完成：默认 agent 配置
+  - `agent use/list/current/clear`
+  - 支持当前项目配置和全局配置
 - 已完成（基础）：多 repo 命名源管理（`source add/use/list` + 默认源切换）
 - 已完成（基础）：本地索引缓存（`list` 优先读 `~/.himan/index.json`，失效时回退扫描并刷新）
 - 待完成：发布前校验、PR 驱动发布

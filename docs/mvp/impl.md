@@ -12,7 +12,7 @@
 **原则：**
 
 - 本地 store 按版本存放，已存在的版本目录不被覆盖（安装时复用缓存）
-- 开发目录 `.himan/dev` 与运行态 `.cursor/rules` 分离
+- 开发目录 `.himan/dev` 与运行态 `.cursor/{rules|commands|skills}` 分离
 - 正式发布版本以 **Git Tag** 为唯一事实来源；`himan.yaml` 中的 version 在发布时会与 tag 对齐
 
 ---
@@ -37,18 +37,18 @@
 - 列出匹配 `<type>/<name>@*` 的 tag，解析 semver，非法 tag 忽略
 - 按版本倒序输出
 
-### 2.4 `install rule <name>[@version]`
+### 2.4 `install <type> <name>[@version]`
 
-- 命令层仅接受 `rule`
+- 命令层接受 `rule|command|skill`
 - 无版本则取该资源历史中的最新 semver
 - 若本地 store 已有该版本目录则不再从 Git 导出；否则从对应 tag 导出资源树到 store
-- 在项目中创建/更新软链，指向 store 中该版本
+- 在项目中创建/更新安装目标（`rule -> .cursor/rules`、`command -> .cursor/commands`、`skill -> .cursor/skills`），默认软链到 store 中该版本，也可通过 `--mode copy` 复制内容
 
-### 2.5 `dev rule <name>`
+### 2.5 `dev <type> <name>`
 
-- 命令层仅接受 `rule`；依赖已安装（能解析当前软链目标）
-- 将当前安装内容复制到 `.himan/dev/rule/<name>`（目录已存在则默认不覆盖）
-- 软链改为指向 dev 目录
+- 命令层接受 `rule|command|skill`；依赖已安装（能解析当前安装目标）
+- 将当前安装内容复制到 `.himan/dev/<type>/<name>`（目录已存在则默认不覆盖）
+- 按安装模式将项目目标更新为 dev 目录的软链或副本
 
 ### 2.6 `publish <type> <name>`
 
@@ -56,13 +56,20 @@
 - 下一版本：基于历史最新 tag；无历史则从 `0.0.0` 按 patch/minor/major 递增
 - 将内容同步回缓存仓库中的规范路径，更新元数据中的版本字段，提交、打 tag、推送
 - 将新 tag 对应内容拉取到 store 新版本目录
-- 仅 **rule** 同时更新项目内 `.cursor/rules` 软链；command/skill 不操作项目软链
+- 若当前项目已安装该资源，则按 lock 中的安装模式同步更新项目内对应类型目标到新版本
 
 ### 2.7 `create <type> <name>`
 
 - 校验类型与资源命名规则
 - 在缓存仓库中创建 `rules|commands|skills/<name>` 及 `himan.yaml`、入口模板
 - 支持覆盖、试运行、JSON 输出；创建后不自动发布
+
+### 2.8 `agent`
+
+- 命令层支持 `agent list|use|current|clear`
+- 当前项目默认 agent 写入 `.himan/config.json`
+- 全局默认 agent 写入 `~/.himan/config.json`
+- 默认 agent 生效顺序：显式 `--agent` > 当前项目配置 > 全局配置 > 资源 metadata > `cursor`
 
 ---
 
@@ -74,7 +81,7 @@
 - **Git** 为当前唯一完整实现
 - **Registry** 为占位：调用即提示未实现，二期对接 API 与下载/上传
 
-编排层负责：解析配置选择源、rule 的 store 路径、dev 拷贝、`.cursor/rules` 软链；与具体 Git 子命令细节隔离。
+编排层负责：解析配置选择源、默认 agent、资源 store 路径、dev 拷贝、项目目标 materialize（软链或复制）；与具体 Git 子命令细节隔离。
 
 配置中可区分源类型并预留 Registry 所需字段（如 endpoint）；当前 CLI 初始化路径只写入 Git 源。
 

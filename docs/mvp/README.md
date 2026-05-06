@@ -41,7 +41,7 @@
 - 也支持 `himan install`（无参数）按 `himan.lock` 批量复现安装。
 - 未指定版本则安装该资源最新 tag 对应版本。
 - 若本地 store 中已有该版本缓存，则复用、不重新从 Git 导出；否则导出到 store。
-- 在项目下创建软链：
+- 在项目下按安装模式创建目标（默认 `--mode link` 软链；`--mode copy` 复制）：
   - `rule`：`.cursor/rules/<name>`
   - `command`：`.cursor/commands/<name>`
   - `skill`：`.cursor/skills/<name>`
@@ -49,7 +49,7 @@
 ### 2.5 `dev`
 
 - `himan dev <type> <name>`，`type` 支持 `rule|command|skill`；需先 `install`。
-- 将当前安装内容复制到项目开发目录（已存在则默认不覆盖），软链切到 dev 目录便于编辑：
+- 将当前安装内容复制到项目开发目录（已存在则默认不覆盖），再按安装模式更新项目目标：
   - `rule`：`.himan/dev/rule/<name>`
   - `command`：`.himan/dev/command/<name>`
   - `skill`：`.himan/dev/skill/<name>`
@@ -60,13 +60,21 @@
 - 发布内容优先取项目 `.himan/dev/<type>/<name>`，否则取源仓库内对应资源目录。
 - 新版本：基于已有 tag 最新 semver 递增；无任何历史时从 `0.0.0` 起算。
 - 写回源仓库、提交、打 tag、推送，并将该版本同步到本地 store。
-- 若该资源在项目中已有安装链接，会同步把项目链接切到新版本目录。
+- 若该资源在项目中已有安装目标，会按 lock 中的安装模式同步到新版本目录。
 
 ### 2.7 `create`
 
 - `himan create <type> <name>` 及常用选项（描述、目标平台、dry-run、force、json 等）
 - 生成 `rule` / `command` / `skill` 标准目录与 `himan.yaml`、入口模板
 - 与 `publish` 衔接：`create → 编辑 → publish`
+
+### 2.8 `agent`
+
+- `himan agent list` 查看支持的 agent。
+- `himan agent use <agent[,agent]>` 设置当前项目默认 agent；加 `--global` 设置全局默认 agent。
+- `himan agent current` 查看当前项目、全局和最终生效的默认 agent。
+- `himan agent clear` 清除默认 agent 配置；默认清除当前项目，加 `--global` 清除全局配置。
+- 默认 agent 解析顺序：显式 `--agent` > 当前项目配置 > 全局配置 > 资源 metadata > `cursor`。
 
 ---
 
@@ -79,17 +87,18 @@
 - **领域**：资源类型、版本、路径约定
 - **适配**：Git 实现 + Registry 预留；扫描与解析元数据；版本计算；配置与全局路径
 
-**原则：** store 按版本目录追加、不覆盖已有缓存；开发目录与 Cursor rules 软链分离；rule 在项目侧以软链引用为主。
+**原则：** store 按版本目录追加、不覆盖已有缓存；开发目录与项目安装目标分离；项目侧默认以软链引用资源，也支持复制。
 
 ### 3.2 目录与数据
 
 **用户目录（如 `~/.himan`）：**
 - `repos/…`：Git 源缓存
 - `store/<type>/<name>/<version>/`：按版本的资源快照
-- `config.json`：当前源类型（git / registry 预留）、仓库地址等
+- `config.json`：当前源类型（git / registry 预留）、仓库地址、全局默认 agent 等
 
 **项目目录：**
-- `.cursor/rules/<name>`：rule 运行态软链
+- `.cursor/rules/<name>`：rule 运行态目标（软链或副本）
+- `.himan/config.json`：项目默认 agent 配置
 - `.himan/dev/rule/<name>`：rule 开发态可编辑副本
 
 **源仓库内资源布局：**

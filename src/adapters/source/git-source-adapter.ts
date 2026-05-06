@@ -123,7 +123,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     const repoDir = this.getRepoDir();
     const resourceDir = path.join(repoDir, this.getTypeDir(type), name);
     const entry = options.entry ?? this.getDefaultEntry(type);
-    const targets = options.targets?.length ? options.targets : ["cursor"];
+    const agents = options.agents?.length ? options.agents : ["cursor"];
 
     if ((await this.exists(resourceDir)) && !options.force) {
       throw new HimanError(
@@ -144,7 +144,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
           version: "0.1.0",
           entry,
           description: options.description ?? `${type} resource ${name}`,
-          targets,
+          agents,
         }),
         "utf8",
       );
