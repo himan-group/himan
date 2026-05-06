@@ -15,7 +15,7 @@ const AGENT_CONFIGS = [
   {
     name: "codex",
     aliases: ["codex"],
-    baseDir: ".codex",
+    baseDir: ".agents",
   },
   {
     name: "openclaw",

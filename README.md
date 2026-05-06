@@ -39,7 +39,7 @@ himan publish rule my-rule --patch
 - 安装后项目目标位置（按 `agents`，默认 `cursor`）：
   - `cursor` -> `.cursor/{rules|commands|skills}/<name>`
   - `claude-code` -> `.claude/{rules|commands|skills}/<name>`
-  - `codex` -> `.codex/{rules|commands|skills}/<name>`
+  - `codex` -> `.agents/{rules|commands|skills}/<name>`
   - `openclaw` -> `.openclaw/{rules|commands|skills}/<name>`
 - 开发态目录：
   - `rule` -> `.himan/dev/rule/<name>`

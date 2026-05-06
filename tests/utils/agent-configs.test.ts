@@ -31,10 +31,12 @@ describe("agent configs", () => {
     expect(
       getProjectResourcePaths(projectDir, "skill", "risk-check", [
         "claude",
+        "codex",
         "open-claw",
       ]),
     ).toEqual([
       path.join(projectDir, ".claude", "skills", "risk-check"),
+      path.join(projectDir, ".agents", "skills", "risk-check"),
       path.join(projectDir, ".openclaw", "skills", "risk-check"),
     ]);
   });

@@ -488,6 +488,42 @@ describe("CLI commands with external git source", () => {
     expect(skillDevLinkedRealPath).toBe(expectedSkillDevPath);
   });
 
+  it("switches an existing Codex skill directory to dev mode", async () => {
+    const codexHome = path.join(tmpRoot, "codex-local-home");
+    const codexProject = path.join(tmpRoot, "codex-local-project");
+    const skillPath = path.join(
+      codexProject,
+      ".agents",
+      "skills",
+      "common-project-startup",
+    );
+    await fs.mkdir(skillPath, { recursive: true });
+    await fs.mkdir(codexHome, { recursive: true });
+    await fs.writeFile(
+      path.join(skillPath, "SKILL.md"),
+      "---\nname: common-project-startup\n---\n# common-project-startup\n",
+      "utf8",
+    );
+
+    const devSkill = runCli(
+      ["dev", "skill", "common-project-startup"],
+      codexProject,
+      codexHome,
+    );
+    expect(devSkill.status).toBe(0);
+    expect(devSkill.stdout).toContain(
+      "Switched skill/common-project-startup to dev mode",
+    );
+
+    const expectedDevPath = await fs.realpath(
+      path.join(codexProject, ".himan", "dev", "skill", "common-project-startup"),
+    );
+    await expect(fs.realpath(skillPath)).resolves.toBe(expectedDevPath);
+    await expect(
+      fs.readFile(path.join(expectedDevPath, "SKILL.md"), "utf8"),
+    ).resolves.toContain("common-project-startup");
+  });
+
   it("supports multi-agent links for claude-code/codex/openclaw", async () => {
     const createResult = runCli(
       [
@@ -521,7 +557,7 @@ describe("CLI commands with external git source", () => {
       fs.realpath(path.join(projectDir, ".claude", "rules", "agent-style")),
     ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "agent-style", "0.0.1"));
     await expect(
-      fs.realpath(path.join(projectDir, ".codex", "rules", "agent-style")),
+      fs.realpath(path.join(projectDir, ".agents", "rules", "agent-style")),
     ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "agent-style", "0.0.1"));
     await expect(
       fs.realpath(path.join(projectDir, ".openclaw", "rules", "agent-style")),
@@ -537,7 +573,7 @@ describe("CLI commands with external git source", () => {
       fs.realpath(path.join(projectDir, ".claude", "rules", "agent-style")),
     ).resolves.toBe(expectedDevPath);
     await expect(
-      fs.realpath(path.join(projectDir, ".codex", "rules", "agent-style")),
+      fs.realpath(path.join(projectDir, ".agents", "rules", "agent-style")),
     ).resolves.toBe(expectedDevPath);
     await expect(
       fs.realpath(path.join(projectDir, ".openclaw", "rules", "agent-style")),
@@ -621,13 +657,13 @@ describe("CLI commands with external git source", () => {
     const result = runCli(["install", "rule", "code-review@1.0.0"], projectDir, homeDir);
     expect(result.status).toBe(0);
     await expect(
-      fs.realpath(path.join(projectDir, ".codex", "rules", "code-review")),
+      fs.realpath(path.join(projectDir, ".agents", "rules", "code-review")),
     ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"));
 
     const devResult = runCli(["dev", "rule", "code-review"], projectDir, homeDir);
     expect(devResult.status).toBe(0);
     await expect(
-      fs.realpath(path.join(projectDir, ".codex", "rules", "code-review")),
+      fs.realpath(path.join(projectDir, ".agents", "rules", "code-review")),
     ).resolves.toBe(
       await fs.realpath(path.join(projectDir, ".himan", "dev", "rule", "code-review")),
     );
@@ -680,7 +716,7 @@ describe("CLI commands with external git source", () => {
       recursive: true,
       force: true,
     });
-    await fs.rm(path.join(projectDir, ".codex", "rules", "code-review"), {
+    await fs.rm(path.join(projectDir, ".agents", "rules", "code-review"), {
       recursive: true,
       force: true,
     });
@@ -700,7 +736,7 @@ describe("CLI commands with external git source", () => {
     expect(result.stdout).toContain("Installed skill/risk-check@0.0.1");
 
     await expect(
-      fs.realpath(path.join(projectDir, ".codex", "rules", "code-review")),
+      fs.realpath(path.join(projectDir, ".agents", "rules", "code-review")),
     ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"));
     await expect(
       fs.realpath(path.join(projectDir, ".cursor", "commands", "release-note")),
