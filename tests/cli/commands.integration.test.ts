@@ -57,7 +57,7 @@ beforeAll(async () => {
     ],
     seedRepoDir,
   );
-  runGit(["init", "--bare"], mockedRemoteDir);
+  runGit(["init", "--bare", "--initial-branch=main"], mockedRemoteDir);
   runGit(["remote", "add", "origin", mockedRemoteDir], seedRepoDir);
   runGit(["push", "-u", "origin", "main"], seedRepoDir);
 
