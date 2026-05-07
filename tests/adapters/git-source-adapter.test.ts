@@ -145,6 +145,7 @@ describe("GitSourceAdapter", () => {
       repoDir: targetDir,
       repoId: "test-source",
     });
+    configureGitUser(targetDir);
     await fs.mkdir(sourceDir, { recursive: true });
     await fs.writeFile(path.join(sourceDir, "content.md"), "# missing metadata\n", "utf8");
 
