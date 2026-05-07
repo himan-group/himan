@@ -2,6 +2,8 @@
 
 本文档从**行为与技术选型**说明 MVP 如何实现，不绑定具体源码文件或符号名。
 
+> 状态说明：本文是 MVP 设计落地说明；当前 CLI 行为以仓库根目录 [README.md](../../README.md) 和 [Codex repo map](../codex/repo-map.md) 为准。
+
 ---
 
 ## 1. 技术栈与原则
@@ -12,7 +14,7 @@
 **原则：**
 
 - 本地 store 按版本存放，已存在的版本目录不被覆盖（安装时复用缓存）
-- 开发目录 `.himan/dev` 与运行态 `.cursor/{rules|commands|skills}` 分离
+- 开发目录 `.himan/dev` 与运行态 agent 目录（`.cursor` / `.claude` / `.agents` / `.openclaw`）分离
 - 正式发布版本以 **Git Tag** 为唯一事实来源；`himan.yaml` 中的 version 在发布时会与 tag 对齐
 
 ---
@@ -42,7 +44,7 @@
 - 命令层接受 `rule|command|skill`
 - 无版本则取该资源历史中的最新 semver
 - 若本地 store 已有该版本目录则不再从 Git 导出；否则从对应 tag 导出资源树到 store
-- 在项目中创建/更新安装目标（`rule -> .cursor/rules`、`command -> .cursor/commands`、`skill -> .cursor/skills`），默认软链到 store 中该版本，也可通过 `--mode copy` 复制内容
+- 在项目中按 agent 和资源类型创建/更新安装目标，例如 `cursor -> .cursor/{rules|commands|skills}`、`codex -> .agents/{rules|commands|skills}`；默认软链到 store 中该版本，也可通过 `--mode copy` 复制内容
 
 ### 2.5 `dev <type> <name>`
 

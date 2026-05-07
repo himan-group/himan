@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { simpleGit } from "simple-git";
+import { simpleGit, type SimpleGit } from "simple-git";
 
 export class RepoManager {
   async cloneOrFetch(repo: string, targetDir: string): Promise<void> {
@@ -14,6 +14,7 @@ export class RepoManager {
 
     const git = simpleGit(targetDir);
     await git.fetch(["--tags", "--prune"]);
+    await this.fastForwardCleanWorkingTree(git);
   }
 
   async listTags(repoDir: string, pattern: string): Promise<string[]> {
@@ -86,6 +87,35 @@ export class RepoManager {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private async fastForwardCleanWorkingTree(git: SimpleGit): Promise<void> {
+    const status = await git.status();
+    if (!status.isClean()) {
+      return;
+    }
+
+    const upstream = await this.getCurrentUpstream(git);
+    if (!upstream) {
+      return;
+    }
+
+    await git.raw(["merge", "--ff-only", upstream]);
+  }
+
+  private async getCurrentUpstream(git: SimpleGit): Promise<string | undefined> {
+    try {
+      const upstream = await git.raw([
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{u}",
+      ]);
+      const trimmed = upstream.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    } catch {
+      return undefined;
     }
   }
 }

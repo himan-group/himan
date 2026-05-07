@@ -2,6 +2,8 @@
 
 本文档基于当前实现现状与 `docs/mvp/impl.md` 的设计原则，给出 v1.0 的架构、数据约定与关键流程方案。本文档中的“状态”按当前仓库实现同步维护。
 
+> 当前行为事实源：仓库根目录 [README.md](../../README.md) 和 [Codex repo map](../codex/repo-map.md)。本文保留 v1.0 目标和缺口说明。
+
 ---
 
 ## 1. 现状基线（来自当前实现）
@@ -86,16 +88,17 @@ v1.0 仍以 Git 为主。在多源层面，当前已落地基础能力：
 ### 4.2 项目目录
 
 - `.himan/dev/`：开发态副本
-- 运行态安装目标按类型约定（v1.0 冻结）：
-  - `rule`：`.cursor/rules/<name>`
-  - `command`：`.cursor/commands/<name>`
-  - `skill`：`.cursor/skills/<name>`
+- 运行态安装目标由 agent 和资源类型共同决定：
+  - `cursor` -> `.cursor/{rules|commands|skills}/<name>`
+  - `claude-code` -> `.claude/{rules|commands|skills}/<name>`
+  - `codex` -> `.agents/{rules|commands|skills}/<name>`
+  - `openclaw` -> `.openclaw/{rules|commands|skills}/<name>`
 - 开发态目录：
   - `rule`：`.himan/dev/rule/<name>`
   - `command`：`.himan/dev/command/<name>`
   - `skill`：`.himan/dev/skill/<name>`
 
-> 注：命令与 skill 的具体路径在 v1.0 实施前冻结，并在 README 中与工具平台约定保持一致。
+> 注：资源类型映射到 `rules|commands|skills`，agent 映射到对应工具目录；README 中的路径约定是当前用户文档事实源。
 
 ### 4.3 锁文件
 
@@ -205,7 +208,7 @@ v1.0 统一支持三类资源：
 - 单元：版本解析、元数据校验、锁文件读写、路径策略
 - 集成：
   - 三类型 install/dev/uninstall/publish 全链路
-  - 多 repo 下 list/install 指定源
+  - 命名 source 的 add/use/list，以及 default source 下的 list/install
   - 发布前校验失败分支（无变更、元数据错误、入口缺失）
 
 ### 9.2 手动验证

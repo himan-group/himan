@@ -1,5 +1,7 @@
 # himan 全周期版本规划与技术路线图
 
+> 状态说明：本文是长期路线图和历史阶段规划，不是当前 CLI 行为的完整事实源。当前实现请优先参考仓库根目录 [README.md](../../README.md)、[v1.0 当前进展](../v1.0/README.md) 和 [Codex repo map](../codex/repo-map.md)。
+
 ## 1. 产品长期目标
 
 `himan` 定位为 AI Coding 时代的 Prompt / Agent 资产管理系统，提供从本地开发到团队发布的完整闭环能力。
@@ -17,6 +19,8 @@
 在 blueprint 与本路线图基础上整理的 **v1.0 功能边界与验收**，见 [v1.0 规划](../v1.0/README.md)；**落地顺序与检查点**见 [v1.0 执行方案](../v1.0/impl.md)。
 
 ### 阶段 1：MVP（1 周内可交付）
+
+> 历史规划：当前实现已超过此阶段范围，已支持 `rule` / `command` / `skill`、lock、多 agent 和命名 source。
 
 范围：
 - 单 repo

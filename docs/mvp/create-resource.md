@@ -8,7 +8,7 @@
 
 - 支持三类资源：`rule`、`command`、`skill`
 - 统一目录结构、`himan.yaml` 与默认入口内容
-- 与 `list` / `history` / `publish` 对所有类型一致；**仅 rule** 另有 `install` / `dev`
+- 与 `list` / `history` / `publish` / `install` / `dev` / `uninstall` 对所有类型保持一致
 
 **本阶段不做：** AI 生成正文、通过 Registry 在线创建、创建后自动发布。
 
@@ -25,7 +25,7 @@ himan create <type> <name> [options]
 **常用选项：**
 
 - `--description`：描述
-- `--agent`：目标 Agent，逗号分隔；未指定时默认包含 `cursor`
+- `--agent`：目标 Agent，逗号分隔；未指定时使用当前项目默认 agent、全局默认 agent，最终回退到 `cursor`
 - `--entry`：入口文件名（各类型有默认值）
 - `--template`：模板名；MVP 仅内置 **basic**，其它名称会报错
 - `--force`：目录已存在时覆盖
@@ -69,7 +69,7 @@ agents:
 ```
 
 - `version` 为初始占位；**正式发布版本以 Git Tag 为准**
-- `agents` 来自 `--agent`，未传时使用默认列表
+- `agents` 来自 `--agent` 或默认 agent 解析结果
 
 ---
 
@@ -109,16 +109,18 @@ agents:
 
 ---
 
-## 8. 与 rule 工作流衔接
+## 8. 与资源工作流衔接
 
 ```text
 create → edit → publish
 ```
 
-rule 常见路径还可插入 `dev`：
+`create` 会在当前 Git source 缓存仓库中生成资源目录；用户编辑该目录后执行 `publish`。资源已有发布版本并安装到项目后，可再进入 `dev` 工作流：
 
 ```bash
 himan create rule code-review --description "enforce standards"
+himan publish rule code-review --patch
+himan install rule code-review
 himan dev rule code-review
 # 编辑 .himan/dev/rule/code-review/
 himan publish rule code-review --patch
