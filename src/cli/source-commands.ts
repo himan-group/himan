@@ -74,4 +74,34 @@ export function registerSourceCommands(
         }
       });
     });
+
+  command
+    .command("init-docs")
+    .option("--force", "overwrite existing README.md and CHANGELOG.md")
+    .option("--dry-run", "show files without writing")
+    .option("--json", "output json format")
+    .description("Create source-level README.md and CHANGELOG.md")
+    .action(
+      async (options: { force?: boolean; dryRun?: boolean; json?: boolean }) => {
+        await runAction(async () => {
+          const result = await services.initSourceDocs({
+            force: options.force,
+            dryRun: options.dryRun,
+          });
+          if (options.json) {
+            process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+            return;
+          }
+
+          process.stdout.write(
+            `Source docs ${result.dryRun ? "dry-run" : "initialized"}: ${result.sourceDir}\n`,
+          );
+          for (const file of result.files) {
+            process.stdout.write(
+              `- ${file.action} ${file.path}${file.reason ? ` (${file.reason})` : ""}\n`,
+            );
+          }
+        });
+      },
+    );
 }

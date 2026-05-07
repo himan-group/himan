@@ -85,6 +85,60 @@ describe("CLI commands with external git source", () => {
     await expect(fs.access(repoDir)).resolves.toBeUndefined();
   });
 
+  it("creates source-level docs without overwriting existing files", async () => {
+    const result = runCli(
+      ["source", "init-docs", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(0);
+
+    const payload = JSON.parse(result.stdout) as {
+      sourceDir: string;
+      dryRun: boolean;
+      files: Array<{ path: string; action: string; reason?: string }>;
+    };
+    expect(payload.sourceDir).toBe(repoDir);
+    expect(payload.dryRun).toBe(false);
+    expect(payload.files).toEqual([
+      {
+        path: path.join(repoDir, "README.md"),
+        action: "skipped",
+        reason: "file already exists",
+      },
+      {
+        path: path.join(repoDir, "CHANGELOG.md"),
+        action: "created",
+      },
+    ]);
+
+    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toBe(
+      "# himan-test\n",
+    );
+    await expect(
+      fs.readFile(path.join(repoDir, "CHANGELOG.md"), "utf8"),
+    ).resolves.toContain("All notable source-level resource changes");
+
+    const dryRun = runCli(
+      ["source", "init-docs", "--force", "--dry-run", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(dryRun.status).toBe(0);
+    const dryRunPayload = JSON.parse(dryRun.stdout) as {
+      dryRun: boolean;
+      files: Array<{ action: string }>;
+    };
+    expect(dryRunPayload.dryRun).toBe(true);
+    expect(dryRunPayload.files.map((file) => file.action)).toEqual([
+      "updated",
+      "updated",
+    ]);
+    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toBe(
+      "# himan-test\n",
+    );
+  });
+
   it("manages multiple sources and switches default source", () => {
     const addResult = runCli(["source", "add", "mirror", TEST_REPO], projectDir, homeDir);
     expect(addResult.status).toBe(0);
@@ -331,6 +385,13 @@ describe("CLI commands with external git source", () => {
         },
       ]),
     );
+
+    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
+      "`command/sync-docs@0.1.0`: command resource sync-docs",
+    );
+    await expect(
+      fs.readFile(path.join(repoDir, "CHANGELOG.md"), "utf8"),
+    ).resolves.toContain("- Added `command/sync-docs`.");
   });
 
   it("supports dry-run for skill create", async () => {
@@ -404,6 +465,12 @@ describe("CLI commands with external git source", () => {
       "utf8",
     );
     expect(storeContent).toContain("Publish from create artifact.");
+    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
+      "`command/release-note@0.1.0`: release note command",
+    );
+    await expect(
+      fs.readFile(path.join(repoDir, "CHANGELOG.md"), "utf8"),
+    ).resolves.toContain("- Published `command/release-note@0.1.0`.");
   });
 
   it("publishes skill create artifact without dev workflow", async () => {

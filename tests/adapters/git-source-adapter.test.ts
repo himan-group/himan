@@ -82,6 +82,12 @@ describe("GitSourceAdapter", () => {
     await expect(
       fs.readFile(path.join(targetDir, "rules", "published-rule", "himan.yaml"), "utf8"),
     ).resolves.toContain("version: 0.1.0");
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "`rule/published-rule@0.1.0`: valid publish",
+    );
+    await expect(
+      fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
+    ).resolves.toContain("- Published `rule/published-rule@0.1.0`.");
     expect(runGitOutput(["tag", "--list", "rule/published-rule@0.1.0"], targetDir)).toBe(
       "rule/published-rule@0.1.0",
     );
