@@ -12,6 +12,10 @@ import type {
   ResourceType,
   VersionInfo,
 } from "../domain/resource.js";
+import type {
+  SourceDocsOptions,
+  SourceDocsResult,
+} from "../domain/source-docs.js";
 import { StateStore } from "../state/state-store.js";
 import { ProjectConfigStore } from "../state/project-config-store.js";
 import {
@@ -136,6 +140,11 @@ export class ServiceFactory {
       repoId: source.repoId,
       isDefault: name === config.sources?.default,
     }));
+  }
+
+  async initSourceDocs(options: SourceDocsOptions): Promise<SourceDocsResult> {
+    const source = await this.loadSourceFromConfig();
+    return source.initDocs(options);
   }
 
   async setAgents(

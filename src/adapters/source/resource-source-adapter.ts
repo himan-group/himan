@@ -6,6 +6,10 @@ import type {
   ResourceType,
   VersionInfo,
 } from "../../domain/resource.js";
+import type {
+  SourceDocsOptions,
+  SourceDocsResult,
+} from "../../domain/source-docs.js";
 
 export interface SourceConfig {
   type: "git" | "registry";
@@ -37,4 +41,5 @@ export interface ResourceSourceAdapter {
     name: string,
     options: CreateOptions,
   ): Promise<CreateResult>;
+  initDocs(options: SourceDocsOptions): Promise<SourceDocsResult>;
 }

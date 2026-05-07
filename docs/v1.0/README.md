@@ -36,7 +36,7 @@
 - 已完成：默认 agent 配置
   - `agent use/list/current/clear`
   - 支持当前项目配置和全局配置
-- 已完成（基础）：多 repo 命名源管理（`source add/use/list` + 默认源切换）
+- 已完成（基础）：多 repo 命名源管理（`source add/use/list` + 默认源切换）与 source 根目录文档初始化/自动维护（`source init-docs`，`create` / `publish` 自动更新）
 - 已完成（基础）：本地索引缓存（`list` 优先读 `~/.himan/index.json`，失效时回退扫描并刷新）
 - 已完成（基础）：发布前校验（`himan.yaml` 必填字段、类型/名称匹配、入口文件存在）
 - 待完成：扩展 preflight（lint/schema 版本化）、PR 驱动发布
@@ -48,7 +48,7 @@
 ## 3. v1.0 命令面（冻结目标）
 
 - 基础：`init`、`list`、`history`、`create`
-- 源管理：`source add/use/list`
+- 源管理：`source add/use/list/init-docs`
 - 生命周期：`install`、`dev`、`uninstall`、`publish`
 - 发布能力：`publish` 集成 preflight 校验；PR 发布可选
 - 可复现能力：安装与卸载可与 lock 联动

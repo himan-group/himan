@@ -7,6 +7,10 @@ import type {
   VersionInfo,
 } from "../../domain/resource.js";
 import type {
+  SourceDocsOptions,
+  SourceDocsResult,
+} from "../../domain/source-docs.js";
+import type {
   ResourceSourceAdapter,
   SourceConfig,
 } from "./resource-source-adapter.js";
@@ -63,6 +67,13 @@ export class RegistrySourceAdapter implements ResourceSourceAdapter {
     _name: string,
     _options: CreateOptions,
   ): Promise<CreateResult> {
+    throw new HimanError(
+      errorCodes.NOT_IMPLEMENTED,
+      "Registry source is reserved for phase 2.",
+    );
+  }
+
+  async initDocs(_options: SourceDocsOptions): Promise<SourceDocsResult> {
     throw new HimanError(
       errorCodes.NOT_IMPLEMENTED,
       "Registry source is reserved for phase 2.",

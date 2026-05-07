@@ -66,6 +66,43 @@ himan publish rule my-rule --patch
 
 版本以 Git tag 为准，格式：`rule/my-rule@1.0.0`。更多设计见 [docs/mvp](./docs/mvp/README.md)。
 
+## Source 仓库结构
+
+himan Git source 是一个普通 Git 仓库，推荐先维护仓库级 `README.md` 和 `CHANGELOG.md`，用于说明整个资源集合，而不是把说明文档塞进每个 agent 的最终消费目录。
+
+```text
+your-himan-source/
+  README.md
+  CHANGELOG.md
+  rules/
+    my-rule/
+      himan.yaml
+      content.md
+  commands/
+    my-command/
+      himan.yaml
+      content.md
+  skills/
+    my-skill/
+      himan.yaml
+      SKILL.md
+```
+
+- `README.md`：source 仓库入口文档，建议记录资源目录说明、推荐安装方式、默认 agent 策略、常用资源索引和维护约定。
+- `CHANGELOG.md`：source 仓库级变更记录，建议记录新增、变更、废弃、移除的资源，以及重要版本发布说明。
+- `rules/`、`commands/`、`skills/`：按资源类型分组；每个子目录是一份 himan 资源。
+- `himan.yaml`：资源元数据，供 himan 扫描、发布和安装时读取。
+- `content.md` / `SKILL.md`：资源主入口，由 `himan.yaml` 的 `entry` 字段指定。
+
+可通过 `himan source init-docs` 为当前 default source 生成根目录文档模板；默认只创建缺失文件，`--force` 才覆盖已有 `README.md` / `CHANGELOG.md`，`--dry-run` 可预览结果。
+
+`himan create` 和 `himan publish` 会自动维护 source 根目录文档：
+
+- `README.md`：只更新 `<!-- himan:resources:start -->` 和 `<!-- himan:resources:end -->` 之间的资源索引；如果没有 marker，会在文件末尾追加一个受控资源索引区。
+- `CHANGELOG.md`：向 `[Unreleased]` 下追加资源变更条目；`create` 记录 `Added`，`publish` 记录 `Changed` / published version。
+
+仓库根目录的 `README.md` 和 `CHANGELOG.md` 不会被安装到 agent 目录；agent 只消费被安装的具体资源目录。当前安装实现会 materialize 资源目录本身，因此对 Cursor 这类要求特定单文件格式的 agent，资源目录内应避免放入会干扰识别的额外文件。
+
 ## 常用命令
 
 ### 1) source（数据源）
@@ -76,6 +113,7 @@ himan publish rule my-rule --patch
 | `source add <name> <git_url>` | 添加命名 Git 源                                    |
 | `source use <name>`           | 切换默认源                                          |
 | `source list [--json]`        | 查看已配置源（标记当前 default）                     |
+| `source init-docs [--force] [--dry-run] [--json]` | 为当前 default source 生成仓库级 README/CHANGELOG |
 | `source init <git_url>`       | 与 `init` 等价，便于统一走 `himan source ...` 入口     |
 
 等价独立命令：
@@ -84,6 +122,7 @@ himan publish rule my-rule --patch
 - `himan-source add <name> <git_url>`
 - `himan-source use <name>`
 - `himan-source list [--json]`
+- `himan-source init-docs [--force] [--dry-run] [--json]`
 
 ### 2) resource（资源）
 
@@ -122,7 +161,7 @@ himan publish rule my-rule --patch
 说明：资源与项目相关命令统一使用 `--agent` 指定目标 Agent。
 若未显式传 `--agent`，`create` / `install` 会使用当前项目默认 agent、全局默认 agent、资源 metadata 或内置默认 `cursor` 中最合适的一项；`dev` 会优先使用 lock 中记录的 agent。
 
-`publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。发布前会校验 `himan.yaml` 与入口文件；需要可推送的 Git 权限。若该资源已在 lock 中，发布后会同步更新 lock 版本。
+`publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。发布前会校验 `himan.yaml` 与入口文件；需要可推送的 Git 权限。发布 commit 会包含资源目录以及自动维护的 source 根目录 `README.md` / `CHANGELOG.md`。若该资源已在 lock 中，发布后会同步更新 lock 版本。
 
 `--json` 模式下，失败时会输出机器可读错误 JSON（`stderr`）。错误码定义见 [docs/error-codes.md](./docs/error-codes.md)。
 

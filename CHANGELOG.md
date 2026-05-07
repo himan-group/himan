@@ -6,6 +6,17 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-07
+
+### Added
+
+- Added `himan source init-docs` to scaffold source-level `README.md` and `CHANGELOG.md` files.
+- Added automatic source-level README/CHANGELOG maintenance for resource create and publish flows.
+
+### Changed
+
+- Documented the recommended Git source repository-level `README.md` and `CHANGELOG.md` convention.
+
 ## [0.2.2] - 2026-05-07
 
 ### Added

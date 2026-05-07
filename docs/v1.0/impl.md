@@ -70,8 +70,9 @@
 v1.0 仍以 Git 为主。在多源层面，当前已落地基础能力：
 
 - 配置中支持多个命名源（source alias）
-- 命令支持 `source add/use/list`
+- 命令支持 `source add/use/list/init-docs`
 - 业务命令默认读取 current/default source（单来源生效）
+- `create` / `publish` 自动维护当前 Git source 根目录 `README.md` 资源索引和 `CHANGELOG.md` `[Unreleased]` 条目
 
 下一步待补：跨源同时生效、跨源聚合索引与按命令显式指定 source（可选参数）。
 

@@ -39,9 +39,78 @@ himan create <type> <name> [options]
 
 ---
 
-## 3. 资源目录与元数据
+## 3. Source 仓库结构
 
-创建后的仓库结构示例：
+Git source 仓库推荐先维护仓库级 `README.md` 和 `CHANGELOG.md`，用于说明整个资源集合的使用方式与变更历史。它们位于仓库根目录，不属于任何单个资源，也不会通过 `himan install` 安装到 agent 目录。
+
+```text
+repo/
+  README.md
+  CHANGELOG.md
+  rules/
+  commands/
+  skills/
+```
+
+- `README.md`：说明 source 的用途、资源索引、安装示例、默认 agent 策略和维护约定
+- `CHANGELOG.md`：记录 source 级别的新增资源、资源变更、废弃、移除和重要发布说明
+- `rules/`、`commands/`、`skills/`：资源类型根目录，由 himan 扫描
+
+可用 `himan source init-docs` 生成根目录文档模板。命令默认只创建缺失的 `README.md` / `CHANGELOG.md`；已有文件会保留，除非显式传 `--force`。`--dry-run` 只返回将执行的创建、覆盖或跳过动作，不写盘。
+
+`create` 和 `publish` 会自动维护根目录文档：
+
+- `README.md`：只维护 `<!-- himan:resources:start -->` / `<!-- himan:resources:end -->` 标记内的资源索引；如果旧 README 没有标记，则在文件末尾追加受控资源索引区
+- `CHANGELOG.md`：向 `[Unreleased]` 写入资源变更；新增资源写入 `Added`，发布版本写入 `Changed`
+
+推荐的 `README.md` 基本结构：
+
+```md
+# Team Himan Source
+
+## Resources
+
+<!-- himan:resources:start -->
+
+- rule/code-review: Code review behavior for backend changes.
+- command/create-mr: MR creation workflow.
+- skill/api-debugging: API debugging workflow.
+
+<!-- himan:resources:end -->
+
+## Usage
+
+\`\`\`bash
+himan source add team <git_url>
+himan source use team
+himan install rule code-review
+\`\`\`
+
+## Maintenance
+
+- Publish resource versions with himan publish.
+- Record source-level changes in CHANGELOG.md.
+```
+
+推荐的 `CHANGELOG.md` 基本结构：
+
+```md
+# Changelog
+
+## [Unreleased]
+
+### Added
+
+- Added rule/code-review.
+
+### Changed
+
+- Updated skill/api-debugging usage guidance.
+```
+
+## 4. 资源目录与元数据
+
+`create` 生成资源目录，结构示例：
 
 ```text
 repo/
@@ -73,7 +142,7 @@ agents:
 
 ---
 
-## 4. 流程概要
+## 5. 流程概要
 
 1. 读取本地配置，确认已初始化源
 2. 校验类型与资源名格式
@@ -86,14 +155,14 @@ agents:
 
 ---
 
-## 5. 模板
+## 6. 模板
 
 - 当前仅 **basic**：最简结构与提示性说明
 - 后续可扩展更多模板名；自定义模板目录可作为后续增强
 
 ---
 
-## 6. 错误场景（产品语义）
+## 7. 错误场景（产品语义）
 
 - 资源目录已存在
 - 模板不存在（含请求了尚未支持的模板名）
@@ -103,13 +172,13 @@ agents:
 
 ---
 
-## 7. 测试关注点
+## 8. 测试关注点
 
 - 名称与类型校验、默认 entry/agents、重复创建与 `--force`、`--dry-run` 不写盘、创建后 `list` 可见
 
 ---
 
-## 8. 与资源工作流衔接
+## 9. 与资源工作流衔接
 
 ```text
 create → edit → publish

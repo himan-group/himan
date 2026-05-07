@@ -52,7 +52,7 @@ Runtime agent configuration commands:
 `src/bin/himan.ts` builds the main grouped CLI through `buildCli()`. The main CLI exposes:
 
 - Top-level `init`
-- `source init|add|use|list`
+- `source init|add|use|list|init-docs`
 - `resource list|history|create`
 - `project install|dev|uninstall|publish`
 - `agent list|use|current|clear`
@@ -83,11 +83,15 @@ The project has no HTTP API. It integrates with local Git repositories and files
 
 Resource source layout uses plural type directories in the source repo:
 
+- `README.md` is the recommended source-level entry document for resource index, usage examples, default agent policy, and maintenance notes.
+- `CHANGELOG.md` is the recommended source-level change history for added, changed, deprecated, and removed resources.
 - `rules/<name>/himan.yaml`
 - `commands/<name>/himan.yaml`
 - `skills/<name>/himan.yaml`
 
 Git tags use `<type>/<name>@<semver>`, for example `rule/code-review@1.0.0`.
+
+`himan source init-docs` scaffolds source-level `README.md` and `CHANGELOG.md` in the current default Git source cache. It preserves existing files by default, supports `--force`, `--dry-run`, and `--json`, and does not change agent install targets. `create` and `publish` automatically update the source-level README resource index between `<!-- himan:resources:start -->` / `<!-- himan:resources:end -->` markers and append `[Unreleased]` changelog entries; publish includes those docs in the resource version commit.
 
 ## UI And Components
 

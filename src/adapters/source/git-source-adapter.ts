@@ -7,6 +7,11 @@ import type {
   VersionInfo,
 } from "../../domain/resource.js";
 import type {
+  SourceDocsFileResult,
+  SourceDocsOptions,
+  SourceDocsResult,
+} from "../../domain/source-docs.js";
+import type {
   ResourceSourceAdapter,
   SourceConfig,
 } from "./resource-source-adapter.js";
@@ -25,6 +30,17 @@ type PublishMetadata = Record<string, unknown> & {
   type: ResourceType;
   entry: string;
 };
+
+const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
+const README_RESOURCES_START = "<!-- himan:resources:start -->";
+const README_RESOURCES_END = "<!-- himan:resources:end -->";
+
+type ChangelogSection = "Added" | "Changed";
+
+interface ChangelogEntry {
+  section: ChangelogSection;
+  line: string;
+}
 
 export class GitSourceAdapter implements ResourceSourceAdapter {
   private readonly repoManager = new RepoManager();
@@ -110,13 +126,20 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     metadata.version = version;
     await fs.writeFile(yamlPath, YAML.stringify(metadata), "utf8");
 
+    const docsPaths = await this.maintainSourceDocs(repoDir, {
+      section: "Changed",
+      line: `- Published \`${type}/${name}@${version}\`.`,
+    });
     const tag = `${type}/${name}@${version}`;
     await this.repoManager.commitTagAndPush(
       repoDir,
       `publish ${type}/${name}@${version}`,
       tag,
       undefined,
-      [path.relative(repoDir, targetDir)],
+      [
+        path.relative(repoDir, targetDir),
+        ...docsPaths.map((docPath) => path.relative(repoDir, docPath)),
+      ],
     );
     return { version, tag };
   }
@@ -130,8 +153,9 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     const resourceDir = path.join(repoDir, this.getTypeDir(type), name);
     const entry = options.entry ?? this.getDefaultEntry(type);
     const agents = options.agents?.length ? options.agents : ["cursor"];
+    const resourceExists = await this.exists(resourceDir);
 
-    if ((await this.exists(resourceDir)) && !options.force) {
+    if (resourceExists && !options.force) {
       throw new HimanError(
         errorCodes.RESOURCE_EXISTS,
         `Resource already exists: ${type}/${name}`,
@@ -159,6 +183,12 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
         this.getDefaultContent(type, name),
         "utf8",
       );
+      await this.maintainSourceDocs(repoDir, {
+        section: resourceExists ? "Changed" : "Added",
+        line: resourceExists
+          ? `- Updated \`${type}/${name}\`.`
+          : `- Added \`${type}/${name}\`.`,
+      });
     }
 
     return {
@@ -166,6 +196,38 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       name,
       resourceDir,
       files,
+      dryRun: Boolean(options.dryRun),
+    };
+  }
+
+  async initDocs(options: SourceDocsOptions = {}): Promise<SourceDocsResult> {
+    const repoDir = this.getRepoDir();
+    const files = [
+      {
+        path: path.join(repoDir, "README.md"),
+        content: await this.buildReadmeContent(repoDir),
+      },
+      {
+        path: path.join(repoDir, "CHANGELOG.md"),
+        content: this.buildChangelogContent(),
+      },
+    ];
+    const results: SourceDocsFileResult[] = [];
+
+    for (const file of files) {
+      const exists = await this.exists(file.path);
+      const action = exists ? (options.force ? "updated" : "skipped") : "created";
+      const reason = action === "skipped" ? "file already exists" : undefined;
+      results.push({ path: file.path, action, reason });
+
+      if (!options.dryRun && action !== "skipped") {
+        await fs.writeFile(file.path, file.content, "utf8");
+      }
+    }
+
+    return {
+      sourceDir: repoDir,
+      files: results,
       dryRun: Boolean(options.dryRun),
     };
   }
@@ -387,5 +449,264 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       return `# ${name}\n\nDescribe command behavior here.\n`;
     }
     return `# ${name}\n\nDescribe skill workflow here.\n`;
+  }
+
+  private async buildReadmeContent(repoDir: string): Promise<string> {
+    const resourceLines = await this.buildResourceIndex(repoDir);
+    const repo = this.sourceConfig?.repo ?? "<git_url>";
+    return [
+      `# ${this.getSourceTitle()}`,
+      "",
+      "Himan source repository for reusable agent resources.",
+      "",
+      "## Resources",
+      "",
+      README_RESOURCES_START,
+      ...resourceLines,
+      README_RESOURCES_END,
+      "",
+      "## Usage",
+      "",
+      "```bash",
+      `himan source add team ${repo}`,
+      "himan source use team",
+      "himan list rule",
+      "himan install rule <name>",
+      "```",
+      "",
+      "## Maintenance",
+      "",
+      "- Add resources with `himan create <type> <name>`.",
+      "- Publish resource versions with `himan publish <type> <name>`.",
+      "- Record source-level changes in `CHANGELOG.md`.",
+      "- Resource versions are tracked by Git tags such as `rule/code-review@1.0.0`.",
+      "",
+    ].join("\n");
+  }
+
+  private buildChangelogContent(): string {
+    return [
+      "# Changelog",
+      "",
+      "All notable source-level resource changes are documented in this file.",
+      "",
+      "## [Unreleased]",
+      "",
+      "### Added",
+      "",
+      "- Initial source README/CHANGELOG scaffold.",
+      "",
+    ].join("\n");
+  }
+
+  private async buildResourceIndex(repoDir: string): Promise<string[]> {
+    const sections: string[] = [];
+    for (const type of RESOURCE_TYPES) {
+      const resources = (await this.scanner.scanByType(repoDir, type)).sort((a, b) =>
+        a.name.localeCompare(b.name),
+      );
+      sections.push(`### ${this.getTypeLabel(type)}`, "");
+      if (resources.length === 0) {
+        sections.push(`- No ${type} resources yet.`, "");
+        continue;
+      }
+      for (const resource of resources) {
+        const version = await this.readResourceVersion(
+          repoDir,
+          resource.type,
+          resource.name,
+        );
+        const ref = version
+          ? `${resource.type}/${resource.name}@${version}`
+          : `${resource.type}/${resource.name}`;
+        sections.push(
+          `- \`${ref}\`${
+            resource.description ? `: ${resource.description}` : ""
+          }`,
+        );
+      }
+      sections.push("");
+    }
+    while (sections.at(-1) === "") {
+      sections.pop();
+    }
+    return sections;
+  }
+
+  private async maintainSourceDocs(
+    repoDir: string,
+    changelogEntry: ChangelogEntry,
+  ): Promise<string[]> {
+    const readmePath = await this.updateReadmeResourceIndex(repoDir);
+    const changelogPath = await this.updateChangelog(repoDir, changelogEntry);
+    return [readmePath, changelogPath];
+  }
+
+  private async updateReadmeResourceIndex(repoDir: string): Promise<string> {
+    const readmePath = path.join(repoDir, "README.md");
+    if (!(await this.exists(readmePath))) {
+      await fs.writeFile(readmePath, await this.buildReadmeContent(repoDir), "utf8");
+      return readmePath;
+    }
+
+    const current = await fs.readFile(readmePath, "utf8");
+    const resourceSection = [
+      README_RESOURCES_START,
+      ...(await this.buildResourceIndex(repoDir)),
+      README_RESOURCES_END,
+    ].join("\n");
+    const updated = this.replaceOrAppendReadmeResourceSection(
+      current,
+      resourceSection,
+    );
+    if (updated !== current) {
+      await fs.writeFile(readmePath, updated, "utf8");
+    }
+    return readmePath;
+  }
+
+  private replaceOrAppendReadmeResourceSection(
+    content: string,
+    resourceSection: string,
+  ): string {
+    const startIndex = content.indexOf(README_RESOURCES_START);
+    const endIndex = content.indexOf(README_RESOURCES_END);
+    if (startIndex >= 0 && endIndex > startIndex) {
+      const before = content.slice(0, startIndex).replace(/\s*$/, "\n");
+      const after = content
+        .slice(endIndex + README_RESOURCES_END.length)
+        .replace(/^\s*/, "\n\n");
+      return `${before}${resourceSection}${after}`.replace(/\s*$/, "\n");
+    }
+
+    const base = content.replace(/\s*$/, "");
+    return `${base}\n\n## Resources\n\n${resourceSection}\n`;
+  }
+
+  private async updateChangelog(
+    repoDir: string,
+    entry: ChangelogEntry,
+  ): Promise<string> {
+    const changelogPath = path.join(repoDir, "CHANGELOG.md");
+    const current = (await this.exists(changelogPath))
+      ? await fs.readFile(changelogPath, "utf8")
+      : this.buildChangelogBaseContent();
+    const updated = this.insertChangelogEntry(current, entry);
+    if (updated !== current) {
+      await fs.writeFile(changelogPath, updated, "utf8");
+    }
+    return changelogPath;
+  }
+
+  private buildChangelogBaseContent(): string {
+    return [
+      "# Changelog",
+      "",
+      "All notable source-level resource changes are documented in this file.",
+      "",
+      "## [Unreleased]",
+      "",
+    ].join("\n");
+  }
+
+  private insertChangelogEntry(
+    content: string,
+    entry: ChangelogEntry,
+  ): string {
+    const lines = content.replace(/\s*$/, "").split("\n");
+    let unreleasedIndex = lines.findIndex((line) => line.trim() === "## [Unreleased]");
+    if (unreleasedIndex === -1) {
+      const firstVersionIndex = lines.findIndex((line) => line.startsWith("## "));
+      const insertIndex = firstVersionIndex === -1 ? lines.length : firstVersionIndex;
+      lines.splice(insertIndex, 0, "## [Unreleased]", "");
+      unreleasedIndex = insertIndex;
+    }
+
+    const blockEnd = this.findNextHeadingIndex(lines, unreleasedIndex + 1, "## ");
+    const unreleasedLines = lines.slice(unreleasedIndex, blockEnd);
+    if (unreleasedLines.includes(entry.line)) {
+      return `${lines.join("\n")}\n`;
+    }
+
+    const sectionHeading = `### ${entry.section}`;
+    const sectionIndex = lines.findIndex(
+      (line, index) =>
+        index > unreleasedIndex && index < blockEnd && line.trim() === sectionHeading,
+    );
+    if (sectionIndex >= 0) {
+      const insertIndex = lines[sectionIndex + 1] === "" ? sectionIndex + 2 : sectionIndex + 1;
+      lines.splice(insertIndex, 0, entry.line);
+      return `${lines.join("\n")}\n`;
+    }
+
+    const insertIndex = this.findChangelogSectionInsertIndex(
+      lines,
+      unreleasedIndex,
+      blockEnd,
+      entry.section,
+    );
+    lines.splice(insertIndex, 0, `### ${entry.section}`, "", entry.line, "");
+    return `${lines.join("\n").replace(/\s*$/, "")}\n`;
+  }
+
+  private findNextHeadingIndex(
+    lines: string[],
+    startIndex: number,
+    headingPrefix: string,
+  ): number {
+    const found = lines.findIndex(
+      (line, index) => index >= startIndex && line.startsWith(headingPrefix),
+    );
+    return found === -1 ? lines.length : found;
+  }
+
+  private findChangelogSectionInsertIndex(
+    lines: string[],
+    unreleasedIndex: number,
+    blockEnd: number,
+    section: ChangelogSection,
+  ): number {
+    const sectionOrder: ChangelogSection[] = ["Added", "Changed"];
+    const sectionRank = sectionOrder.indexOf(section);
+    for (let index = unreleasedIndex + 1; index < blockEnd; index += 1) {
+      const line = lines[index].trim();
+      if (!line.startsWith("### ")) continue;
+      const foundSection = line.slice(4) as ChangelogSection;
+      const foundRank = sectionOrder.indexOf(foundSection);
+      if (foundRank > sectionRank) {
+        return index;
+      }
+    }
+    return blockEnd;
+  }
+
+  private async readResourceVersion(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<string | undefined> {
+    const yamlPath = path.join(repoDir, this.getTypeDir(type), name, "himan.yaml");
+    try {
+      const raw = await fs.readFile(yamlPath, "utf8");
+      const parsed = YAML.parse(raw) as { version?: unknown } | null;
+      return typeof parsed?.version === "string" ? parsed.version : undefined;
+    } catch (error) {
+      if (!this.isNotFoundError(error)) {
+        throw error;
+      }
+      return undefined;
+    }
+  }
+
+  private getSourceTitle(): string {
+    const repo = this.sourceConfig?.repo?.replace(/\/$/, "");
+    const repoName = repo?.split(/[/:]/).at(-1)?.replace(/\.git$/, "");
+    return repoName ? `${repoName} Himan Source` : "Himan Source";
+  }
+
+  private getTypeLabel(type: ResourceType): string {
+    if (type === "rule") return "Rules";
+    if (type === "command") return "Commands";
+    return "Skills";
   }
 }
