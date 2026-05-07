@@ -1,6 +1,6 @@
 {
   "name": "@hi-man/himan",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Prompt and agent asset management CLI",
   "keywords": [
     "ai",
@@ -59,9 +59,10 @@
     "release": "pnpm run verify && npm publish",
     "release:dry": "pnpm run verify && npm publish --dry-run",
     "release:test": "pnpm run verify && npm version prerelease --preid test --no-git-tag-version && npm publish --tag test",
-    "version:patch": "npm version patch --no-git-tag-version",
-    "version:minor": "npm version minor --no-git-tag-version",
-    "version:major": "npm version major --no-git-tag-version"
+    "changelog:release": "node scripts/release-changelog.mjs",
+    "version:patch": "npm version patch --no-git-tag-version && pnpm run changelog:release",
+    "version:minor": "npm version minor --no-git-tag-version && pnpm run changelog:release",
+    "version:major": "npm version major --no-git-tag-version && pnpm run changelog:release"
   },
   "dependencies": {
     "commander": "^14.0.3",

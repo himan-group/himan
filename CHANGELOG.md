@@ -6,6 +6,27 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-07
+
+### Added
+
+- Added the `common-project-changelog` skill to enforce changelog and version history placement rules.
+- Added `scripts/release-changelog.mjs` so package version scripts release `[Unreleased]` changelog entries into the new version section.
+
+### Changed
+
+- Changed `himan source init-docs --force` to list existing source resources in generated docs.
+- Changed `himan source init-docs` to commit and push generated source docs when files changed.
+- Changed generated source docs to show the latest tagged resource version when one exists.
+- Changed `himan publish` to allow resources without `himan.yaml` when their default entry file exists.
+- Changed resource discovery to infer `rule`, `command`, and `skill` resources from default entry files when `himan.yaml` is absent.
+- Changed `himan publish` to reinstall the published version in copy mode, update the lock file, and remove the resource dev directory.
+- Changed package version scripts to archive `[Unreleased]` changelog entries after version bumps.
+
+### Fixed
+
+- Fixed `himan source init-docs --force` so existing Codex-style skills with `SKILL.md` front matter are included in generated source docs.
+
 ## [0.3.0] - 2026-05-07
 
 ### Added

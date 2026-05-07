@@ -101,6 +101,11 @@ export function registerSourceCommands(
               `- ${file.action} ${file.path}${file.reason ? ` (${file.reason})` : ""}\n`,
             );
           }
+          if (result.committed) {
+            process.stdout.write("Committed and pushed source docs changes.\n");
+          } else if (!result.dryRun) {
+            process.stdout.write("No source docs changes to commit.\n");
+          }
         });
       },
     );

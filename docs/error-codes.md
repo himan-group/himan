@@ -110,8 +110,8 @@
 ### `E_INVALID_RESOURCE_METADATA`
 
 - **含义**：资源元数据不合法，无法发布或读取为有效资源。
-- **常见触发**：`publish` 目标缺少 `himan.yaml`，`name/type/entry` 不匹配，或 `entry` 指向的入口文件不存在。
-- **建议处理**：检查资源目录下的 `himan.yaml`，确认 `name`、`type`、`entry` 与命令参数和文件结构一致。
+- **常见触发**：`himan.yaml` 存在但 `name/type/entry` 不匹配，`entry` 指向的入口文件不存在，或缺少 `himan.yaml` 且默认入口文件也不存在。
+- **建议处理**：如果使用 `himan.yaml`，确认 `name`、`type`、`entry` 与命令参数和文件结构一致；如果暂不使用 `himan.yaml`，确认默认入口文件存在：`rule` / `command` 为 `content.md`，`skill` 为 `SKILL.md`。
 
 ### `E_PUBLISH_NO_CHANGES`
 

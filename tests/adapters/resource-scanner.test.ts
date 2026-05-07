@@ -119,4 +119,55 @@ describe("ResourceScanner", () => {
       },
     ]);
   });
+
+  it("infers resources from default entries when himan.yaml is missing", async () => {
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "himan-repo-"));
+    tmpDirs.push(repoDir);
+
+    await fs.mkdir(path.join(repoDir, "rules", "legacy-rule"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, "rules", "legacy-rule", "content.md"),
+      "# legacy-rule\n",
+      "utf8",
+    );
+
+    await fs.mkdir(path.join(repoDir, "skills", "legacy-skill"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, "skills", "legacy-skill", "SKILL.md"),
+      [
+        "---",
+        "name: legacy-skill",
+        "description: Legacy skill description",
+        "agents:",
+        "  - codex",
+        "---",
+        "",
+        "# legacy-skill",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const scanner = new ResourceScanner();
+    const rules = await scanner.scanByType(repoDir, "rule");
+    const skills = await scanner.scanByType(repoDir, "skill");
+
+    expect(rules).toEqual([
+      {
+        name: "legacy-rule",
+        type: "rule",
+        entry: "content.md",
+        description: undefined,
+        agents: [],
+      },
+    ]);
+    expect(skills).toEqual([
+      {
+        name: "legacy-skill",
+        type: "skill",
+        entry: "SKILL.md",
+        description: "Legacy skill description",
+        agents: ["codex"],
+      },
+    ]);
+  });
 });

@@ -139,7 +139,7 @@
 
 - Git 状态冲突：发布前强制 preflight（干净工作区、远端可达）
 - 软链兼容问题：明确平台支持矩阵，Windows 放入后续版本
-- 结构漂移：`himan.yaml` 强校验与 schema 版本化
+- 结构漂移：可选 `himan.yaml` 的 schema 版本化与入口文件 preflight
 - 版本不一致：Tag 作为唯一版本事实来源
 - 团队滥发布：引入审批 gate 与权限分层
 

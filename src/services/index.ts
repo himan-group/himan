@@ -308,6 +308,11 @@ export class ServiceFactory {
   ): Promise<{ type: ResourceType; name: string; version: string; tag: string }> {
     const source = await this.loadSourceFromConfig();
     const sourceDir = await this.resolvePublishSourceDir(type, name, projectDir);
+    const existingInstallInfo = await this.tryResolveInstalledResource(
+      projectDir,
+      type,
+      name,
+    );
 
     const history = await source.history(type, name);
     const latest = history[0]?.version ?? "0.0.0";
@@ -320,29 +325,32 @@ export class ServiceFactory {
     if (!(await this.exists(storePath))) {
       await source.pull(type, name, nextVersion, storePath);
     }
-    const agentsFromMeta = normalizeAgents((await this.readResourceMetaFromDir(storePath))?.agents);
     const locked = await this.getLockedResource(projectDir, type, name);
+    const resourceMeta = await this.readResourceMetaFromDir(storePath, type);
+    const configuredAgents = await this.getConfiguredAgents(projectDir);
     const nextAgents = locked?.agents?.length
       ? normalizeAgents(locked.agents)
-      : agentsFromMeta;
-    const installMode = this.resolveInstallMode(locked?.mode);
+      : existingInstallInfo?.agents.length
+        ? normalizeAgents(existingInstallInfo.agents)
+        : configuredAgents ?? normalizeAgents(resourceMeta?.agents);
+    const installMode: InstallMode = "copy";
     const linkPaths = getProjectResourcePaths(projectDir, type, name, nextAgents);
     for (const linkPath of linkPaths) {
-      if (await this.exists(linkPath)) {
-        await this.materializeResource(storePath, linkPath, installMode);
-      }
+      await this.materializeResource(storePath, linkPath, installMode);
     }
 
-    if (locked) {
-      const sourceInfo = await this.getLockSourceInfo();
-      await this.lockStore.upsertResource(projectDir, sourceInfo, {
-        type,
-        name,
-        version: nextVersion,
-        agents: nextAgents,
-        mode: installMode,
-      });
-    }
+    const sourceInfo = await this.getLockSourceInfo();
+    await this.lockStore.upsertResource(projectDir, sourceInfo, {
+      type,
+      name,
+      version: nextVersion,
+      agents: nextAgents,
+      mode: installMode,
+    });
+    await fs.rm(this.getProjectDevPath(projectDir, type, name), {
+      recursive: true,
+      force: true,
+    });
 
     return { type, name, version: result.version, tag: result.tag };
   }
@@ -452,7 +460,7 @@ export class ServiceFactory {
     if (!(await this.exists(storePath))) {
       await source.pull(type, name, resolvedVersion, storePath);
     }
-    const resourceMeta = await this.readResourceMetaFromDir(storePath);
+    const resourceMeta = await this.readResourceMetaFromDir(storePath, type);
     const effectiveTargets = await this.resolveEffectiveAgents(
       projectDir,
       agents,
@@ -673,7 +681,7 @@ export class ServiceFactory {
     }
 
     const installedPath = await fs.realpath(existingCandidates[0].path);
-    const resourceMeta = await this.readResourceMetaFromDir(installedPath);
+    const resourceMeta = await this.readResourceMetaFromDir(installedPath, type);
     const agentsFromMeta = resourceMeta?.agents?.length
       ? normalizeAgents(resourceMeta.agents)
       : undefined;
@@ -685,6 +693,32 @@ export class ServiceFactory {
       linkPaths: getProjectResourcePaths(projectDir, type, name, effectiveAgents),
       mode: "link",
     };
+  }
+
+  private async tryResolveInstalledResource(
+    projectDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<
+    | {
+        installedPath: string;
+        linkPaths: string[];
+        agents: string[];
+        mode: InstallMode;
+      }
+    | undefined
+  > {
+    try {
+      return await this.resolveInstalledResource(projectDir, type, name);
+    } catch (error) {
+      if (
+        error instanceof HimanError &&
+        error.code === errorCodes.INSTALL_NOT_FOUND
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
   }
 
   private async resolveEffectiveAgents(
@@ -718,13 +752,56 @@ export class ServiceFactory {
 
   private async readResourceMetaFromDir(
     resourceDir: string,
+    type: ResourceType,
   ): Promise<{ agents?: string[] } | null> {
     const yamlPath = path.join(resourceDir, "himan.yaml");
-    if (!(await this.exists(yamlPath))) return null;
-    const raw = await fs.readFile(yamlPath, "utf8");
-    const parsed = (YAML.parse(raw) as { agents?: string[]; targets?: string[] } | null) ?? null;
-    if (!parsed) return null;
-    return { agents: parsed.agents ?? parsed.targets };
+    if (await this.exists(yamlPath)) {
+      const raw = await fs.readFile(yamlPath, "utf8");
+      const parsed =
+        (YAML.parse(raw) as { agents?: string[]; targets?: string[] } | null) ??
+        null;
+      if (!parsed) return null;
+      return { agents: parsed.agents ?? parsed.targets };
+    }
+
+    if (type !== "skill") return null;
+    const entryPath = path.join(resourceDir, this.getDefaultEntry(type));
+    if (!(await this.exists(entryPath))) return null;
+    const metadata = await this.readFrontMatter(entryPath);
+    return {
+      agents:
+        this.readStringArrayMetadata(metadata, "agents") ??
+        this.readStringArrayMetadata(metadata, "targets"),
+    };
+  }
+
+  private async readFrontMatter(
+    filePath: string,
+  ): Promise<Record<string, unknown> | null> {
+    const raw = await fs.readFile(filePath, "utf8");
+    const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(raw.trimStart());
+    if (!match) return null;
+    try {
+      const parsed = YAML.parse(match[1]) as unknown;
+      return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private readStringArrayMetadata(
+    metadata: Record<string, unknown> | null,
+    key: string,
+  ): string[] | undefined {
+    const value = metadata?.[key];
+    if (!Array.isArray(value)) return undefined;
+    const items = value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return items.length > 0 ? items : undefined;
   }
 
   private async exists(targetPath: string): Promise<boolean> {
@@ -784,6 +861,10 @@ export class ServiceFactory {
     if (type === "rule") return "rules";
     if (type === "command") return "commands";
     return "skills";
+  }
+
+  private getDefaultEntry(type: ResourceType): string {
+    return type === "skill" ? "SKILL.md" : "content.md";
   }
 
   private validateCreateInput(

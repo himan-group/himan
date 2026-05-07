@@ -15,4 +15,5 @@ export interface SourceDocsResult {
   sourceDir: string;
   files: SourceDocsFileResult[];
   dryRun: boolean;
+  committed: boolean;
 }
