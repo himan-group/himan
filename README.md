@@ -60,7 +60,7 @@ himan publish rule my-rule --patch
   - `rule` -> `.himan/dev/rule/<name>`
   - `command` -> `.himan/dev/command/<name>`
   - `skill` -> `.himan/dev/skill/<name>`
-- lock 文件：`install <type> <name[@version]>` 会写入 `himan.lock`；`himan install`（无参数）会按 lock 批量恢复安装。
+- lock 文件：`install <type> <name[@version]>` 会写入 `himan.lock`，记录 source、精确版本、agent 和安装模式；`himan install`（无参数）会按 lock 记录的 source 批量恢复安装，不受当前 default source 切换影响。
 - 安装模式：默认 `--mode link` 使用软链；也可用 `--mode copy` 将资源复制到目标 agent 目录，lock 会记录并复现该模式。
 - 默认 agent：`agent use <agent>` 默认写当前项目 `.himan/config.json`；加 `--global` 写入 `~/.himan/config.json`。当前项目配置优先于全局配置。
 
@@ -97,7 +97,7 @@ himan publish rule my-rule --patch
 
 | 命令                              | 说明                                                      |
 | --------------------------------- | --------------------------------------------------------- |
-| `install [type] [name[@version]] [--agent a,b] [--mode link\|copy]` | 有参数时安装指定资源；**无参数**时按 `himan.lock` 批量安装；可覆盖安装目标 agent 或安装模式 |
+| `install [type] [name[@version]] [--agent a,b] [--mode link\|copy]` | 有参数时从当前 default source 安装指定资源；**无参数**时按 `himan.lock` 记录的 source 批量安装；可覆盖安装目标 agent 或安装模式 |
 | `dev <type> <name>`               | 切换到开发态，并按安装模式将项目目标指向或复制自 `.himan/dev/...` |
 | `uninstall <type> <name>`         | 从项目移除安装目标，并同步删除 `himan.lock` 条目           |
 | `publish <type> <name>`           | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个） |
@@ -122,11 +122,11 @@ himan publish rule my-rule --patch
 说明：资源与项目相关命令统一使用 `--agent` 指定目标 Agent。
 若未显式传 `--agent`，`create` / `install` 会使用当前项目默认 agent、全局默认 agent、资源 metadata 或内置默认 `cursor` 中最合适的一项；`dev` 会优先使用 lock 中记录的 agent。
 
-`publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。需要可推送的 Git 权限。若该资源已在 lock 中，发布后会同步更新 lock 版本。
+`publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。发布前会校验 `himan.yaml` 与入口文件；需要可推送的 Git 权限。若该资源已在 lock 中，发布后会同步更新 lock 版本。
 
 `--json` 模式下，失败时会输出机器可读错误 JSON（`stderr`）。错误码定义见 [docs/error-codes.md](./docs/error-codes.md)。
 
-多源说明：当前是「**多来源可配置，单来源生效**」模型。业务命令（`list/install/history/dev/publish`）只作用于当前 default source；切换后再执行命令。
+多源说明：当前是「**多来源可配置，单来源生效**」模型。显式资源命令（`list/install <type> .../history/dev/publish`）作用于当前 default source；`himan install` 无参数恢复时使用 `himan.lock` 中记录的 source。
 
 ## 当前范围
 

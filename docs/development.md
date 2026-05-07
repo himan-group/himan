@@ -47,10 +47,10 @@ pnpm test
    Git 标签约定：与 `version` 对应、带前缀 **`v`**（如 `1.2.0` → 标签 `v1.2.0`）。
 
 3. **合并到 `master`**  
-   推送合并后的 `master` 会触发 GitHub Actions 工作流 [`.github/workflows/publish-npm.yml`](https://github.com/lidetao/himan/blob/master/.github/workflows/publish-npm.yml)：安装依赖后执行 **`pnpm run release`**（即再次 `verify` + `npm publish`）。  
+   推送合并后的 `master` 会触发 GitHub Actions 工作流 [`.github/workflows/publish-npm.yml`](https://github.com/himan-group/himan/blob/master/.github/workflows/publish-npm.yml)：安装依赖后执行 **`pnpm run release`**（即再次 `verify` + `npm publish`）。
    npm 发布认证使用 **Trusted Publishing**，不使用长期 `NPM_TOKEN`。需在 npmjs.com 的 `@hi-man/himan` 包设置中添加 Trusted Publisher：
    - Provider: GitHub Actions
-   - Organization or user: `lidetao`
+   - Organization or user: `himan-group`
    - Repository: `himan`
    - Workflow filename: `publish-npm.yml`
    workflow 已授予 OIDC 所需的 `id-token: write` 权限，并在发布前升级 npm CLI 到支持 Trusted Publishing 的版本。
@@ -74,8 +74,8 @@ pnpm test
 
 | 工作流 | 文件 | 说明 |
 |--------|------|------|
-| **PR version tag check** | [`.github/workflows/pr-master-version-tag.yml`](https://github.com/lidetao/himan/blob/master/.github/workflows/pr-master-version-tag.yml) | 目标分支为 `master` 的 PR：读取 **PR 头提交**上的 `package.json` 的 `version`，若远端已存在同名标签 **`v{version}`**，则 **检查失败**（用于在合并前拦截重复版本）。 |
-| **Tag version on master** | [`.github/workflows/push-master-version-tag.yml`](https://github.com/lidetao/himan/blob/master/.github/workflows/push-master-version-tag.yml) | 向 `master` **推送**后（含合并 PR）：在 **当前推送提交**上创建并推送注释标签 **`v{version}`**。若标签已存在、创建或 `git push` 失败，仅输出 **告警**（`::warning::`），**工作流仍成功**，不撤销已发生的 merge；请按日志提示在本机补打标签并 `git push origin v{x.y.z}`。 |
+| **PR version tag check** | [`.github/workflows/pr-master-version-tag.yml`](https://github.com/himan-group/himan/blob/master/.github/workflows/pr-master-version-tag.yml) | 目标分支为 `master` 的 PR：读取 **PR 头提交**上的 `package.json` 的 `version`，若远端已存在同名标签 **`v{version}`**，则 **检查失败**（用于在合并前拦截重复版本）。 |
+| **Tag version on master** | [`.github/workflows/push-master-version-tag.yml`](https://github.com/himan-group/himan/blob/master/.github/workflows/push-master-version-tag.yml) | 向 `master` **推送**后（含合并 PR）：在 **当前推送提交**上创建并推送注释标签 **`v{version}`**。若标签已存在、创建或 `git push` 失败，仅输出 **告警**（`::warning::`），**工作流仍成功**，不撤销已发生的 merge；请按日志提示在本机补打标签并 `git push origin v{x.y.z}`。 |
 
 **启用「合并前拦截」**：在 GitHub **Settings → Branches** 中为 `master` 配置分支保护，勾选 **Require status checks to pass before merging**，并勾选必选检查 **`PR version tag check / version-tag-available`**（名称以仓库里 Actions 界面为准）。
 

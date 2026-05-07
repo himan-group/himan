@@ -107,6 +107,18 @@
 - **常见触发**：使用非 kebab-case 的名称。
 - **建议处理**：改为 `kebab-case`（如 `code-review`）。
 
+### `E_INVALID_RESOURCE_METADATA`
+
+- **含义**：资源元数据不合法，无法发布或读取为有效资源。
+- **常见触发**：`publish` 目标缺少 `himan.yaml`，`name/type/entry` 不匹配，或 `entry` 指向的入口文件不存在。
+- **建议处理**：检查资源目录下的 `himan.yaml`，确认 `name`、`type`、`entry` 与命令参数和文件结构一致。
+
+### `E_PUBLISH_NO_CHANGES`
+
+- **含义**：发布时没有可提交的资源变更。
+- **常见触发**：重复发布已写入相同内容和版本的资源目录。
+- **建议处理**：确认资源内容或元数据已经变更，再重新执行 `publish`。
+
 ### `E_UNSUPPORTED_RESOURCE_TYPE`
 
 - **含义**：资源类型不受支持。

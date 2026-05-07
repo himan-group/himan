@@ -16,7 +16,11 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 - Clean `dist` before every build so npm packages cannot include stale generated files.
 - Aligned MVP, v1.0, and roadmap docs with current resource type and multi-agent behavior.
+- Added publish preflight checks for resource metadata and entry files, with stable publish error codes.
+- Restored lock-file installs from the source recorded in `himan.lock` instead of the current default source.
+- Updated repository links to `https://github.com/himan-group/himan`.
 - Updated Git source refresh to fast-forward clean cached working trees after fetch while preserving dirty local edits.
+- Updated list cache invalidation to track `himan.yaml` metadata content instead of parent directory mtimes.
 - Moved developer, testing, release, and CI maintenance documentation from README to `docs/development.md`.
 - Improved README installation guidance for npm, one-off execution, local development, and CLI entry points.
 - Included README-linked user documentation in the npm package and changed GitHub workflow links to repository URLs.

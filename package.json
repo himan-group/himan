@@ -21,12 +21,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lidetao/himan.git"
+    "url": "git+https://github.com/himan-group/himan.git"
   },
   "bugs": {
-    "url": "https://github.com/lidetao/himan/issues"
+    "url": "https://github.com/himan-group/himan/issues"
   },
-  "homepage": "https://github.com/lidetao/himan#readme",
+  "homepage": "https://github.com/himan-group/himan#readme",
   "files": [
     "dist",
     "docs/development.md",
@@ -48,8 +48,8 @@
     "himan-project": "dist/bin/himan-project.js"
   },
   "scripts": {
-    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "prebuild": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "clean": "rm -rf dist",
+    "prebuild": "rm -rf dist",
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/bin/himan.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",

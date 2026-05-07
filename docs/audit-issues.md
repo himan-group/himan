@@ -10,6 +10,11 @@
 - 通过：`./node_modules/.bin/vitest run tests/adapters tests/state tests/utils`
 - 通过：`./node_modules/.bin/vitest run tests/adapters/repo-manager.test.ts`
 - 通过：`./node_modules/.bin/vitest run tests/adapters`
+- 通过：`./node_modules/.bin/vitest run tests/adapters/git-source-adapter.test.ts tests/state/index-cache-store.test.ts`
+- 通过：`./node_modules/.bin/vitest run tests/adapters tests/state`
+- 通过：`./node_modules/.bin/vitest run tests/services/service-factory-lock.test.ts tests/state/state-store.test.ts`
+- 通过：`./node_modules/.bin/vitest run tests/adapters tests/state tests/services tests/utils`
+- 通过：`./node_modules/.bin/vitest run tests/adapters/repo-manager.test.ts tests/adapters/git-source-adapter.test.ts`
 - 通过：`npm --cache /private/tmp/himan-npm-cache run build`
 - 阻塞：`pnpm run typecheck`、`pnpm test` 在当前环境因 `pnpm` 自身 `fetch failed` 失败。
 - 阻塞：`./node_modules/.bin/vitest run tests/cli/commands.integration.test.ts` 未进入业务断言，卡在 `beforeAll` 中的 `pnpm run build`，最终因 build 状态码非 0 失败。
@@ -50,6 +55,7 @@
 
 ### 4. `himan.lock` 可复现安装与实现不一致
 
+- 状态：已处理（2026-05-07）。`himan.lock` 的 source 现在记录当前 source alias，并保留 source 类型、repo 和 repoId；`himan install` 无参数恢复时直接使用 lock 中记录的 source，而不是当前 default source，恢复过程中也不会把 lock source 覆盖成当前 default source。
 - 位置：`src/services/index.ts`、`src/state/project-lock-store.ts`、`docs/v1.0/impl.md`
 - 现状：
   - lock 记录 `source`，但无参 `install` 逐条调用 `install()`，实际使用当前 default source。
@@ -67,6 +73,7 @@
 
 ### 6. `list` 索引缓存可能返回陈旧元数据
 
+- 状态：已处理（2026-05-07）。`list` 缓存失效条件已从类型目录 mtime 改为资源目录下 `himan.yaml` 文件内容 hash；修改已有资源元数据、添加或删除资源元数据文件时会刷新 `~/.himan/index.json`，旧的 mtime 缓存条目会自然失效并重建。
 - 位置：`src/adapters/source/git-source-adapter.ts`
 - 现状：缓存失效只比较类型目录的 `mtimeMs`。修改已有资源目录内的 `himan.yaml` 时，父级类型目录 mtime 可能不变。
 - 影响：`list` 可能返回旧的 description、entry、agents。
@@ -74,6 +81,7 @@
 
 ### 7. publish preflight 与错误码治理不足
 
+- 状态：已处理（2026-05-07）。`publish` 发布前会校验 `himan.yaml` 存在且为对象，`name/type/entry` 与命令参数匹配，入口文件存在且位于资源目录内；无可提交变更时返回稳定错误码 `E_PUBLISH_NO_CHANGES`，元数据非法时返回 `E_INVALID_RESOURCE_METADATA`。
 - 位置：`src/adapters/source/git-source-adapter.ts`、`src/adapters/git/repo-manager.ts`、`docs/v1.0/impl.md`
 - 现状：
   - 文档要求 preflight、元数据校验、入口存在性校验，但代码尚未实现完整校验。

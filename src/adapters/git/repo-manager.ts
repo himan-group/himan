@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { simpleGit, type SimpleGit } from "simple-git";
+import { HimanError, errorCodes } from "../../utils/errors.js";
 
 export class RepoManager {
   async cloneOrFetch(repo: string, targetDir: string): Promise<void> {
@@ -62,15 +63,26 @@ export class RepoManager {
     message: string,
     tag: string,
     branch?: string,
+    paths: string[] = ["."],
   ): Promise<void> {
     const git = simpleGit(repoDir);
-    await git.add(["."]);
-    const status = await git.status();
-    if (status.isClean()) {
-      throw new Error("No changes to publish.");
+    const pathspecs = paths.length > 0 ? paths : ["."];
+    await git.add(pathspecs);
+    const stagedFiles = await git.raw([
+      "diff",
+      "--cached",
+      "--name-only",
+      "--",
+      ...pathspecs,
+    ]);
+    if (!stagedFiles.trim()) {
+      throw new HimanError(
+        errorCodes.PUBLISH_NO_CHANGES,
+        "No changes to publish.",
+      );
     }
 
-    await git.commit(message);
+    await git.commit(message, pathspecs);
     await git.addTag(tag);
 
     const currentBranch = (

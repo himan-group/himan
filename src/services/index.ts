@@ -14,7 +14,10 @@ import type {
 } from "../domain/resource.js";
 import { StateStore } from "../state/state-store.js";
 import { ProjectConfigStore } from "../state/project-config-store.js";
-import { ProjectLockStore } from "../state/project-lock-store.js";
+import {
+  ProjectLockStore,
+  type LockSourceInfo,
+} from "../state/project-lock-store.js";
 import type { SourceState } from "../state/state-store.js";
 import { PathResolver } from "../utils/path-resolver.js";
 import { toRepoId } from "../utils/repo-id.js";
@@ -225,40 +228,17 @@ export class ServiceFactory {
     linkPath: string;
     mode: InstallMode;
   }> {
-    const source = await this.loadSourceFromConfig();
-    const sourceInfo = await this.getLockSourceInfo();
-    const history = await source.history(type, name);
-    if (history.length === 0) {
-      throw new HimanError(
-        errorCodes.RESOURCE_NOT_FOUND,
-        `Resource not found: ${type}/${name}`,
-      );
-    }
-
-    const resolvedVersion = this.resolveVersion(history, version);
-    const storePath = this.getStorePath(type, name, resolvedVersion);
-    if (!(await this.exists(storePath))) {
-      await source.pull(type, name, resolvedVersion, storePath);
-    }
-    const resourceMeta = await this.readResourceMetaFromDir(storePath);
-    const effectiveTargets = await this.resolveEffectiveAgents(
-      projectDir,
-      agents,
-      resourceMeta?.agents,
-    );
-    const linkPaths = getProjectResourcePaths(projectDir, type, name, effectiveTargets);
-    for (const linkPath of linkPaths) {
-      await this.materializeResource(storePath, linkPath, mode);
-    }
-    await this.lockStore.upsertResource(projectDir, sourceInfo, {
+    const { source, sourceInfo } = await this.loadSourceWithInfoFromConfig();
+    return this.installWithSource(
+      source,
+      sourceInfo,
       type,
       name,
-      version: resolvedVersion,
-      agents: effectiveTargets,
+      version,
+      projectDir,
+      agents,
       mode,
-    });
-
-    return { type, name, version: resolvedVersion, linkPath: linkPaths[0], mode };
+    );
   }
 
   async dev(
@@ -416,8 +396,12 @@ export class ServiceFactory {
       linkPath: string;
       mode: InstallMode;
     }> = [];
+    const lockSourceInfo = this.normalizeLockSourceInfo(lock.source);
+    const lockedSource = await this.loadSourceFromLock(lockSourceInfo);
     for (const item of lock.resources) {
-      const result = await this.install(
+      const result = await this.installWithSource(
+        lockedSource,
+        lockSourceInfo,
         item.type,
         item.name,
         item.version,
@@ -430,7 +414,93 @@ export class ServiceFactory {
     return results;
   }
 
+  private async installWithSource(
+    source: ResourceSourceAdapter,
+    sourceInfo: LockSourceInfo,
+    type: ResourceType,
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents: string[] | undefined,
+    mode: InstallMode,
+  ): Promise<{
+    type: ResourceType;
+    name: string;
+    version: string;
+    linkPath: string;
+    mode: InstallMode;
+  }> {
+    const history = await source.history(type, name);
+    if (history.length === 0) {
+      throw new HimanError(
+        errorCodes.RESOURCE_NOT_FOUND,
+        `Resource not found: ${type}/${name}`,
+      );
+    }
+
+    const resolvedVersion = this.resolveVersion(history, version);
+    const storePath = this.getStorePath(type, name, resolvedVersion);
+    if (!(await this.exists(storePath))) {
+      await source.pull(type, name, resolvedVersion, storePath);
+    }
+    const resourceMeta = await this.readResourceMetaFromDir(storePath);
+    const effectiveTargets = await this.resolveEffectiveAgents(
+      projectDir,
+      agents,
+      resourceMeta?.agents,
+    );
+    const linkPaths = getProjectResourcePaths(projectDir, type, name, effectiveTargets);
+    for (const linkPath of linkPaths) {
+      await this.materializeResource(storePath, linkPath, mode);
+    }
+    await this.lockStore.upsertResource(projectDir, sourceInfo, {
+      type,
+      name,
+      version: resolvedVersion,
+      agents: effectiveTargets,
+      mode,
+    });
+
+    return { type, name, version: resolvedVersion, linkPath: linkPaths[0], mode };
+  }
+
   private async loadSourceFromConfig(): Promise<ResourceSourceAdapter> {
+    return (await this.loadSourceWithInfoFromConfig()).source;
+  }
+
+  private async loadSourceWithInfoFromConfig(): Promise<{
+    source: ResourceSourceAdapter;
+    sourceInfo: LockSourceInfo;
+  }> {
+    const { name, source: stateSource } = await this.getCurrentSourceState();
+    const sourceInfo = this.toLockSourceInfo(stateSource, name);
+    const source = await this.loadSourceFromInfo(sourceInfo);
+    return {
+      source,
+      sourceInfo,
+    };
+  }
+
+  private async loadSourceFromLock(sourceInfo: LockSourceInfo): Promise<ResourceSourceAdapter> {
+    return this.loadSourceFromInfo(sourceInfo);
+  }
+
+  private async loadSourceFromInfo(sourceInfo: LockSourceInfo): Promise<ResourceSourceAdapter> {
+    const normalizedSourceInfo = this.normalizeLockSourceInfo(sourceInfo);
+    const sourceConfig = this.buildSourceConfig(
+      normalizedSourceInfo.type,
+      normalizedSourceInfo.repo,
+      normalizedSourceInfo.repoId,
+    );
+    const source = this.createSource(normalizedSourceInfo.type);
+    await source.init(sourceConfig);
+    return source;
+  }
+
+  private async getCurrentSourceState(): Promise<{
+    name?: string;
+    source: SourceState;
+  }> {
     const config = await this.stateStore.loadConfig();
     if (!config?.source) {
       throw new HimanError(
@@ -439,14 +509,9 @@ export class ServiceFactory {
       );
     }
 
-    const sourceConfig = this.buildSourceConfig(
-      config.source.type,
-      config.source.repo,
-      config.source.repoId,
-    );
-    const source = this.createSource(config.source.type);
-    await source.init(sourceConfig);
-    return source;
+    const currentName = config.sources?.default ?? "default";
+    const currentSource = config.sources?.items[currentName] ?? config.source;
+    return { name: currentName, source: currentSource };
   }
 
   private createSource(type: "git" | "registry"): ResourceSourceAdapter {
@@ -456,21 +521,32 @@ export class ServiceFactory {
   }
 
   private async getLockSourceInfo(): Promise<{
+    name?: string;
     type: "git" | "registry";
     repo?: string;
     repoId?: string;
   }> {
-    const config = await this.stateStore.loadConfig();
-    if (!config?.source) {
-      throw new HimanError(
-        errorCodes.CONFIG_NOT_FOUND,
-        "Source config not found. Please run `himan init <git_repo>` first.",
-      );
+    const { name, source } = await this.getCurrentSourceState();
+    return this.toLockSourceInfo(source, name);
+  }
+
+  private toLockSourceInfo(source: SourceState, name?: string): LockSourceInfo {
+    return this.normalizeLockSourceInfo({
+      name,
+      type: source.type,
+      repo: source.repo,
+      repoId: source.repoId,
+    });
+  }
+
+  private normalizeLockSourceInfo(sourceInfo: LockSourceInfo): LockSourceInfo {
+    if (sourceInfo.type !== "git" || !sourceInfo.repo) {
+      return sourceInfo;
     }
+
     return {
-      type: config.source.type,
-      repo: config.source.repo,
-      repoId: config.source.repoId,
+      ...sourceInfo,
+      repoId: sourceInfo.repoId ?? toRepoId(sourceInfo.repo),
     };
   }
 

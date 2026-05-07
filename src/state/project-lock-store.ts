@@ -3,6 +3,7 @@ import path from "node:path";
 import type { InstallMode, ResourceType } from "../domain/resource.js";
 
 export interface LockSourceInfo {
+  name?: string;
   type: "git" | "registry";
   repo?: string;
   repoId?: string;

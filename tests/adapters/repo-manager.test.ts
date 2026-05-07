@@ -48,6 +48,18 @@ describe("RepoManager", () => {
       fs.access(path.join(targetDir, "rules", "remote-rule", "himan.yaml")),
     ).rejects.toThrow();
   });
+
+  it("uses a stable publish error code when there are no staged changes", async () => {
+    const { seedDir } = await createRemoteFixture();
+    const manager = new RepoManager();
+
+    await expect(
+      manager.commitTagAndPush(seedDir, "publish noop", "rule/noop@0.0.1"),
+    ).rejects.toMatchObject({
+      code: "E_PUBLISH_NO_CHANGES",
+      message: "No changes to publish.",
+    });
+  });
 });
 
 async function createRemoteFixture(): Promise<{

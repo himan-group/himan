@@ -76,7 +76,7 @@ The project has no HTTP API. It integrates with local Git repositories and files
 - Source config is stored in `~/.himan/config.json`.
 - Global default agents are stored in `~/.himan/config.json`.
 - Resource list cache is stored in `~/.himan/index.json`.
-- Project lock state is stored in `<project>/himan.lock`.
+- Project lock state is stored in `<project>/himan.lock`; no-argument `install` restores from the source recorded in the lock, not from the current default source.
 - Project default agents are stored in `<project>/.himan/config.json`.
 - Project development copies live under `<project>/.himan/dev/<type>/<name>`.
 - Installed resources are materialized under agent folders such as `.cursor/rules/<name>`, `.agents/skills/<name>` for Codex, `.claude/commands/<name>`, and `.openclaw/...`; install mode controls whether each target is a symlink or a copy.
