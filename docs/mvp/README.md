@@ -1,17 +1,19 @@
 # himan MVP 功能点与技术设计
 
+> 状态说明：本文记录 MVP 设计和当前实现范围的收敛版。当前 CLI 行为以仓库根目录 [README.md](../../README.md) 和 [Codex repo map](../codex/repo-map.md) 为准。
+
 ## 1. MVP 目标
 
 在 1 周内交付一个可实际使用的最小版本，完成资源资产的管理与发布闭环。
 
 **当前实现范围：**
-- 单一默认源：Git（`himan init <git_repo>`，本地缓存仓库并写配置）
+- 默认源模型：Git（`himan init <git_repo>`，本地缓存仓库并写配置）；已支持命名 source 的 `add/use/list`，业务命令按当前 default source 生效。
 - 本地 CLI，命令说明见仓库根目录 [README.md](../../README.md)
 - 资源版本以 Git Tag 为准，格式 `<type>/<name>@<semver>`
 - 资源类型能力：
-- `rule`：`create` / `list` / `history` / `install` / `dev` / `publish` / `uninstall`
-- `command`：`create` / `list` / `history` / `install` / `dev` / `publish` / `uninstall`
-- `skill`：`create` / `list` / `history` / `install` / `dev` / `publish` / `uninstall`
+  - `rule`：`create` / `list` / `history` / `install` / `dev` / `publish` / `uninstall`
+  - `command`：`create` / `list` / `history` / `install` / `dev` / `publish` / `uninstall`
+  - `skill`：`create` / `list` / `history` / `install` / `dev` / `publish` / `uninstall`
 - 远程 Registry 源：仅占位，二期实现
 
 **不包含：** 可用 Registry、AI 搜索、PR 自动发布。
@@ -28,7 +30,7 @@
 ### 2.2 `list`
 
 - `himan list [type]`，`--json` 可选
-- 扫描源仓库中各类型目录下的 `himan.yaml`，返回名称、描述、目标平台、入口文件等。
+- 扫描源仓库中各类型目录下的 `himan.yaml`，返回名称、描述、目标 agent、入口文件等。
 
 ### 2.3 `history`
 
@@ -41,10 +43,12 @@
 - 也支持 `himan install`（无参数）按 `himan.lock` 批量复现安装。
 - 未指定版本则安装该资源最新 tag 对应版本。
 - 若本地 store 中已有该版本缓存，则复用、不重新从 Git 导出；否则导出到 store。
-- 在项目下按安装模式创建目标（默认 `--mode link` 软链；`--mode copy` 复制）：
-  - `rule`：`.cursor/rules/<name>`
-  - `command`：`.cursor/commands/<name>`
-  - `skill`：`.cursor/skills/<name>`
+- 在项目下按安装模式创建目标（默认 `--mode link` 软链；`--mode copy` 复制）。
+- 目标路径由 agent 和资源类型共同决定：
+  - `cursor` -> `.cursor/{rules|commands|skills}/<name>`
+  - `claude-code` -> `.claude/{rules|commands|skills}/<name>`
+  - `codex` -> `.agents/{rules|commands|skills}/<name>`
+  - `openclaw` -> `.openclaw/{rules|commands|skills}/<name>`
 
 ### 2.5 `dev`
 
@@ -64,7 +68,7 @@
 
 ### 2.7 `create`
 
-- `himan create <type> <name>` 及常用选项（描述、目标平台、dry-run、force、json 等）
+- `himan create <type> <name>` 及常用选项（描述、目标 agent、dry-run、force、json 等）
 - 生成 `rule` / `command` / `skill` 标准目录与 `himan.yaml`、入口模板
 - 与 `publish` 衔接：`create → 编辑 → publish`
 
@@ -97,9 +101,9 @@
 - `config.json`：当前源类型（git / registry 预留）、仓库地址、全局默认 agent 等
 
 **项目目录：**
-- `.cursor/rules/<name>`：rule 运行态目标（软链或副本）
+- `.cursor` / `.claude` / `.agents` / `.openclaw`：按 agent 和资源类型保存运行态目标（软链或副本）
 - `.himan/config.json`：项目默认 agent 配置
-- `.himan/dev/rule/<name>`：rule 开发态可编辑副本
+- `.himan/dev/<type>/<name>`：资源开发态可编辑副本
 
 **源仓库内资源布局：**
 - `rules/<name>/`、`commands/<name>/`、`skills/<name>/`，各含 `himan.yaml` 与约定入口文件（如 `content.md`、`SKILL.md`）。

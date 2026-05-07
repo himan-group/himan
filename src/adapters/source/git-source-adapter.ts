@@ -15,9 +15,16 @@ import { ResourceScanner } from "../resource/resource-scanner.js";
 import semver from "semver";
 import { HimanError, errorCodes } from "../../utils/errors.js";
 import { promises as fs } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import YAML from "yaml";
 import { IndexCacheStore } from "../../state/index-cache-store.js";
+
+type PublishMetadata = Record<string, unknown> & {
+  name: string;
+  type: ResourceType;
+  entry: string;
+};
 
 export class GitSourceAdapter implements ResourceSourceAdapter {
   private readonly repoManager = new RepoManager();
@@ -42,15 +49,15 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     const repoId = this.sourceConfig?.repoId ?? "default";
     const typeDir = this.getTypeDir(type);
     const baseDir = path.join(repoDir, typeDir);
-    const baseDirMtimeMs = await this.getMtimeMs(baseDir);
+    const metadataHash = await this.getResourceMetadataHash(baseDir);
 
     const cached = await this.indexStore.get(repoId, type);
-    if (cached && cached.baseDirMtimeMs === baseDirMtimeMs) {
+    if (cached && cached.metadataHash === metadataHash) {
       return cached.resources;
     }
 
     const scanned = await this.scanner.scanByType(repoDir, type);
-    await this.indexStore.upsert(repoId, type, baseDirMtimeMs, scanned);
+    await this.indexStore.upsert(repoId, type, metadataHash, scanned);
     return scanned;
   }
 
@@ -91,6 +98,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
   ): Promise<PublishResult> {
     const repoDir = this.getRepoDir();
     const targetDir = path.join(repoDir, `${type}s`, name);
+    const metadata = await this.validatePublishResource(type, name, sourceDir);
     const sameDir = await this.isSameDirectory(sourceDir, targetDir);
     if (!sameDir) {
       await fs.rm(targetDir, { recursive: true, force: true });
@@ -99,18 +107,16 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     }
 
     const yamlPath = path.join(targetDir, "himan.yaml");
-    if (await this.exists(yamlPath)) {
-      const raw = await fs.readFile(yamlPath, "utf8");
-      const parsed = YAML.parse(raw) as Record<string, unknown>;
-      parsed.version = version;
-      await fs.writeFile(yamlPath, YAML.stringify(parsed), "utf8");
-    }
+    metadata.version = version;
+    await fs.writeFile(yamlPath, YAML.stringify(metadata), "utf8");
 
     const tag = `${type}/${name}@${version}`;
     await this.repoManager.commitTagAndPush(
       repoDir,
       `publish ${type}/${name}@${version}`,
       tag,
+      undefined,
+      [path.relative(repoDir, targetDir)],
     );
     return { version, tag };
   }
@@ -192,19 +198,181 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     }
   }
 
-  private async getMtimeMs(targetPath: string): Promise<number> {
-    try {
-      const stat = await fs.stat(targetPath);
-      return stat.mtimeMs;
-    } catch {
-      return 0;
+  private async validatePublishResource(
+    type: ResourceType,
+    name: string,
+    resourceDir: string,
+  ): Promise<PublishMetadata> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (!(await this.exists(yamlPath))) {
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        "Missing himan.yaml for publish.",
+        { yamlPath },
+      );
     }
+
+    const raw = await fs.readFile(yamlPath, "utf8");
+    let parsed: unknown;
+    try {
+      parsed = YAML.parse(raw);
+    } catch (error) {
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        "himan.yaml is not valid YAML.",
+        { yamlPath, reason: error instanceof Error ? error.message : String(error) },
+      );
+    }
+
+    if (!this.isRecord(parsed)) {
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        "himan.yaml must be an object.",
+        { yamlPath },
+      );
+    }
+    if (parsed.name !== name) {
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        `himan.yaml name must be "${name}".`,
+        { yamlPath, actual: parsed.name },
+      );
+    }
+    if (parsed.type !== type) {
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        `himan.yaml type must be "${type}".`,
+        { yamlPath, actual: parsed.type },
+      );
+    }
+    if (typeof parsed.entry !== "string" || parsed.entry.trim().length === 0) {
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        "himan.yaml entry is required.",
+        { yamlPath },
+      );
+    }
+
+    const entry = parsed.entry.trim();
+    const entryPath = path.resolve(resourceDir, entry);
+    const resourceRoot = path.resolve(resourceDir);
+    const relativeEntryPath = path.relative(resourceRoot, entryPath);
+    if (
+      path.isAbsolute(entry) ||
+      relativeEntryPath === "" ||
+      relativeEntryPath.startsWith("..") ||
+      path.isAbsolute(relativeEntryPath)
+    ) {
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        "himan.yaml entry must point to a file inside the resource directory.",
+        { yamlPath, entry },
+      );
+    }
+
+    let entryStat;
+    try {
+      entryStat = await fs.stat(entryPath);
+    } catch (error) {
+      if (!this.isNotFoundError(error)) {
+        throw error;
+      }
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        `Resource entry file not found: ${entry}`,
+        { yamlPath, entry, entryPath },
+      );
+    }
+    if (!entryStat.isFile()) {
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        `Resource entry is not a file: ${entry}`,
+        { yamlPath, entry, entryPath },
+      );
+    }
+
+    return {
+      ...parsed,
+      name,
+      type,
+      entry,
+    };
+  }
+
+  private invalidResourceMetadata(
+    type: ResourceType,
+    name: string,
+    message: string,
+    details: Record<string, unknown>,
+  ): HimanError {
+    return new HimanError(
+      errorCodes.INVALID_RESOURCE_METADATA,
+      `Invalid metadata for ${type}/${name}: ${message}`,
+      details,
+    );
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
   private getTypeDir(type: ResourceType): string {
     if (type === "rule") return "rules";
     if (type === "command") return "commands";
     return "skills";
+  }
+
+  private async getResourceMetadataHash(baseDir: string): Promise<string> {
+    const hash = createHash("sha256");
+    hash.update("himan-resource-index-v1");
+
+    if (!(await this.exists(baseDir))) {
+      hash.update("\0missing");
+      return hash.digest("hex");
+    }
+
+    const entries = await fs.readdir(baseDir, { withFileTypes: true });
+    const resourceDirNames = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+
+    for (const resourceDirName of resourceDirNames) {
+      hash.update("\0dir:");
+      hash.update(resourceDirName);
+
+      const yamlPath = path.join(baseDir, resourceDirName, "himan.yaml");
+      try {
+        const raw = await fs.readFile(yamlPath);
+        hash.update("\0yaml:");
+        hash.update(raw);
+      } catch (error) {
+        if (!this.isNotFoundError(error)) {
+          throw error;
+        }
+        hash.update("\0yaml-missing");
+      }
+    }
+
+    return hash.digest("hex");
+  }
+
+  private isNotFoundError(error: unknown): boolean {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    );
   }
 
   private getDefaultEntry(type: ResourceType): string {

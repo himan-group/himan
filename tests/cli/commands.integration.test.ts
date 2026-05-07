@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { toRepoId } from "../../src/utils/repo-id.js";
 
-const TEST_REPO = "https://github.com/lidetao/himan-test.git";
+const TEST_REPO = "https://github.com/himan-group/himan-test.git";
 
 let tmpRoot = "";
 let homeDir = "";

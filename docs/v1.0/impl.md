@@ -2,6 +2,8 @@
 
 本文档基于当前实现现状与 `docs/mvp/impl.md` 的设计原则，给出 v1.0 的架构、数据约定与关键流程方案。本文档中的“状态”按当前仓库实现同步维护。
 
+> 当前行为事实源：仓库根目录 [README.md](../../README.md) 和 [Codex repo map](../codex/repo-map.md)。本文保留 v1.0 目标和缺口说明。
+
 ---
 
 ## 1. 现状基线（来自当前实现）
@@ -16,10 +18,11 @@
 - 已引入 `himan.lock`（安装写入、无参 install 复现、卸载删除条目、发布后更新锁定条目）
 - 已支持基础多源管理（命名 source 的 add/use/list 与默认源切换）
 - 已支持本地索引缓存（list 结果写入 `~/.himan/index.json`）
+- 已支持基础发布前校验（`himan.yaml` 必填字段、资源类型/名称匹配、入口文件存在）
 
 当前剩余缺口（对比 v1.0 目标）：
 
-- 发布前校验能力较弱（缺少统一 preflight）
+- 发布前校验仍缺少 lint/schema 版本化等扩展治理
 - PR 驱动发布路径未实现
 - 多源仍是“单来源生效（default）”，尚不支持跨源同时生效与跨源聚合检索
 
@@ -86,23 +89,25 @@ v1.0 仍以 Git 为主。在多源层面，当前已落地基础能力：
 ### 4.2 项目目录
 
 - `.himan/dev/`：开发态副本
-- 运行态安装目标按类型约定（v1.0 冻结）：
-  - `rule`：`.cursor/rules/<name>`
-  - `command`：`.cursor/commands/<name>`
-  - `skill`：`.cursor/skills/<name>`
+- 运行态安装目标由 agent 和资源类型共同决定：
+  - `cursor` -> `.cursor/{rules|commands|skills}/<name>`
+  - `claude-code` -> `.claude/{rules|commands|skills}/<name>`
+  - `codex` -> `.agents/{rules|commands|skills}/<name>`
+  - `openclaw` -> `.openclaw/{rules|commands|skills}/<name>`
 - 开发态目录：
   - `rule`：`.himan/dev/rule/<name>`
   - `command`：`.himan/dev/command/<name>`
   - `skill`：`.himan/dev/skill/<name>`
 
-> 注：命令与 skill 的具体路径在 v1.0 实施前冻结，并在 README 中与工具平台约定保持一致。
+> 注：资源类型映射到 `rules|commands|skills`，agent 映射到对应工具目录；README 中的路径约定是当前用户文档事实源。
 
 ### 4.3 锁文件
 
 - 项目根新增 `himan.lock`
-- 记录：源别名、资源类型、资源名、精确版本、更新时间
+- 记录：source alias、source 类型、repo/repoId、资源类型、资源名、精确版本、agent、安装模式、更新时间
 - 行为：
-  - install 写入/更新
+  - 显式 install 写入/更新当前 default source 信息
+  - 无参数 install 使用 lock 中记录的 source 批量恢复，不依赖当前 default source
   - uninstall 删除条目
   - publish 后可按策略更新（默认仅在当前项目安装条目存在时更新）
 
@@ -135,7 +140,7 @@ v1.0 统一支持三类资源：
 - store 复用：已存在版本直接复用，不重复导出
 - 项目引用：按类型创建目标到对应目录，支持软链或复制
 - lock 联动：写入当前安装状态
-- 无参数安装：`himan install` 从 `himan.lock` 批量复现安装
+- 无参数安装：`himan install` 从 `himan.lock` 记录的 source 和版本批量复现安装
 
 ### 6.2 `dev`
 
@@ -181,7 +186,7 @@ v1.0 统一支持三类资源：
 
 当前落地（基础版）：
 - list 时优先读取 `~/.himan/index.json`
-- 缓存失效后回退仓库扫描并写回 index
+- 缓存按资源目录下 `himan.yaml` 内容 hash 失效，失效后回退仓库扫描并写回 index
 
 ### 7.3 降级策略
 
@@ -205,7 +210,7 @@ v1.0 统一支持三类资源：
 - 单元：版本解析、元数据校验、锁文件读写、路径策略
 - 集成：
   - 三类型 install/dev/uninstall/publish 全链路
-  - 多 repo 下 list/install 指定源
+  - 命名 source 的 add/use/list，以及 default source 下的 list/install
   - 发布前校验失败分支（无变更、元数据错误、入口缺失）
 
 ### 9.2 手动验证
@@ -217,12 +222,12 @@ v1.0 统一支持三类资源：
 
 ## 10. 实施里程碑（回顾）
 
-- **M1**：元数据扩展 + uninstall + preflight 基础（部分完成，preflight 待补）
+- **M1**：元数据扩展 + uninstall + preflight 基础（已完成基础能力）
 - **M2**：command/skill install/dev 全链路（已完成）
 - **M3**：lock 文件 + 多 repo + 本地索引（已完成基础能力）
 - **M4**：PR 发布可选能力 + 文档与发布收口（进行中）
 
-当前建议：将 preflight 与 PR 发布作为 `v1.0.x` 收口项，并在发行说明中明确状态。
+当前建议：将扩展 preflight（lint/schema 版本化）与 PR 发布作为 `v1.0.x` 收口项，并在发行说明中明确状态。
 
 ---
 

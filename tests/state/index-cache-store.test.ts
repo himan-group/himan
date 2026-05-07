@@ -21,7 +21,7 @@ afterEach(async () => {
 describe("IndexCacheStore", () => {
   it("upserts and gets cached resources by repo and type", async () => {
     const store = new IndexCacheStore();
-    await store.upsert("repo-a", "rule", 123, [
+    await store.upsert("repo-a", "rule", "metadata-hash-a", [
       {
         name: "code-review",
         type: "rule",
@@ -34,7 +34,7 @@ describe("IndexCacheStore", () => {
     const found = await store.get("repo-a", "rule");
     expect(found?.repoId).toBe("repo-a");
     expect(found?.type).toBe("rule");
-    expect(found?.baseDirMtimeMs).toBe(123);
+    expect(found?.metadataHash).toBe("metadata-hash-a");
     expect(found?.resources).toEqual([
       {
         name: "code-review",

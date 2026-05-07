@@ -2,28 +2,43 @@
 
 himan（含义为"Hey, man"），AI Coding 时代的 Prompt / Agent 资产管理系统（CLI + Git source）
 
+## 环境要求
+
+- Node.js 22.x；本仓库开发环境由 [.nvmrc](./.nvmrc) 固定为 `22.22.1`。
+- Git；Git source 的初始化、版本查询、安装和发布都依赖本机 Git。
+
 ## 安装与运行
 
+### 使用 npm 包
+
+全局安装后可直接使用 `himan`：
+
 ```bash
-pnpm install
-pnpm run build
+npm install -g @hi-man/himan
+himan --help
 ```
 
-之后任选其一执行命令：
+也可以一次性运行主入口：
 
-- 已全局安装本包：`himan <子命令>`
-- 本地开发：`pnpm run dev -- <子命令>`
-- 或直接：`node dist/bin/himan.js <子命令>`
+```bash
+npx @hi-man/himan --help
+pnpm dlx @hi-man/himan --help
+```
 
-也支持两个独立入口：
+### 命令入口
 
+包内提供四个 CLI 入口：
+
+- `himan <子命令>`（主入口）
 - `himan-source <子命令>`（source 相关）
 - `himan-resource <子命令>`（resource/project 相关）
 - `himan-project <子命令>`（project 相关）
 
-下文用 `himan` 代指上述入口。
+下文默认使用 `himan` 主入口；三个专用入口在对应章节单独列出。
 
 ## 一分钟上手
+
+以下示例假设你已有一个可访问的 himan Git source 仓库，仓库中存在 `my-rule` 的资源版本 tag，并且你拥有发布所需的 Git push 权限。
 
 ```bash
 himan init https://github.com/your-org/your-himan-registry.git
@@ -45,7 +60,7 @@ himan publish rule my-rule --patch
   - `rule` -> `.himan/dev/rule/<name>`
   - `command` -> `.himan/dev/command/<name>`
   - `skill` -> `.himan/dev/skill/<name>`
-- lock 文件：`install <type> <name[@version]>` 会写入 `himan.lock`；`himan install`（无参数）会按 lock 批量恢复安装。
+- lock 文件：`install <type> <name[@version]>` 会写入 `himan.lock`，记录 source、精确版本、agent 和安装模式；`himan install`（无参数）会按 lock 记录的 source 批量恢复安装，不受当前 default source 切换影响。
 - 安装模式：默认 `--mode link` 使用软链；也可用 `--mode copy` 将资源复制到目标 agent 目录，lock 会记录并复现该模式。
 - 默认 agent：`agent use <agent>` 默认写当前项目 `.himan/config.json`；加 `--global` 写入 `~/.himan/config.json`。当前项目配置优先于全局配置。
 
@@ -82,7 +97,7 @@ himan publish rule my-rule --patch
 
 | 命令                              | 说明                                                      |
 | --------------------------------- | --------------------------------------------------------- |
-| `install [type] [name[@version]] [--agent a,b] [--mode link\|copy]` | 有参数时安装指定资源；**无参数**时按 `himan.lock` 批量安装；可覆盖安装目标 agent 或安装模式 |
+| `install [type] [name[@version]] [--agent a,b] [--mode link\|copy]` | 有参数时从当前 default source 安装指定资源；**无参数**时按 `himan.lock` 记录的 source 批量安装；可覆盖安装目标 agent 或安装模式 |
 | `dev <type> <name>`               | 切换到开发态，并按安装模式将项目目标指向或复制自 `.himan/dev/...` |
 | `uninstall <type> <name>`         | 从项目移除安装目标，并同步删除 `himan.lock` 条目           |
 | `publish <type> <name>`           | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个） |
@@ -107,15 +122,16 @@ himan publish rule my-rule --patch
 说明：资源与项目相关命令统一使用 `--agent` 指定目标 Agent。
 若未显式传 `--agent`，`create` / `install` 会使用当前项目默认 agent、全局默认 agent、资源 metadata 或内置默认 `cursor` 中最合适的一项；`dev` 会优先使用 lock 中记录的 agent。
 
-`publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。需要可推送的 Git 权限。若该资源已在 lock 中，发布后会同步更新 lock 版本。
+`publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。发布前会校验 `himan.yaml` 与入口文件；需要可推送的 Git 权限。若该资源已在 lock 中，发布后会同步更新 lock 版本。
 
 `--json` 模式下，失败时会输出机器可读错误 JSON（`stderr`）。错误码定义见 [docs/error-codes.md](./docs/error-codes.md)。
 
-多源说明：当前是「**多来源可配置，单来源生效**」模型。业务命令（`list/install/history/dev/publish`）只作用于当前 default source；切换后再执行命令。
+多源说明：当前是「**多来源可配置，单来源生效**」模型。显式资源命令（`list/install <type> .../history/dev/publish`）作用于当前 default source；`himan install` 无参数恢复时使用 `himan.lock` 中记录的 source。
 
 ## 当前范围
 
 - 源：**仅 Git**（`init`）。Registry 适配器已预留，尚未实现。
+- 包定位：当前仅承诺 CLI 使用，不提供稳定的 Node.js 程序化 API。
 
 ## FAQ
 
@@ -133,56 +149,6 @@ himan source list
 **Q: `list` 和 `source list` 有什么区别？**  
 A: `source list` 查看「我配置了哪些来源」；`list` 查看「当前 default source 里有哪些资源」。
 
-## 开发与测试
+## 开发与维护
 
-```bash
-pnpm test
-```
-
-## 发布 npm 包（维护者）
-
-### 流程概览
-
-1. **在分支上完成开发与合并前检查**  
-   本地可执行 `pnpm run verify`（类型检查、单测、`build`），确认通过后再提 PR。
-
-2. **更新 `package.json` 中的 `version`**  
-   npm 不允许重复发布同一版本号。合并进 `master` 前，在 PR 里把版本改成 registry 上尚未存在的号。  
-   - 手动改 `version` 字段，或  
-   - 在分支上执行其一（只改版本号，**不会**发包）：`pnpm run version:patch` / `version:minor` / `version:major`（使用 `npm version … --no-git-tag-version`，需自行 `git add` / `commit` 版本变更）。  
-   Git 标签约定：与 `version` 对应、带前缀 **`v`**（如 `1.2.0` → 标签 `v1.2.0`）。
-
-3. **合并到 `master`**  
-   推送合并后的 `master` 会触发 GitHub Actions 工作流 [`.github/workflows/publish-npm.yml`](.github/workflows/publish-npm.yml)：安装依赖后执行 **`pnpm run release`**（即再次 `verify` + `npm publish`）。  
-   npm 发布认证使用 **Trusted Publishing**，不使用长期 `NPM_TOKEN`。需在 npmjs.com 的 `@hi-man/himan` 包设置中添加 Trusted Publisher：
-   - Provider: GitHub Actions
-   - Organization or user: `lidetao`
-   - Repository: `himan`
-   - Workflow filename: `publish-npm.yml`
-   workflow 已授予 OIDC 所需的 `id-token: write` 权限，并在发布前升级 npm CLI 到支持 Trusted Publishing 的版本。
-
-4. **手动从 CI 再发一次（可选）**  
-   在 GitHub **Actions → Publish to npm → Run workflow** 可手动运行同一流程（例如在修复密钥后重试）。
-
-### 本地命令（与 CI 中的 `pnpm run release` 一致）
-
-| 命令 | 作用 |
-|------|------|
-| `pnpm run verify` | 仅检查（类型 / 测试 / 构建） |
-| `pnpm run release:dry` | 检查 + `npm publish --dry-run`（演练，不上传） |
-| `pnpm run release:test` | 检查 + 将版本打成 `*-test.*` 预发布号并发布到 **`@test` 标签** |
-| `pnpm run release` | 检查 + 发布 **latest**（维护者本地发包时用；**请写 `pnpm run release`**，勿用裸命令 `pnpm publish`，二者不是同一套流程） |
-| `pnpm run version:patch` / `version:minor` / `version:major` | 仅提升 `package.json` 版本号，不发包 |
-
-发测试标签后，安装示例：`npm i @hi-man/himan@test`。
-
-### CI：合并前校验与合并后打 Git 标签
-
-| 工作流 | 文件 | 说明 |
-|--------|------|------|
-| **PR version tag check** | [`.github/workflows/pr-master-version-tag.yml`](.github/workflows/pr-master-version-tag.yml) | 目标分支为 `master` 的 PR：读取 **PR 头提交**上的 `package.json` 的 `version`，若远端已存在同名标签 **`v{version}`**，则 **检查失败**（用于在合并前拦截重复版本）。 |
-| **Tag version on master** | [`.github/workflows/push-master-version-tag.yml`](.github/workflows/push-master-version-tag.yml) | 向 `master` **推送**后（含合并 PR）：在 **当前推送提交**上创建并推送注释标签 **`v{version}`**。若标签已存在、创建或 `git push` 失败，仅输出 **告警**（`::warning::`），**工作流仍成功**，不撤销已发生的 merge；请按日志提示在本机补打标签并 `git push origin v{x.y.z}`。 |
-
-**启用「合并前拦截」**：在 GitHub **Settings → Branches** 中为 `master` 配置分支保护，勾选 **Require status checks to pass before merging**，并勾选必选检查 **`PR version tag check / version-tag-available`**（名称以仓库里 Actions 界面为准）。
-
-说明：来自 fork 的 PR 同样会跑上述 PR 检查；打标签工作流需要 **Actions 对仓库有写权限**（工作流内已设 `contents: write`）。若组织策略禁止 `GITHUB_TOKEN` 写标签，推送标签会失败，需按告警手动推送。
+源码开发、测试和 npm 发包流程见 [docs/development.md](./docs/development.md)。

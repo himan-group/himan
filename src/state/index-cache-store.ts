@@ -6,7 +6,8 @@ import { PathResolver } from "../utils/path-resolver.js";
 interface IndexEntry {
   repoId: string;
   type: ResourceType;
-  baseDirMtimeMs: number;
+  metadataHash?: string;
+  baseDirMtimeMs?: number;
   updatedAt: string;
   resources: ResourceMeta[];
 }
@@ -32,21 +33,22 @@ export class IndexCacheStore {
   async upsert(
     repoId: string,
     type: ResourceType,
-    baseDirMtimeMs: number,
+    metadataHash: string,
     resources: ResourceMeta[],
   ): Promise<void> {
     const now = new Date().toISOString();
     const file: IndexFile = (await this.load()) ?? { version: 1, entries: [] };
     const found = file.entries.find((item) => item.repoId === repoId && item.type === type);
     if (found) {
-      found.baseDirMtimeMs = baseDirMtimeMs;
+      found.metadataHash = metadataHash;
+      delete found.baseDirMtimeMs;
       found.resources = resources;
       found.updatedAt = now;
     } else {
       file.entries.push({
         repoId,
         type,
-        baseDirMtimeMs,
+        metadataHash,
         resources,
         updatedAt: now,
       });

@@ -4,6 +4,8 @@
 
 执行顺序与分工见 [impl.md](./impl.md)。
 
+> 状态说明：本文是 v1.0 规划与当前进展摘要；当前 CLI 行为以仓库根目录 [README.md](../../README.md) 和 [Codex repo map](../codex/repo-map.md) 为准。
+
 ---
 
 ## 1. v1.0 目标
@@ -36,7 +38,8 @@
   - 支持当前项目配置和全局配置
 - 已完成（基础）：多 repo 命名源管理（`source add/use/list` + 默认源切换）
 - 已完成（基础）：本地索引缓存（`list` 优先读 `~/.himan/index.json`，失效时回退扫描并刷新）
-- 待完成：发布前校验、PR 驱动发布
+- 已完成（基础）：发布前校验（`himan.yaml` 必填字段、类型/名称匹配、入口文件存在）
+- 待完成：扩展 preflight（lint/schema 版本化）、PR 驱动发布
 
 > 说明：当前是“多来源可配置、单来源生效（default）”模式。业务命令默认仅作用于当前 default source，不做跨源同时生效。
 
@@ -66,7 +69,8 @@
 
 - 数据与路径约定：
   - 全局目录：`~/.himan/repos`、`~/.himan/store`、`~/.himan/config.json`
-  - 项目目录：`.himan/dev`（安装目标路径在实现前冻结）
+  - 项目目录：`.himan/dev`
+  - 安装目标：由 agent 目录（`.cursor` / `.claude` / `.agents` / `.openclaw`）和资源类型目录（`rules` / `commands` / `skills`）共同决定
 - 交付要求：
   - 主流程可跑通（含三类型）
   - 自动化测试覆盖关键路径
