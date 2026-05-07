@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.2.1] - 2026-05-07
+
 ### Added
 
 - Added this changelog to make release notes and user-visible changes explicit.
