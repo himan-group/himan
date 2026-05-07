@@ -80,7 +80,7 @@ async function createRemoteFixture(): Promise<{
 
   runGit(["init", "--initial-branch=main"], seedDir);
   commitAll(seedDir, "Initial commit");
-  runGit(["init", "--bare"], remoteDir);
+  runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
   runGit(["remote", "add", "origin", remoteDir], seedDir);
   runGit(["push", "-u", "origin", "main"], seedDir);
 

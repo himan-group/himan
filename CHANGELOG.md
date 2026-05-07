@@ -6,7 +6,11 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
-No changes yet.
+## [0.2.2] - 2026-05-07
+
+### Added
+
+- Added a PR verify workflow that runs typecheck, tests, and build before merging to `master`.
 
 ## [0.2.1] - 2026-05-07
 

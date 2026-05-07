@@ -121,7 +121,7 @@ async function createRemoteFixture(
   for (const resource of resources) {
     runGit(["tag", `rule/${resource.name}@${resource.version}`], seedDir);
   }
-  runGit(["init", "--bare"], remoteDir);
+  runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
   runGit(["remote", "add", "origin", remoteDir], seedDir);
   runGit(["push", "-u", "origin", "main"], seedDir);
   runGit(["push", "--tags"], seedDir);

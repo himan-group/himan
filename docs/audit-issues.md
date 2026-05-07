@@ -103,6 +103,7 @@
 
 ### 9. CI 缺少 PR 阶段的 typecheck/test/build 验证
 
+- 状态：已处理（2026-05-07）。已新增 `.github/workflows/pr-verify.yml`，面向 `master` PR 运行 `pnpm install --frozen-lockfile`、`pnpm run typecheck`、`pnpm run test`、`pnpm run build`；开发文档也已补充建议把 `PR verify / verify` 纳入分支保护必选检查。
 - 位置：`.github/workflows/`
 - 现状：
   - PR 工作流只检查版本 tag 是否可用。
