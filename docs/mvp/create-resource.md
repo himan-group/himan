@@ -56,7 +56,7 @@ repo/
 - `CHANGELOG.md`：记录 source 级别的新增资源、资源变更、废弃、移除和重要发布说明
 - `rules/`、`commands/`、`skills/`：资源类型根目录，由 himan 扫描
 
-可用 `himan source init-docs` 生成根目录文档模板。命令默认只创建缺失的 `README.md` / `CHANGELOG.md`；已有文件会保留，除非显式传 `--force`。`--force` 覆盖文档时会扫描当前 source 中已有的 `rule`、`command`、`skill`，写入 README 资源索引，并在 CHANGELOG 初始条目中记录已整理的资源。资源引用会优先使用 Git tag 中的最新 semver 版本，找不到 tag 时再回退到 `himan.yaml` 的 `version`。对于尚未补齐 `himan.yaml` 的 Codex 风格 skill，文档整理也会读取 `skills/<name>/SKILL.md` front matter 中的 `name` 和 `description`。`--dry-run` 只返回将执行的创建、覆盖或跳过动作，不写盘。有实际文件变更时，命令会提交并 push 到当前 Git source。
+可用 `himan source init-docs` 生成根目录文档模板。命令默认只创建缺失的 `README.md` / `CHANGELOG.md`；已有文件会保留，除非显式传 `--force`。`--force` 覆盖文档时会扫描当前 source 中已有的 `rule`、`command`、`skill`，写入 README 资源索引，并在 CHANGELOG 初始条目中记录已整理的资源。资源引用会优先使用 Git tag 中的最新 semver 版本，找不到 tag 时再回退到 `himan.yaml` 的 `version`。对于尚未补齐 `himan.yaml` 的资源，文档整理会按默认入口识别资源；其中 skill 会额外读取 `skills/<name>/SKILL.md` front matter 中的 `name` 和 `description`。`--dry-run` 只返回将执行的创建、覆盖或跳过动作，不写盘。有实际文件变更时，命令会提交并 push 到当前 Git source。
 
 `create` 和 `publish` 会自动维护根目录文档：
 
@@ -115,17 +115,14 @@ himan install rule code-review
 ```text
 repo/
   rules/<name>/
-    himan.yaml
     content.md
   commands/<name>/
-    himan.yaml
     content.md
   skills/<name>/
-    himan.yaml
     SKILL.md
 ```
 
-`himan.yaml` 最小字段示例：
+`himan.yaml` 是推荐但非强制的资源元数据文件。存在时，发布会校验 `name`、`type`、`entry` 与入口文件；缺失时，发布按默认入口推断最小元数据：`rule` / `command` 使用 `content.md`，`skill` 使用 `SKILL.md`。`himan.yaml` 最小字段示例：
 
 ```yaml
 name: code-review

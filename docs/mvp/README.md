@@ -30,7 +30,7 @@
 ### 2.2 `list`
 
 - `himan list [type]`，`--json` 可选
-- 扫描源仓库中各类型目录下的 `himan.yaml`，返回名称、描述、目标 agent、入口文件等。
+- 扫描源仓库中各类型目录；优先读取 `himan.yaml`，缺失时按默认入口文件推断资源，返回名称、描述、目标 agent、入口文件等。
 
 ### 2.3 `history`
 
@@ -64,7 +64,7 @@
 - 发布内容优先取项目 `.himan/dev/<type>/<name>`，否则取源仓库内对应资源目录。
 - 新版本：基于已有 tag 最新 semver 递增；无任何历史时从 `0.0.0` 起算。
 - 写回源仓库、提交、打 tag、推送，并将该版本同步到本地 store。
-- 若该资源在项目中已有安装目标，会按 lock 中的安装模式同步到新版本目录。
+- 发布成功后，用新版本 store 以 copy 模式重新安装到项目目标、更新 lock，并删除对应 `.himan/dev/<type>/<name>`。
 
 ### 2.7 `create`
 
@@ -106,7 +106,7 @@
 - `.himan/dev/<type>/<name>`：资源开发态可编辑副本
 
 **源仓库内资源布局：**
-- `rules/<name>/`、`commands/<name>/`、`skills/<name>/`，各含 `himan.yaml` 与约定入口文件（如 `content.md`、`SKILL.md`）。
+- `rules/<name>/`、`commands/<name>/`、`skills/<name>/`，可含 `himan.yaml`，并包含约定入口文件（如 `content.md`、`SKILL.md`）。
 
 ### 3.3 技术依赖（概要）
 

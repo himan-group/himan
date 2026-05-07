@@ -31,6 +31,11 @@ type PublishMetadata = Record<string, unknown> & {
   entry: string;
 };
 
+interface PublishMetadataResult {
+  metadata: PublishMetadata;
+  shouldWriteMetadata: boolean;
+}
+
 const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
 const README_RESOURCES_START = "<!-- himan:resources:start -->";
 const README_RESOURCES_END = "<!-- himan:resources:end -->";
@@ -71,7 +76,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     const repoId = this.sourceConfig?.repoId ?? "default";
     const typeDir = this.getTypeDir(type);
     const baseDir = path.join(repoDir, typeDir);
-    const metadataHash = await this.getResourceMetadataHash(baseDir);
+    const metadataHash = await this.getResourceMetadataHash(baseDir, type);
 
     const cached = await this.indexStore.get(repoId, type);
     if (cached && cached.metadataHash === metadataHash) {
@@ -120,7 +125,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
   ): Promise<PublishResult> {
     const repoDir = this.getRepoDir();
     const targetDir = path.join(repoDir, `${type}s`, name);
-    const metadata = await this.validatePublishResource(type, name, sourceDir);
+    const metadataResult = await this.validatePublishResource(type, name, sourceDir);
     const sameDir = await this.isSameDirectory(sourceDir, targetDir);
     if (!sameDir) {
       await fs.rm(targetDir, { recursive: true, force: true });
@@ -128,14 +133,20 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       await fs.cp(sourceDir, targetDir, { recursive: true });
     }
 
-    const yamlPath = path.join(targetDir, "himan.yaml");
-    metadata.version = version;
-    await fs.writeFile(yamlPath, YAML.stringify(metadata), "utf8");
+    if (metadataResult.shouldWriteMetadata) {
+      const yamlPath = path.join(targetDir, "himan.yaml");
+      const metadata = { ...metadataResult.metadata, version };
+      await fs.writeFile(yamlPath, YAML.stringify(metadata), "utf8");
+    }
 
-    const docsPaths = await this.maintainSourceDocs(repoDir, {
-      section: "Changed",
-      line: `- Published \`${type}/${name}@${version}\`.`,
-    });
+    const docsPaths = await this.maintainSourceDocs(
+      repoDir,
+      {
+        section: "Changed",
+        line: `- Published \`${type}/${name}@${version}\`.`,
+      },
+      new Map([[this.getResourceVersionOverrideKey(type, name), version]]),
+    );
     const tag = `${type}/${name}@${version}`;
     await this.repoManager.commitTagAndPush(
       repoDir,
@@ -283,15 +294,13 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     type: ResourceType,
     name: string,
     resourceDir: string,
-  ): Promise<PublishMetadata> {
+  ): Promise<PublishMetadataResult> {
     const yamlPath = path.join(resourceDir, "himan.yaml");
     if (!(await this.exists(yamlPath))) {
-      throw this.invalidResourceMetadata(
-        type,
-        name,
-        "Missing himan.yaml for publish.",
-        { yamlPath },
-      );
+      return {
+        metadata: await this.inferPublishResourceMetadata(type, name, resourceDir),
+        shouldWriteMetadata: false,
+      };
     }
 
     const raw = await fs.readFile(yamlPath, "utf8");
@@ -382,11 +391,60 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     }
 
     return {
-      ...parsed,
+      metadata: {
+        ...parsed,
+        name,
+        type,
+        entry,
+      },
+      shouldWriteMetadata: true,
+    };
+  }
+
+  private async inferPublishResourceMetadata(
+    type: ResourceType,
+    name: string,
+    resourceDir: string,
+  ): Promise<PublishMetadata> {
+    const entry = this.getDefaultEntry(type);
+    const entryPath = path.join(resourceDir, entry);
+    let entryStat;
+    try {
+      entryStat = await fs.stat(entryPath);
+    } catch (error) {
+      if (!this.isNotFoundError(error)) {
+        throw error;
+      }
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        `Missing himan.yaml and default entry file for publish: ${entry}`,
+        { yamlPath: path.join(resourceDir, "himan.yaml"), entry, entryPath },
+      );
+    }
+    if (!entryStat.isFile()) {
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        `Default resource entry is not a file: ${entry}`,
+        { entry, entryPath },
+      );
+    }
+
+    const frontMatter =
+      type === "skill" ? await this.readSkillFrontMatter(entryPath) : null;
+    const metadata: PublishMetadata = {
       name,
       type,
       entry,
     };
+    const description = this.readStringMetadata(frontMatter, "description");
+    if (description) metadata.description = description;
+    const agents =
+      this.readStringArrayMetadata(frontMatter, "agents") ??
+      this.readStringArrayMetadata(frontMatter, "targets");
+    if (agents) metadata.agents = agents;
+    return metadata;
   }
 
   private invalidResourceMetadata(
@@ -412,7 +470,10 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     return "skills";
   }
 
-  private async getResourceMetadataHash(baseDir: string): Promise<string> {
+  private async getResourceMetadataHash(
+    baseDir: string,
+    type: ResourceType,
+  ): Promise<string> {
     const hash = createHash("sha256");
     hash.update("himan-resource-index-v1");
 
@@ -441,6 +502,17 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
           throw error;
         }
         hash.update("\0yaml-missing");
+        const entryPath = path.join(baseDir, resourceDirName, this.getDefaultEntry(type));
+        try {
+          const raw = await fs.readFile(entryPath);
+          hash.update("\0entry:");
+          hash.update(raw);
+        } catch (entryError) {
+          if (!this.isNotFoundError(entryError)) {
+            throw entryError;
+          }
+          hash.update("\0entry-missing");
+        }
       }
     }
 
@@ -470,8 +542,11 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     return `# ${name}\n\nDescribe skill workflow here.\n`;
   }
 
-  private async buildReadmeContent(repoDir: string): Promise<string> {
-    const resourceLines = await this.buildResourceIndex(repoDir);
+  private async buildReadmeContent(
+    repoDir: string,
+    versionOverrides = new Map<string, string>(),
+  ): Promise<string> {
+    const resourceLines = await this.buildResourceIndex(repoDir, versionOverrides);
     const repo = this.sourceConfig?.repo ?? "<git_url>";
     return [
       `# ${this.getSourceTitle()}`,
@@ -520,7 +595,10 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     ].join("\n");
   }
 
-  private async buildResourceIndex(repoDir: string): Promise<string[]> {
+  private async buildResourceIndex(
+    repoDir: string,
+    versionOverrides = new Map<string, string>(),
+  ): Promise<string[]> {
     const sections: string[] = [];
     for (const type of RESOURCE_TYPES) {
       const resources = await this.collectResourceDocsItems(repoDir, type);
@@ -530,7 +608,12 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
         continue;
       }
       for (const resource of resources) {
-        const ref = await this.getResourceRef(repoDir, resource.type, resource.name);
+        const ref = await this.getResourceRef(
+          repoDir,
+          resource.type,
+          resource.name,
+          versionOverrides,
+        );
         sections.push(
           `- \`${ref}\`${
             resource.description ? `: ${resource.description}` : ""
@@ -568,35 +651,36 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       description: resource.description,
     }));
 
-    if (type === "skill") {
-      const managedNames = new Set(resources.map((resource) => resource.name));
-      items.push(...(await this.scanLegacySkillDocsItems(repoDir, managedNames)));
-    }
+    const managedNames = new Set(resources.map((resource) => resource.name));
+    items.push(...(await this.scanEntryBasedDocsItems(repoDir, type, managedNames)));
 
     return items.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  private async scanLegacySkillDocsItems(
+  private async scanEntryBasedDocsItems(
     repoDir: string,
+    type: ResourceType,
     managedNames: Set<string>,
   ): Promise<ResourceDocsItem[]> {
-    const baseDir = path.join(repoDir, this.getTypeDir("skill"));
+    const baseDir = path.join(repoDir, this.getTypeDir(type));
     if (!(await this.exists(baseDir))) return [];
 
     const entries = await fs.readdir(baseDir, { withFileTypes: true });
     const items: ResourceDocsItem[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const skillPath = path.join(baseDir, entry.name, "SKILL.md");
-      if (!(await this.exists(skillPath))) continue;
+      const resourceEntry = this.getDefaultEntry(type);
+      const entryPath = path.join(baseDir, entry.name, resourceEntry);
+      if (!(await this.exists(entryPath))) continue;
 
-      const metadata = await this.readSkillFrontMatter(skillPath);
+      const metadata =
+        type === "skill" ? await this.readSkillFrontMatter(entryPath) : null;
       const name = this.readStringMetadata(metadata, "name") ?? entry.name;
       if (managedNames.has(name) || managedNames.has(entry.name)) continue;
 
       items.push({
         name,
-        type: "skill",
+        type,
         description: this.readStringMetadata(metadata, "description"),
       });
     }
@@ -628,26 +712,47 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     return trimmed ? trimmed : undefined;
   }
 
+  private readStringArrayMetadata(
+    metadata: Record<string, unknown> | null,
+    key: string,
+  ): string[] | undefined {
+    const value = metadata?.[key];
+    if (!Array.isArray(value)) return undefined;
+    const items = value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return items.length > 0 ? items : undefined;
+  }
+
   private async maintainSourceDocs(
     repoDir: string,
     changelogEntry: ChangelogEntry,
+    versionOverrides = new Map<string, string>(),
   ): Promise<string[]> {
-    const readmePath = await this.updateReadmeResourceIndex(repoDir);
+    const readmePath = await this.updateReadmeResourceIndex(repoDir, versionOverrides);
     const changelogPath = await this.updateChangelog(repoDir, changelogEntry);
     return [readmePath, changelogPath];
   }
 
-  private async updateReadmeResourceIndex(repoDir: string): Promise<string> {
+  private async updateReadmeResourceIndex(
+    repoDir: string,
+    versionOverrides = new Map<string, string>(),
+  ): Promise<string> {
     const readmePath = path.join(repoDir, "README.md");
     if (!(await this.exists(readmePath))) {
-      await fs.writeFile(readmePath, await this.buildReadmeContent(repoDir), "utf8");
+      await fs.writeFile(
+        readmePath,
+        await this.buildReadmeContent(repoDir, versionOverrides),
+        "utf8",
+      );
       return readmePath;
     }
 
     const current = await fs.readFile(readmePath, "utf8");
     const resourceSection = [
       README_RESOURCES_START,
-      ...(await this.buildResourceIndex(repoDir)),
+      ...(await this.buildResourceIndex(repoDir, versionOverrides)),
       README_RESOURCES_END,
     ].join("\n");
     const updated = this.replaceOrAppendReadmeResourceSection(
@@ -797,11 +902,17 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     repoDir: string,
     type: ResourceType,
     name: string,
+    versionOverrides = new Map<string, string>(),
   ): Promise<string> {
     const version =
+      versionOverrides.get(this.getResourceVersionOverrideKey(type, name)) ??
       (await this.readLatestTaggedResourceVersion(repoDir, type, name)) ??
       (await this.readResourceVersion(repoDir, type, name));
     return this.formatResourceRef(type, name, version);
+  }
+
+  private getResourceVersionOverrideKey(type: ResourceType, name: string): string {
+    return `${type}/${name}`;
   }
 
   private async readLatestTaggedResourceVersion(

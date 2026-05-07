@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "source": {
+    "name": "default",
+    "type": "git",
+    "repo": "https://git.garena.com/detao.li/himan-resource.git",
+    "repoId": "https_git.garena.com_detao.li_himan-resource"
+  },
+  "updatedAt": "2026-05-07T10:41:32.251Z",
+  "resources": [
+    {
+      "type": "skill",
+      "name": "common-project-changelog",
+      "version": "0.0.1",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-07T10:41:32.251Z"
+    }
+  ]
+}

@@ -19,26 +19,97 @@ export class ResourceScanner {
 
     for (const resourceDir of resourceDirs) {
       const yamlPath = path.join(baseDir, resourceDir.name, "himan.yaml");
-      if (!(await this.exists(yamlPath))) continue;
+      if (await this.exists(yamlPath)) {
+        const raw = await fs.readFile(yamlPath, "utf8");
+        const parsed = YAML.parse(raw) as Partial<ResourceMeta> | null;
+        if (!parsed) continue;
+        if (parsed.type !== type) continue;
+        if (!parsed.name || !parsed.entry) continue;
 
-      const raw = await fs.readFile(yamlPath, "utf8");
-      const parsed = YAML.parse(raw) as Partial<ResourceMeta> | null;
-      if (!parsed) continue;
-      if (parsed.type !== type) continue;
-      if (!parsed.name || !parsed.entry) continue;
+        result.push({
+          name: parsed.name,
+          type,
+          entry: parsed.entry,
+          description: parsed.description,
+          agents: Array.isArray((parsed as { agents?: unknown }).agents)
+            ? ((parsed as { agents?: string[] }).agents ?? [])
+            : ((parsed as { targets?: string[] }).targets ?? []),
+        });
+        continue;
+      }
 
-      result.push({
-        name: parsed.name,
+      const inferred = await this.inferResourceMeta(
+        path.join(baseDir, resourceDir.name),
+        resourceDir.name,
         type,
-        entry: parsed.entry,
-        description: parsed.description,
-        agents: Array.isArray((parsed as { agents?: unknown }).agents)
-          ? ((parsed as { agents?: string[] }).agents ?? [])
-          : ((parsed as { targets?: string[] }).targets ?? []),
-      });
+      );
+      if (inferred) result.push(inferred);
     }
 
     return result;
+  }
+
+  private async inferResourceMeta(
+    resourceDir: string,
+    dirName: string,
+    type: ResourceType,
+  ): Promise<ResourceMeta | undefined> {
+    const entry = this.getDefaultEntry(type);
+    const entryPath = path.join(resourceDir, entry);
+    if (!(await this.exists(entryPath))) return undefined;
+
+    const metadata =
+      type === "skill" ? await this.readSkillFrontMatter(entryPath) : null;
+    return {
+      name: this.readStringMetadata(metadata, "name") ?? dirName,
+      type,
+      entry,
+      description: this.readStringMetadata(metadata, "description"),
+      agents:
+        this.readStringArrayMetadata(metadata, "agents") ??
+        this.readStringArrayMetadata(metadata, "targets") ??
+        [],
+    };
+  }
+
+  private async readSkillFrontMatter(
+    skillPath: string,
+  ): Promise<Record<string, unknown> | null> {
+    const raw = await fs.readFile(skillPath, "utf8");
+    const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(raw.trimStart());
+    if (!match) return null;
+
+    try {
+      const parsed = YAML.parse(match[1]) as unknown;
+      return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private readStringMetadata(
+    metadata: Record<string, unknown> | null,
+    key: string,
+  ): string | undefined {
+    const value = metadata?.[key];
+    if (typeof value !== "string") return undefined;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  private readStringArrayMetadata(
+    metadata: Record<string, unknown> | null,
+    key: string,
+  ): string[] | undefined {
+    const value = metadata?.[key];
+    if (!Array.isArray(value)) return undefined;
+    const items = value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return items.length > 0 ? items : undefined;
   }
 
   private async exists(targetPath: string): Promise<boolean> {
@@ -54,5 +125,9 @@ export class ResourceScanner {
     if (type === "rule") return "rules";
     if (type === "command") return "commands";
     return "skills";
+  }
+
+  private getDefaultEntry(type: ResourceType): string {
+    return type === "skill" ? "SKILL.md" : "content.md";
   }
 }

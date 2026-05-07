@@ -32,13 +32,13 @@
   - `install <type> <name[@version]>` 自动写入/更新 lock
   - `install`（无参数）按 lock 批量复现安装
   - `uninstall` 删除项目安装目标并同步移除 lock 条目
-  - `publish` 在资源已锁定时同步更新 lock 版本
+  - `publish` 用新版本以 copy 模式重新安装当前资源、更新 lock，并退出 dev mode
 - 已完成：默认 agent 配置
   - `agent use/list/current/clear`
   - 支持当前项目配置和全局配置
 - 已完成（基础）：多 repo 命名源管理（`source add/use/list` + 默认源切换）与 source 根目录文档初始化/自动维护（`source init-docs`，`create` / `publish` 自动更新）
 - 已完成（基础）：本地索引缓存（`list` 优先读 `~/.himan/index.json`，失效时回退扫描并刷新）
-- 已完成（基础）：发布前校验（`himan.yaml` 必填字段、类型/名称匹配、入口文件存在）
+- 已完成（基础）：发布前校验（已有 `himan.yaml` 的字段、类型/名称匹配、入口文件存在；缺少元数据时按默认入口推断）
 - 待完成：扩展 preflight（lint/schema 版本化）、PR 驱动发布
 
 > 说明：当前是“多来源可配置、单来源生效（default）”模式。业务命令默认仅作用于当前 default source，不做跨源同时生效。

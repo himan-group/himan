@@ -134,7 +134,7 @@ describe("GitSourceAdapter", () => {
     );
   });
 
-  it("rejects publish when himan.yaml is missing", async () => {
+  it("publishes a resource with inferred metadata when himan.yaml is missing", async () => {
     const { remoteDir, targetDir } = await createRemoteFixture();
     const adapter = new GitSourceAdapter();
     const sourceDir = path.join(tmpRoot, "missing-metadata");
@@ -148,14 +148,24 @@ describe("GitSourceAdapter", () => {
     await fs.mkdir(sourceDir, { recursive: true });
     await fs.writeFile(path.join(sourceDir, "content.md"), "# missing metadata\n", "utf8");
 
-    await expect(
-      adapter.publish("rule", "missing-metadata", "0.1.0", sourceDir),
-    ).rejects.toMatchObject({
-      code: "E_INVALID_RESOURCE_METADATA",
+    const result = await adapter.publish("rule", "missing-metadata", "0.1.0", sourceDir);
+
+    expect(result).toEqual({
+      version: "0.1.0",
+      tag: "rule/missing-metadata@0.1.0",
     });
     await expect(
-      fs.access(path.join(targetDir, "rules", "missing-metadata")),
+      fs.readFile(path.join(targetDir, "rules", "missing-metadata", "content.md"), "utf8"),
+    ).resolves.toContain("# missing metadata");
+    await expect(
+      fs.access(path.join(targetDir, "rules", "missing-metadata", "himan.yaml")),
     ).rejects.toThrow();
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "`rule/missing-metadata@0.1.0`",
+    );
+    expect(runGitOutput(["tag", "--list", "rule/missing-metadata@0.1.0"], targetDir)).toBe(
+      "rule/missing-metadata@0.1.0",
+    );
   });
 
   it("rejects publish when the metadata entry file is missing", async () => {

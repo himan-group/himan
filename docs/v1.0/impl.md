@@ -18,7 +18,7 @@
 - 已引入 `himan.lock`（安装写入、无参 install 复现、卸载删除条目、发布后更新锁定条目）
 - 已支持基础多源管理（命名 source 的 add/use/list 与默认源切换）
 - 已支持本地索引缓存（list 结果写入 `~/.himan/index.json`）
-- 已支持基础发布前校验（`himan.yaml` 必填字段、资源类型/名称匹配、入口文件存在）
+- 已支持基础发布前校验（已有 `himan.yaml` 的字段、资源类型/名称匹配、入口文件存在；缺少元数据时按默认入口推断）
 
 当前剩余缺口（对比 v1.0 目标）：
 
@@ -110,7 +110,7 @@ v1.0 仍以 Git 为主。在多源层面，当前已落地基础能力：
   - 显式 install 写入/更新当前 default source 信息
   - 无参数 install 使用 lock 中记录的 source 批量恢复，不依赖当前 default source
   - uninstall 删除条目
-  - publish 后可按策略更新（默认仅在当前项目安装条目存在时更新）
+  - publish 后用新版本以 copy 模式重新安装当前资源、更新 lock，并退出 dev mode
 
 ---
 

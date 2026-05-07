@@ -73,7 +73,7 @@
 
 ### 6. `list` 索引缓存可能返回陈旧元数据
 
-- 状态：已处理（2026-05-07）。`list` 缓存失效条件已从类型目录 mtime 改为资源目录下 `himan.yaml` 文件内容 hash；修改已有资源元数据、添加或删除资源元数据文件时会刷新 `~/.himan/index.json`，旧的 mtime 缓存条目会自然失效并重建。
+- 状态：已处理（2026-05-07）。`list` 缓存失效条件已从类型目录 mtime 改为资源目录下 `himan.yaml` 或默认入口文件内容 hash；修改已有资源元数据、添加或删除资源元数据文件时会刷新 `~/.himan/index.json`，旧的 mtime 缓存条目会自然失效并重建。
 - 位置：`src/adapters/source/git-source-adapter.ts`
 - 现状：缓存失效只比较类型目录的 `mtimeMs`。修改已有资源目录内的 `himan.yaml` 时，父级类型目录 mtime 可能不变。
 - 影响：`list` 可能返回旧的 description、entry、agents。
@@ -81,11 +81,11 @@
 
 ### 7. publish preflight 与错误码治理不足
 
-- 状态：已处理（2026-05-07）。`publish` 发布前会校验 `himan.yaml` 存在且为对象，`name/type/entry` 与命令参数匹配，入口文件存在且位于资源目录内；无可提交变更时返回稳定错误码 `E_PUBLISH_NO_CHANGES`，元数据非法时返回 `E_INVALID_RESOURCE_METADATA`。
+- 状态：已处理（2026-05-07）。`publish` 发布前会校验已有 `himan.yaml` 为对象，`name/type/entry` 与命令参数匹配，入口文件存在且位于资源目录内；缺少 `himan.yaml` 时按默认入口推断最小元数据；无可提交变更时返回稳定错误码 `E_PUBLISH_NO_CHANGES`，元数据非法时返回 `E_INVALID_RESOURCE_METADATA`。
 - 位置：`src/adapters/source/git-source-adapter.ts`、`src/adapters/git/repo-manager.ts`、`docs/v1.0/impl.md`
 - 现状：
   - 文档要求 preflight、元数据校验、入口存在性校验，但代码尚未实现完整校验。
-  - 缺失 `himan.yaml` 时仍可能提交和打 tag。
+  - 缺少入口文件时仍可能提交和打 tag。
   - “No changes to publish.” 使用普通 `Error`，最终会表现为 `E_UNKNOWN`。
 - 影响：发布失败和非法发布的诊断性不足，不符合文档中的稳定错误码策略。
 - 建议：新增发布前校验，业务失败统一使用 `HimanError` 和稳定错误码。
