@@ -41,9 +41,9 @@ pnpm test
    本地可执行 `pnpm run verify`（类型检查、单测、`build`），确认通过后再提 PR。PR 会自动运行同一组核心校验。
 
 2. **更新 `package.json` 中的 `version` 与 `CHANGELOG.md`**  
-   npm 不允许重复发布同一版本号。合并进 `master` 前，在 PR 里把版本改成 registry 上尚未存在的号，并把用户可见变更记录到 [CHANGELOG.md](../CHANGELOG.md)。  
+   npm 不允许重复发布同一版本号。合并进 `master` 前，在 PR 里把用户可见变更先记录到 [CHANGELOG.md](../CHANGELOG.md) 的 `[Unreleased]`，再把版本改成 registry 上尚未存在的号。
    - 手动改 `version` 字段，或  
-   - 在分支上执行其一（只改版本号，**不会**发包）：`pnpm run version:patch` / `version:minor` / `version:major`（使用 `npm version … --no-git-tag-version`，需自行 `git add` / `commit` 版本变更）。  
+   - 在分支上执行其一（改版本号并把 `[Unreleased]` 归档到新版本，**不会**发包）：`pnpm run version:patch` / `version:minor` / `version:major`（使用 `npm version … --no-git-tag-version`，随后执行 `scripts/release-changelog.mjs`；需自行 `git add` / `commit` 版本和 changelog 变更）。
    Git 标签约定：与 `version` 对应、带前缀 **`v`**（如 `1.2.0` → 标签 `v1.2.0`）。
 
 3. **合并到 `master`**  
@@ -66,7 +66,8 @@ pnpm test
 | `pnpm run release:dry` | 检查 + `npm publish --dry-run`（演练，不上传） |
 | `pnpm run release:test` | 检查 + 将版本打成 `*-test.*` 预发布号并发布到 **`@test` 标签** |
 | `pnpm run release` | 检查 + 发布 **latest**（维护者本地发包时用；**请写 `pnpm run release`**，勿用裸命令 `pnpm publish`，二者不是同一套流程） |
-| `pnpm run version:patch` / `version:minor` / `version:major` | 仅提升 `package.json` 版本号，不发包 |
+| `pnpm run changelog:release` | 把 `CHANGELOG.md` 的 `[Unreleased]` 归档到当前 `package.json` 版本 |
+| `pnpm run version:patch` / `version:minor` / `version:major` | 提升 `package.json` 版本号，并调用 `changelog:release`；不发包 |
 
 发测试标签后，安装示例：`npm i @hi-man/himan@test`。
 

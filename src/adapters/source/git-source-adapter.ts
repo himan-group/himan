@@ -42,6 +42,12 @@ interface ChangelogEntry {
   line: string;
 }
 
+interface ResourceDocsItem {
+  name: string;
+  type: ResourceType;
+  description?: string;
+}
+
 export class GitSourceAdapter implements ResourceSourceAdapter {
   private readonly repoManager = new RepoManager();
   private readonly scanner = new ResourceScanner();
@@ -209,10 +215,11 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       },
       {
         path: path.join(repoDir, "CHANGELOG.md"),
-        content: this.buildChangelogContent(),
+        content: await this.buildChangelogContent(repoDir),
       },
     ];
     const results: SourceDocsFileResult[] = [];
+    const changedPaths: string[] = [];
 
     for (const file of files) {
       const exists = await this.exists(file.path);
@@ -222,13 +229,25 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
 
       if (!options.dryRun && action !== "skipped") {
         await fs.writeFile(file.path, file.content, "utf8");
+        changedPaths.push(path.relative(repoDir, file.path));
       }
     }
+
+    const committed =
+      !options.dryRun &&
+      changedPaths.length > 0 &&
+      (await this.repoManager.commitAndPush(
+        repoDir,
+        "docs: init source docs",
+        undefined,
+        changedPaths,
+      ));
 
     return {
       sourceDir: repoDir,
       files: results,
       dryRun: Boolean(options.dryRun),
+      committed,
     };
   }
 
@@ -484,7 +503,8 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     ].join("\n");
   }
 
-  private buildChangelogContent(): string {
+  private async buildChangelogContent(repoDir: string): Promise<string> {
+    const resourceLines = await this.buildExistingResourceChangelogLines(repoDir);
     return [
       "# Changelog",
       "",
@@ -495,6 +515,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       "### Added",
       "",
       "- Initial source README/CHANGELOG scaffold.",
+      ...resourceLines,
       "",
     ].join("\n");
   }
@@ -502,23 +523,14 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
   private async buildResourceIndex(repoDir: string): Promise<string[]> {
     const sections: string[] = [];
     for (const type of RESOURCE_TYPES) {
-      const resources = (await this.scanner.scanByType(repoDir, type)).sort((a, b) =>
-        a.name.localeCompare(b.name),
-      );
+      const resources = await this.collectResourceDocsItems(repoDir, type);
       sections.push(`### ${this.getTypeLabel(type)}`, "");
       if (resources.length === 0) {
         sections.push(`- No ${type} resources yet.`, "");
         continue;
       }
       for (const resource of resources) {
-        const version = await this.readResourceVersion(
-          repoDir,
-          resource.type,
-          resource.name,
-        );
-        const ref = version
-          ? `${resource.type}/${resource.name}@${version}`
-          : `${resource.type}/${resource.name}`;
+        const ref = await this.getResourceRef(repoDir, resource.type, resource.name);
         sections.push(
           `- \`${ref}\`${
             resource.description ? `: ${resource.description}` : ""
@@ -531,6 +543,89 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       sections.pop();
     }
     return sections;
+  }
+
+  private async buildExistingResourceChangelogLines(repoDir: string): Promise<string[]> {
+    const lines: string[] = [];
+    for (const type of RESOURCE_TYPES) {
+      const resources = await this.collectResourceDocsItems(repoDir, type);
+      for (const resource of resources) {
+        const ref = await this.getResourceRef(repoDir, resource.type, resource.name);
+        lines.push(`- Documented existing resource \`${ref}\`.`);
+      }
+    }
+    return lines;
+  }
+
+  private async collectResourceDocsItems(
+    repoDir: string,
+    type: ResourceType,
+  ): Promise<ResourceDocsItem[]> {
+    const resources = await this.scanner.scanByType(repoDir, type);
+    const items: ResourceDocsItem[] = resources.map((resource) => ({
+      name: resource.name,
+      type: resource.type,
+      description: resource.description,
+    }));
+
+    if (type === "skill") {
+      const managedNames = new Set(resources.map((resource) => resource.name));
+      items.push(...(await this.scanLegacySkillDocsItems(repoDir, managedNames)));
+    }
+
+    return items.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  private async scanLegacySkillDocsItems(
+    repoDir: string,
+    managedNames: Set<string>,
+  ): Promise<ResourceDocsItem[]> {
+    const baseDir = path.join(repoDir, this.getTypeDir("skill"));
+    if (!(await this.exists(baseDir))) return [];
+
+    const entries = await fs.readdir(baseDir, { withFileTypes: true });
+    const items: ResourceDocsItem[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const skillPath = path.join(baseDir, entry.name, "SKILL.md");
+      if (!(await this.exists(skillPath))) continue;
+
+      const metadata = await this.readSkillFrontMatter(skillPath);
+      const name = this.readStringMetadata(metadata, "name") ?? entry.name;
+      if (managedNames.has(name) || managedNames.has(entry.name)) continue;
+
+      items.push({
+        name,
+        type: "skill",
+        description: this.readStringMetadata(metadata, "description"),
+      });
+    }
+    return items;
+  }
+
+  private async readSkillFrontMatter(
+    skillPath: string,
+  ): Promise<Record<string, unknown> | null> {
+    const raw = await fs.readFile(skillPath, "utf8");
+    const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(raw.trimStart());
+    if (!match) return null;
+
+    try {
+      const parsed = YAML.parse(match[1]) as unknown;
+      return this.isRecord(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private readStringMetadata(
+    metadata: Record<string, unknown> | null,
+    key: string,
+  ): string | undefined {
+    const value = metadata?.[key];
+    if (typeof value !== "string") return undefined;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
   }
 
   private async maintainSourceDocs(
@@ -696,6 +791,37 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       }
       return undefined;
     }
+  }
+
+  private async getResourceRef(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<string> {
+    const version =
+      (await this.readLatestTaggedResourceVersion(repoDir, type, name)) ??
+      (await this.readResourceVersion(repoDir, type, name));
+    return this.formatResourceRef(type, name, version);
+  }
+
+  private async readLatestTaggedResourceVersion(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<string | undefined> {
+    const versions = (await this.repoManager.listTags(repoDir, `${type}/${name}@*`))
+      .map((tag) => tag.split("@").at(1) ?? "")
+      .filter((version) => semver.valid(version))
+      .sort(semver.rcompare);
+    return versions.at(0);
+  }
+
+  private formatResourceRef(
+    type: ResourceType,
+    name: string,
+    version?: string,
+  ): string {
+    return version ? `${type}/${name}@${version}` : `${type}/${name}`;
   }
 
   private getSourceTitle(): string {

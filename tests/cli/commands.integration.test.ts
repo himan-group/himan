@@ -96,10 +96,12 @@ describe("CLI commands with external git source", () => {
     const payload = JSON.parse(result.stdout) as {
       sourceDir: string;
       dryRun: boolean;
+      committed: boolean;
       files: Array<{ path: string; action: string; reason?: string }>;
     };
     expect(payload.sourceDir).toBe(repoDir);
     expect(payload.dryRun).toBe(false);
+    expect(payload.committed).toBe(true);
     expect(payload.files).toEqual([
       {
         path: path.join(repoDir, "README.md"),
@@ -118,6 +120,10 @@ describe("CLI commands with external git source", () => {
     await expect(
       fs.readFile(path.join(repoDir, "CHANGELOG.md"), "utf8"),
     ).resolves.toContain("All notable source-level resource changes");
+    expect(runGitOutput(["status", "--short"], repoDir)).toBe("");
+    expect(runGitOutput(["show", "origin/main:CHANGELOG.md"], repoDir)).toContain(
+      "All notable source-level resource changes",
+    );
 
     const dryRun = runCli(
       ["source", "init-docs", "--force", "--dry-run", "--json"],
@@ -127,9 +133,11 @@ describe("CLI commands with external git source", () => {
     expect(dryRun.status).toBe(0);
     const dryRunPayload = JSON.parse(dryRun.stdout) as {
       dryRun: boolean;
+      committed: boolean;
       files: Array<{ action: string }>;
     };
     expect(dryRunPayload.dryRun).toBe(true);
+    expect(dryRunPayload.committed).toBe(false);
     expect(dryRunPayload.files.map((file) => file.action)).toEqual([
       "updated",
       "updated",

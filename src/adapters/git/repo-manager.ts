@@ -66,6 +66,31 @@ export class RepoManager {
     paths: string[] = ["."],
   ): Promise<void> {
     const git = simpleGit(repoDir);
+    await this.commitChanges(git, message, paths, true);
+    await git.addTag(tag);
+    await this.pushCurrentBranch(git, branch);
+    await git.pushTags("origin");
+  }
+
+  async commitAndPush(
+    repoDir: string,
+    message: string,
+    branch?: string,
+    paths: string[] = ["."],
+  ): Promise<boolean> {
+    const git = simpleGit(repoDir);
+    const committed = await this.commitChanges(git, message, paths, false);
+    if (!committed) return false;
+    await this.pushCurrentBranch(git, branch);
+    return true;
+  }
+
+  private async commitChanges(
+    git: SimpleGit,
+    message: string,
+    paths: string[],
+    requireChanges: boolean,
+  ): Promise<boolean> {
     const pathspecs = paths.length > 0 ? paths : ["."];
     await git.add(pathspecs);
     const stagedFiles = await git.raw([
@@ -76,21 +101,25 @@ export class RepoManager {
       ...pathspecs,
     ]);
     if (!stagedFiles.trim()) {
-      throw new HimanError(
-        errorCodes.PUBLISH_NO_CHANGES,
-        "No changes to publish.",
-      );
+      if (requireChanges) {
+        throw new HimanError(
+          errorCodes.PUBLISH_NO_CHANGES,
+          "No changes to publish.",
+        );
+      }
+      return false;
     }
 
     await git.commit(message, pathspecs);
-    await git.addTag(tag);
+    return true;
+  }
 
+  private async pushCurrentBranch(git: SimpleGit, branch?: string): Promise<void> {
     const currentBranch = (
       await git.raw(["rev-parse", "--abbrev-ref", "HEAD"])
     ).trim();
     const targetBranch = branch ?? currentBranch;
     await git.push("origin", targetBranch);
-    await git.pushTags("origin");
   }
 
   private async exists(targetPath: string): Promise<boolean> {

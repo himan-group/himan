@@ -91,7 +91,7 @@ Resource source layout uses plural type directories in the source repo:
 
 Git tags use `<type>/<name>@<semver>`, for example `rule/code-review@1.0.0`.
 
-`himan source init-docs` scaffolds source-level `README.md` and `CHANGELOG.md` in the current default Git source cache. It preserves existing files by default, supports `--force`, `--dry-run`, and `--json`, and does not change agent install targets. `create` and `publish` automatically update the source-level README resource index between `<!-- himan:resources:start -->` / `<!-- himan:resources:end -->` markers and append `[Unreleased]` changelog entries; publish includes those docs in the resource version commit.
+`himan source init-docs` scaffolds source-level `README.md` and `CHANGELOG.md` in the current default Git source cache, then commits and pushes when files changed. It preserves existing files by default, supports `--force`, `--dry-run`, and `--json`, and does not change agent install targets. With `--force`, generated docs scan existing `rule`, `command`, and `skill` resources into the README index and CHANGELOG initial entries; resource refs prefer the latest semver Git tag, falling back to `himan.yaml` `version`; for legacy Codex-style skills, docs generation also indexes `skills/<name>/SKILL.md` front matter even when `himan.yaml` has not been added yet. `create` and `publish` automatically update the source-level README resource index between `<!-- himan:resources:start -->` / `<!-- himan:resources:end -->` markers and append `[Unreleased]` changelog entries; publish includes those docs in the resource version commit.
 
 ## UI And Components
 

@@ -94,7 +94,7 @@ your-himan-source/
 - `himan.yaml`：资源元数据，供 himan 扫描、发布和安装时读取。
 - `content.md` / `SKILL.md`：资源主入口，由 `himan.yaml` 的 `entry` 字段指定。
 
-可通过 `himan source init-docs` 为当前 default source 生成根目录文档模板；默认只创建缺失文件，`--force` 才覆盖已有 `README.md` / `CHANGELOG.md`，`--dry-run` 可预览结果。
+可通过 `himan source init-docs` 为当前 default source 生成根目录文档模板；默认只创建缺失文件，`--force` 会覆盖已有 `README.md` / `CHANGELOG.md`，并把当前 source 中已有的 `rule`、`command`、`skill` 整理进 README 资源索引和 CHANGELOG 初始条目；资源引用会优先带上 Git tag 中的最新 semver 版本；对于尚未补齐 `himan.yaml` 的 Codex 风格 skill，也会读取 `skills/<name>/SKILL.md` front matter。`--dry-run` 可预览结果。有实际文件变更时，命令会提交并 push 到当前 Git source。
 
 `himan create` 和 `himan publish` 会自动维护 source 根目录文档：
 

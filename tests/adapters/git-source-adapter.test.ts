@@ -93,6 +93,47 @@ describe("GitSourceAdapter", () => {
     );
   });
 
+  it("force-initializes source docs with existing resources", async () => {
+    const { remoteDir, targetDir } = await createRemoteFixture({ legacySkill: true });
+    const adapter = new GitSourceAdapter();
+
+    await adapter.init({
+      type: "git",
+      repo: remoteDir,
+      repoDir: targetDir,
+      repoId: "test-source",
+    });
+    configureGitUser(targetDir);
+    await fs.writeFile(path.join(targetDir, "README.md"), "# Existing docs\n", "utf8");
+    await fs.writeFile(path.join(targetDir, "CHANGELOG.md"), "# Old changelog\n", "utf8");
+
+    const result = await adapter.initDocs({ force: true });
+
+    expect(result.committed).toBe(true);
+    expect(result.files).toEqual([
+      expect.objectContaining({ action: "updated", path: path.join(targetDir, "README.md") }),
+      expect.objectContaining({ action: "updated", path: path.join(targetDir, "CHANGELOG.md") }),
+    ]);
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "`rule/code-review`: original description",
+    );
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "`skill/common-dev-pattern@0.1.0`: Follow existing repository patterns.",
+    );
+    await expect(
+      fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
+    ).resolves.toContain("- Documented existing resource `rule/code-review`.");
+    await expect(
+      fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
+    ).resolves.toContain("- Documented existing resource `skill/common-dev-pattern@0.1.0`.");
+    expect(runGitOutput(["show", "origin/main:README.md"], targetDir)).toContain(
+      "`rule/code-review`: original description",
+    );
+    expect(runGitOutput(["show", "origin/main:README.md"], targetDir)).toContain(
+      "`skill/common-dev-pattern@0.1.0`: Follow existing repository patterns.",
+    );
+  });
+
   it("rejects publish when himan.yaml is missing", async () => {
     const { remoteDir, targetDir } = await createRemoteFixture();
     const adapter = new GitSourceAdapter();
@@ -151,7 +192,7 @@ describe("GitSourceAdapter", () => {
   });
 });
 
-async function createRemoteFixture(): Promise<{
+async function createRemoteFixture(options?: { legacySkill?: boolean }): Promise<{
   remoteDir: string;
   targetDir: string;
 }> {
@@ -162,12 +203,22 @@ async function createRemoteFixture(): Promise<{
   await fs.mkdir(seedDir, { recursive: true });
   await fs.mkdir(remoteDir, { recursive: true });
   await writeRule(seedDir, "original description");
+  if (options?.legacySkill) {
+    await writeLegacySkill(seedDir);
+  }
 
   runGit(["init", "--initial-branch=main"], seedDir);
   commitAll(seedDir, "Initial commit");
+  if (options?.legacySkill) {
+    runGit(["tag", "skill/common-dev-pattern@0.0.1"], seedDir);
+    runGit(["tag", "skill/common-dev-pattern@0.1.0"], seedDir);
+  }
   runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
   runGit(["remote", "add", "origin", remoteDir], seedDir);
   runGit(["push", "-u", "origin", "main"], seedDir);
+  if (options?.legacySkill) {
+    runGit(["push", "origin", "--tags"], seedDir);
+  }
 
   return { remoteDir, targetDir };
 }
@@ -201,6 +252,24 @@ async function writeNamedRule(
     "utf8",
   );
   await fs.writeFile(path.join(targetDir, "content.md"), options.content, "utf8");
+}
+
+async function writeLegacySkill(repoDir: string): Promise<void> {
+  const targetDir = path.join(repoDir, "skills", "common-dev-pattern");
+  await fs.mkdir(targetDir, { recursive: true });
+  await fs.writeFile(
+    path.join(targetDir, "SKILL.md"),
+    [
+      "---",
+      "name: common-dev-pattern",
+      "description: Follow existing repository patterns.",
+      "---",
+      "",
+      "# common-dev-pattern",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
 }
 
 function commitAll(cwd: string, message: string): void {
