@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  getGlobalResourcePaths,
   getProjectResourcePaths,
   getSupportedAgentNames,
   normalizeAgent,
@@ -38,6 +39,20 @@ describe("agent configs", () => {
       path.join(projectDir, ".claude", "skills", "risk-check"),
       path.join(projectDir, ".agents", "skills", "risk-check"),
       path.join(projectDir, ".openclaw", "skills", "risk-check"),
+    ]);
+  });
+
+  it("builds global resource paths from agent config", () => {
+    const homeDir = path.join("tmp", "home");
+
+    expect(
+      getGlobalResourcePaths(homeDir, "rule", "code-review", [
+        "cursor",
+        "codex",
+      ]),
+    ).toEqual([
+      path.join(homeDir, ".cursor", "rules", "code-review"),
+      path.join(homeDir, ".agents", "rules", "code-review"),
     ]);
   });
 

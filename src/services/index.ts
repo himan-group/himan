@@ -27,6 +27,7 @@ import { PathResolver } from "../utils/path-resolver.js";
 import { toRepoId } from "../utils/repo-id.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
 import {
+  getGlobalResourcePaths,
   getProjectResourcePaths,
   getSupportedAgentNames,
   normalizeAgents,
@@ -250,6 +251,34 @@ export class ServiceFactory {
     );
   }
 
+  async installGlobal(
+    type: ResourceType,
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents?: string[],
+    mode: InstallMode = "link",
+  ): Promise<{
+    type: ResourceType;
+    name: string;
+    version: string;
+    linkPath: string;
+    mode: InstallMode;
+  }> {
+    const source = await this.loadSourceFromConfig();
+    return this.installWithSource(
+      source,
+      undefined,
+      type,
+      name,
+      version,
+      projectDir,
+      agents,
+      mode,
+      "global",
+    );
+  }
+
   async dev(
     type: ResourceType,
     name: string,
@@ -425,6 +454,7 @@ export class ServiceFactory {
         projectDir,
         agents ?? item.agents,
         mode ?? this.resolveInstallMode(item.mode),
+        "project",
       );
       results.push(result);
     }
@@ -433,13 +463,14 @@ export class ServiceFactory {
 
   private async installWithSource(
     source: ResourceSourceAdapter,
-    sourceInfo: LockSourceInfo,
+    sourceInfo: LockSourceInfo | undefined,
     type: ResourceType,
     name: string,
     version: string | undefined,
     projectDir: string,
     agents: string[] | undefined,
     mode: InstallMode,
+    scope: "project" | "global" = "project",
   ): Promise<{
     type: ResourceType;
     name: string;
@@ -461,22 +492,39 @@ export class ServiceFactory {
       await source.pull(type, name, resolvedVersion, storePath);
     }
     const resourceMeta = await this.readResourceMetaFromDir(storePath, type);
-    const effectiveTargets = await this.resolveEffectiveAgents(
-      projectDir,
-      agents,
-      resourceMeta?.agents,
-    );
-    const linkPaths = getProjectResourcePaths(projectDir, type, name, effectiveTargets);
+    const effectiveTargets =
+      scope === "global"
+        ? await this.resolveGlobalInstallAgents(
+            projectDir,
+            type,
+            name,
+            agents,
+            resourceMeta?.agents,
+          )
+        : await this.resolveEffectiveAgents(
+            projectDir,
+            agents,
+            resourceMeta?.agents,
+          );
+    const linkPaths =
+      scope === "global"
+        ? getGlobalResourcePaths(this.paths.getHomeDir(), type, name, effectiveTargets)
+        : getProjectResourcePaths(projectDir, type, name, effectiveTargets);
     for (const linkPath of linkPaths) {
       await this.materializeResource(storePath, linkPath, mode);
     }
-    await this.lockStore.upsertResource(projectDir, sourceInfo, {
-      type,
-      name,
-      version: resolvedVersion,
-      agents: effectiveTargets,
-      mode,
-    });
+    if (scope === "project") {
+      if (!sourceInfo) {
+        throw new Error("Project install requires source lock information.");
+      }
+      await this.lockStore.upsertResource(projectDir, sourceInfo, {
+        type,
+        name,
+        version: resolvedVersion,
+        agents: effectiveTargets,
+        mode,
+      });
+    }
 
     return { type, name, version: resolvedVersion, linkPath: linkPaths[0], mode };
   }
@@ -734,6 +782,23 @@ export class ServiceFactory {
       return configuredAgents;
     }
     return normalizeAgents(fallbackAgents);
+  }
+
+  private async resolveGlobalInstallAgents(
+    projectDir: string,
+    type: ResourceType,
+    name: string,
+    explicitAgents?: string[],
+    fallbackAgents?: string[],
+  ): Promise<string[]> {
+    if (explicitAgents?.length) {
+      return normalizeAgents(explicitAgents);
+    }
+    const locked = await this.getLockedResource(projectDir, type, name);
+    if (locked?.agents?.length) {
+      return normalizeAgents(locked.agents);
+    }
+    return this.resolveEffectiveAgents(projectDir, undefined, fallbackAgents);
   }
 
   private async getConfiguredAgents(projectDir: string): Promise<string[] | undefined> {

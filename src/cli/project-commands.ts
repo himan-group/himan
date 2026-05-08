@@ -12,17 +12,25 @@ export function registerProjectCommands(command: Command, services: ServiceFacto
     .argument("[name[@version]]", "resource name with optional @version")
     .option("--agent <list>", "install target agents, comma separated")
     .option("--mode <mode>", "install mode: link or copy")
+    .option("--global", "install into user-level agent directories")
     .description("Install resource, or install from himan.lock")
     .action(
       async (
         type: string | undefined,
         nameVersion: string | undefined,
-        options: { agent?: string; mode?: string },
+        options: { agent?: string; mode?: string; global?: boolean },
       ) => {
         await runAction(async () => {
           const agents = parseAgents(options.agent);
           const mode = parseInstallMode(options.mode);
           if (!type && !nameVersion) {
+            if (options.global) {
+              throw new HimanError(
+                errorCodes.CLI_USAGE,
+                "Global install requires a resource:\n"
+                  + "  - himan install <type> <name[@version]> --global [--mode link|copy]",
+              );
+            }
             const results = await services.installFromLock(process.cwd(), agents, mode);
             if (results.length === 0) {
               process.stdout.write("No resources in lock file.\n");
@@ -39,22 +47,32 @@ export function registerProjectCommands(command: Command, services: ServiceFacto
               errorCodes.CLI_USAGE,
               "Install usage:\n"
                 + "  - himan install  # install from himan.lock\n"
-                + "  - himan install <type> <name[@version]> [--mode link|copy]  # install single resource",
+                + "  - himan install <type> <name[@version]> [--mode link|copy]  # install single resource\n"
+                + "  - himan install <type> <name[@version]> --global [--mode link|copy]  # install single resource globally",
             );
           }
 
           const resourceType = ensureResourceType(type);
           const { name, version } = parseNameVersion(nameVersion);
-          const result = await services.install(
-            resourceType,
-            name,
-            version,
-            process.cwd(),
-            agents,
-            mode,
-          );
+          const result = options.global
+            ? await services.installGlobal(
+                resourceType,
+                name,
+                version,
+                process.cwd(),
+                agents,
+                mode,
+              )
+            : await services.install(
+                resourceType,
+                name,
+                version,
+                process.cwd(),
+                agents,
+                mode,
+              );
           process.stdout.write(
-            `Installed ${result.type}/${result.name}@${result.version}\n`,
+            `Installed ${options.global ? "global " : ""}${result.type}/${result.name}@${result.version}\n`,
           );
         });
       },
