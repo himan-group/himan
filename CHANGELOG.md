@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-05-08
+
+### Added
+
+- Added `himan install <type> <name[@version]> --global` to install a resource into the matching user-level agent directory, reusing the current project's resource agent when available and without writing the project lock file.
+
 ## [0.3.1] - 2026-05-07
 
 ### Added

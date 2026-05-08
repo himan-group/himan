@@ -2,7 +2,7 @@
 
 ## Overview
 
-`@hi-man/himan` is an ESM TypeScript CLI for managing prompt and agent assets. It manages `rule`, `command`, and `skill` resources from a Git-backed source, installs them into project-specific agent folders, supports local dev links, publishes semver-tagged versions, and keeps a `himan.lock` for reproducible installs.
+`@hi-man/himan` is an ESM TypeScript CLI for managing prompt and agent assets. It manages `rule`, `command`, and `skill` resources from a Git-backed source, installs them into project-specific or user-level agent folders, supports local dev links, publishes semver-tagged versions, and keeps a `himan.lock` for reproducible project installs.
 
 The npm package exposes four binaries:
 
@@ -79,7 +79,8 @@ The project has no HTTP API. It integrates with local Git repositories and files
 - Project lock state is stored in `<project>/himan.lock`; no-argument `install` restores from the source recorded in the lock, not from the current default source.
 - Project default agents are stored in `<project>/.himan/config.json`.
 - Project development copies live under `<project>/.himan/dev/<type>/<name>`.
-- Installed resources are materialized under agent folders such as `.cursor/rules/<name>`, `.agents/skills/<name>` for Codex, `.claude/commands/<name>`, and `.openclaw/...`; install mode controls whether each target is a symlink or a copy.
+- Project-installed resources are materialized under agent folders such as `.cursor/rules/<name>`, `.agents/skills/<name>` for Codex, `.claude/commands/<name>`, and `.openclaw/...`; install mode controls whether each target is a symlink or a copy.
+- `install <type> <name[@version]> --global` materializes the resource under the matching user-level agent folder below home, such as `~/.cursor/rules/<name>`, `~/.agents/skills/<name>` for Codex, `~/.claude/commands/<name>`, and `~/.openclaw/...`. Global installs prefer `--agent`, then the current project's lock entry for that resource, then the default install agent resolution, and do not write `<project>/himan.lock`.
 
 Resource source layout uses plural type directories in the source repo:
 

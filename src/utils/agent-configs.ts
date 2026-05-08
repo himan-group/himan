@@ -60,9 +60,27 @@ export function getProjectResourcePaths(
   name: string,
   agents?: string[],
 ): string[] {
+  return getResourcePaths(projectDir, type, name, agents);
+}
+
+export function getGlobalResourcePaths(
+  homeDir: string,
+  type: ResourceType,
+  name: string,
+  agents?: string[],
+): string[] {
+  return getResourcePaths(homeDir, type, name, agents);
+}
+
+function getResourcePaths(
+  rootDir: string,
+  type: ResourceType,
+  name: string,
+  agents?: string[],
+): string[] {
   const typeDir = getTypeDir(type);
   return normalizeAgents(agents).map((agent) =>
-    path.join(projectDir, getAgentBaseDir(agent), typeDir, name),
+    path.join(rootDir, getAgentBaseDir(agent), typeDir, name),
   );
 }
 

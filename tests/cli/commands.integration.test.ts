@@ -253,6 +253,13 @@ describe("CLI commands with external git source", () => {
     expect(result.stderr).toContain("Install usage");
   });
 
+  it("returns cli usage code for global install without a resource", () => {
+    const result = runCli(["install", "--global"], projectDir, homeDir);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("[E_CLI_USAGE]");
+    expect(result.stderr).toContain("Global install requires a resource");
+  });
+
   it("configures default agents globally and for current project", async () => {
     const supported = runCli(["agent", "list", "--json"], projectDir, homeDir);
     expect(supported.status).toBe(0);
@@ -710,6 +717,63 @@ describe("CLI commands with external git source", () => {
       path.join(projectDir, ".himan", "dev", "rule", "code-review"),
     );
     expect(devLinkedRealPath).toBe(expectedDevPath);
+  });
+
+  it("installs globally using the current project's agent config", async () => {
+    const globalInstallProjectDir = path.join(tmpRoot, "global-install-project");
+    await fs.mkdir(globalInstallProjectDir, { recursive: true });
+
+    const useResult = runCli(["agent", "use", "codex"], globalInstallProjectDir, homeDir);
+    expect(useResult.status).toBe(0);
+
+    const result = runCli(
+      ["install", "rule", "code-review@1.0.0", "--global"],
+      globalInstallProjectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Installed global rule/code-review@1.0.0");
+
+    const globalPath = path.join(homeDir, ".agents", "rules", "code-review");
+    await expect(fs.realpath(globalPath)).resolves.toContain(
+      path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"),
+    );
+    await expect(
+      fs.access(path.join(globalInstallProjectDir, ".agents", "rules", "code-review")),
+    ).rejects.toThrow();
+    await expect(fs.access(path.join(globalInstallProjectDir, "himan.lock"))).rejects.toThrow();
+  });
+
+  it("installs globally using the current project's locked resource agent", async () => {
+    const lockedAgentProjectDir = path.join(tmpRoot, "locked-agent-global-project");
+    await fs.mkdir(lockedAgentProjectDir, { recursive: true });
+
+    const installResult = runCli(
+      ["install", "rule", "code-review@1.0.0", "--agent", "claude"],
+      lockedAgentProjectDir,
+      homeDir,
+    );
+    expect(installResult.status).toBe(0);
+
+    await fs.rm(
+      path.join(lockedAgentProjectDir, ".claude", "rules", "code-review"),
+      { recursive: true, force: true },
+    );
+
+    const globalResult = runCli(
+      ["install", "rule", "code-review@1.0.0", "--global"],
+      lockedAgentProjectDir,
+      homeDir,
+    );
+    expect(globalResult.status).toBe(0);
+    expect(globalResult.stdout).toContain("Installed global rule/code-review@1.0.0");
+
+    await expect(
+      fs.realpath(path.join(homeDir, ".claude", "rules", "code-review")),
+    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"));
+    await expect(
+      fs.access(path.join(homeDir, ".cursor", "rules", "code-review")),
+    ).rejects.toThrow();
   });
 
   it("filters list by agent via --agent", () => {

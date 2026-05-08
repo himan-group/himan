@@ -90,7 +90,7 @@ Command groups:
            init, source init, source add, source use, source list, source init-docs
   resource Source resource discovery and metadata
            list, history, create, resource list, resource history, resource create
-  project  Resource usage lifecycle in current project
+  project  Resource usage lifecycle in current project or user-level agent dirs
            install, dev, uninstall, publish,
            project install, project dev, project uninstall, project publish
   agent    Default agent configuration
