@@ -53,8 +53,8 @@ Runtime agent configuration commands:
 
 - Top-level `init`
 - `source init|add|use|list|init-docs`
-- `resource list|history|create`
-- `project install|dev|uninstall|publish`
+- `resource list|history|create`; `resource list` without a type groups all source resources, `--brief` hides descriptions, and `--installed` lists current project installs instead of source resources
+- `project list|install|dev|uninstall|publish`
 - `agent list|use|current|clear`
 - Backward-compatible top-level resource/project lifecycle commands
 

@@ -3,9 +3,62 @@ import type { InstallMode, ResourceType } from "../domain/resource.js";
 import type { ServiceFactory } from "../services/index.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
 import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-configs.js";
+import {
+  listInstalledResourceGroups,
+  writeInstalledResourceGroups,
+  writeInstalledResources,
+} from "./installed-resource-list.js";
 import { runAction } from "./shared.js";
 
-export function registerProjectCommands(command: Command, services: ServiceFactory): void {
+export function registerProjectCommands(
+  command: Command,
+  services: ServiceFactory,
+  options: { includeList?: boolean } = {},
+): void {
+  if (options.includeList !== false) {
+    command
+      .command("list")
+      .argument("[type]", "resource type")
+      .option("--agent <list>", "agent list filter, comma separated")
+      .option("--json", "output json format")
+      .description("List resources installed in current project")
+      .action(
+        async (
+          type: string | undefined,
+          commandOptions: { agent?: string; json?: boolean },
+        ) => {
+          await runAction(async () => {
+            const agents = parseAgents(commandOptions.agent);
+            if (!type) {
+              const groups = await listInstalledResourceGroups(
+                services,
+                process.cwd(),
+                agents,
+              );
+              if (commandOptions.json) {
+                process.stdout.write(`${JSON.stringify(groups, null, 2)}\n`);
+                return;
+              }
+              writeInstalledResourceGroups(groups);
+              return;
+            }
+
+            const resourceType = ensureResourceType(type);
+            const resources = await services.listInstalled(
+              process.cwd(),
+              resourceType,
+              agents,
+            );
+            if (commandOptions.json) {
+              process.stdout.write(`${JSON.stringify(resources, null, 2)}\n`);
+              return;
+            }
+            writeInstalledResources(resources);
+          });
+        },
+      );
+  }
+
   command
     .command("install")
     .argument("[type]", "resource type")
