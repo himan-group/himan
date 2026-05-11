@@ -489,6 +489,18 @@ describe("CLI commands with external git source", () => {
     expect(publishResult.status).toBe(0);
     expect(publishResult.stdout).toContain("Published command/release-note@0.1.0");
 
+    const noChangePublishResult = runCli(
+      ["publish", "command", "release-note", "--patch"],
+      projectDir,
+      homeDir,
+    );
+    expect(noChangePublishResult.status).toBe(1);
+    expect(noChangePublishResult.stderr).toContain("[E_PUBLISH_NO_CHANGES]");
+    expect(noChangePublishResult.stderr).toContain(
+      "No changes to publish for command/release-note.",
+    );
+    expect(runGitOutput(["tag", "--list", "command/release-note@0.1.1"], repoDir)).toBe("");
+
     const historyResult = runCli(
       ["history", "command", "release-note", "--json"],
       projectDir,

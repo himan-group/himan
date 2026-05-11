@@ -93,6 +93,34 @@ describe("GitSourceAdapter", () => {
     );
   });
 
+  it("rejects publish when content matches the latest version", async () => {
+    const { remoteDir, targetDir } = await createRemoteFixture();
+    const adapter = new GitSourceAdapter();
+    const sourceDir = path.join(tmpRoot, "published-rule");
+
+    await adapter.init({
+      type: "git",
+      repo: remoteDir,
+      repoDir: targetDir,
+      repoId: "test-source",
+    });
+    configureGitUser(targetDir);
+    await writeNamedRule(sourceDir, {
+      name: "published-rule",
+      description: "valid publish",
+      content: "# published-rule\n",
+    });
+    await adapter.publish("rule", "published-rule", "0.1.0", sourceDir);
+
+    await expect(
+      adapter.publish("rule", "published-rule", "0.1.1", sourceDir),
+    ).rejects.toMatchObject({
+      code: "E_PUBLISH_NO_CHANGES",
+      message: "No changes to publish for rule/published-rule.",
+    });
+    expect(runGitOutput(["tag", "--list", "rule/published-rule@0.1.1"], targetDir)).toBe("");
+  });
+
   it("force-initializes source docs with existing resources", async () => {
     const { remoteDir, targetDir } = await createRemoteFixture({ legacySkill: true });
     const adapter = new GitSourceAdapter();

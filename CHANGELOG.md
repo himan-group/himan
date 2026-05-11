@@ -10,6 +10,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 - Changed project guidance to require changelog updates for user-visible CLI behavior changes.
 
+### Fixed
+
+- Fixed `himan publish` so publishing stops with `E_PUBLISH_NO_CHANGES` when the resource content matches the latest published version.
+
 ## [0.3.3] - 2026-05-11
 
 ### Added
