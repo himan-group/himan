@@ -76,4 +76,4 @@ There is no HTTP API. The CLI works with Git and filesystem state:
 - Use `common-project-startup` when refreshing project maps or Codex instructions.
 - Use `common-issue-spec` when a request needs scope, assumptions, acceptance criteria, or validation clarified before coding.
 - Use `common-dev-pattern` for nontrivial code edits and validation.
-- Use `common-project-changelog` when updating `CHANGELOG.md`, bumping package versions, preparing release notes, or fixing changelog placement.
+- Use `common-project-changelog` for user-visible CLI behavior changes, new commands/options, direct `CHANGELOG.md` edits, package version bumps, release notes, or changelog placement fixes.

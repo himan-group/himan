@@ -127,6 +127,7 @@ There is no monorepo package sharing. Shared behavior is local to `src/`:
 - Registry source is reserved and intentionally returns `E_NOT_IMPLEMENTED`.
 - Version bumps use semver through `VersionResolver`.
 - Tests use Vitest, `node:fs` temp directories, mocked homes, and local Git repositories for CLI integration.
+- User-visible CLI behavior changes, new commands/options, output changes, and install/publish workflow changes should update `CHANGELOG.md` under `[Unreleased]`.
 
 ## Validation Notes
 

@@ -6,17 +6,27 @@
     "repo": "https://git.garena.com/detao.li/himan-resource.git",
     "repoId": "https_git.garena.com_detao.li_himan-resource"
   },
-  "updatedAt": "2026-05-07T10:41:32.251Z",
+  "updatedAt": "2026-05-11T08:37:10.348Z",
   "resources": [
     {
       "type": "skill",
-      "name": "common-project-changelog",
-      "version": "0.0.1",
+      "name": "common-dev-pattern",
+      "version": "0.0.3",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-07T10:41:32.251Z"
+      "updatedAt": "2026-05-11T08:37:10.348Z"
+    },
+    {
+      "type": "skill",
+      "name": "common-project-changelog",
+      "version": "0.0.2",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-11T08:36:35.621Z"
     }
   ]
 }

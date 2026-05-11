@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Changed
+
+- Changed project guidance to require changelog updates for user-visible CLI behavior changes.
+
 ## [0.3.3] - 2026-05-11
 
 ### Added

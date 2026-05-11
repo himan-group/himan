@@ -27,6 +27,7 @@ Use this skill while implementing code changes in an existing repository. The go
 - Treat generated or derived files as outputs unless local docs explicitly say they should be edited.
 - Keep entry files thin when nearby code delegates to feature components, containers, services, or helpers.
 - Keep edits scoped to the requested behavior and the minimum supporting files needed for validation.
+- For user-visible CLI behavior changes, new commands/options, output changes, or workflow changes, update `CHANGELOG.md` under `[Unreleased]` using `common-project-changelog`.
 
 ## Validate
 

@@ -1,11 +1,11 @@
 ---
 name: common-project-changelog
-description: Maintain project CHANGELOG.md and package version history correctly. Use when Codex updates CHANGELOG.md, moves Unreleased entries into a release, bumps package.json version, prepares release notes, or fixes changelog placement/order mistakes.
+description: Maintain project CHANGELOG.md and package version history correctly. Use for user-visible CLI behavior changes, new commands/options, direct CHANGELOG.md edits, moving Unreleased entries into a release, package version bumps, release notes, or changelog placement fixes.
 ---
 
 # common-project-changelog
 
-Use this skill whenever project changelog or package version metadata is edited.
+Use this skill whenever project changelog or package version metadata is edited, and proactively for user-visible CLI behavior changes such as new commands, new options, changed output, install/publish workflow changes, or error behavior changes.
 
 ## Workflow
 
