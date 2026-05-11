@@ -6,6 +6,17 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-05-11
+
+### Added
+
+- Added `himan project list` and `himan list --installed` to show resources recorded in the current project's `himan.lock`.
+
+### Changed
+
+- Changed `himan list` without a resource type to group all source resources by `rule`, `command`, and `skill`.
+- Added `himan list --brief` to hide resource descriptions in concise list output.
+
 ## [0.3.2] - 2026-05-08
 
 ### Added
