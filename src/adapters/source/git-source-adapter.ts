@@ -21,6 +21,7 @@ import semver from "semver";
 import { HimanError, errorCodes } from "../../utils/errors.js";
 import { promises as fs } from "node:fs";
 import { createHash } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import YAML from "yaml";
 import { IndexCacheStore } from "../../state/index-cache-store.js";
@@ -126,6 +127,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     const repoDir = this.getRepoDir();
     const targetDir = path.join(repoDir, `${type}s`, name);
     const metadataResult = await this.validatePublishResource(type, name, sourceDir);
+    await this.ensurePublishHasContentChanges(type, name, sourceDir);
     const sameDir = await this.isSameDirectory(sourceDir, targetDir);
     if (!sameDir) {
       await fs.rm(targetDir, { recursive: true, force: true });
@@ -445,6 +447,100 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       this.readStringArrayMetadata(frontMatter, "targets");
     if (agents) metadata.agents = agents;
     return metadata;
+  }
+
+  private async ensurePublishHasContentChanges(
+    type: ResourceType,
+    name: string,
+    sourceDir: string,
+  ): Promise<void> {
+    const latest = (await this.history(type, name))[0];
+    if (!latest) return;
+
+    const previousDir = await fs.mkdtemp(path.join(os.tmpdir(), "himan-publish-"));
+    try {
+      await this.repoManager.archiveResource(
+        this.getRepoDir(),
+        latest.raw,
+        `${type}s/${name}`,
+        previousDir,
+      );
+      const [nextSnapshot, previousSnapshot] = await Promise.all([
+        this.readComparableResourceSnapshot(sourceDir),
+        this.readComparableResourceSnapshot(previousDir),
+      ]);
+      if (this.resourceSnapshotsEqual(nextSnapshot, previousSnapshot)) {
+        throw new HimanError(
+          errorCodes.PUBLISH_NO_CHANGES,
+          `No changes to publish for ${type}/${name}.`,
+        );
+      }
+    } finally {
+      await fs.rm(previousDir, { recursive: true, force: true });
+    }
+  }
+
+  private async readComparableResourceSnapshot(
+    resourceDir: string,
+  ): Promise<Map<string, string>> {
+    const files = await this.listResourceFiles(resourceDir);
+    const snapshot = new Map<string, string>();
+
+    for (const file of files) {
+      const relative = this.toPosixPath(path.relative(resourceDir, file));
+      const content = await fs.readFile(file, "utf8");
+      snapshot.set(
+        relative,
+        relative === "himan.yaml"
+          ? this.normalizeComparableResourceMetadata(content)
+          : content,
+      );
+    }
+
+    return snapshot;
+  }
+
+  private async listResourceFiles(resourceDir: string): Promise<string[]> {
+    const result: string[] = [];
+    const entries = await fs.readdir(resourceDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(resourceDir, entry.name);
+      if (entry.isDirectory()) {
+        result.push(...(await this.listResourceFiles(fullPath)));
+      } else if (entry.isFile()) {
+        result.push(fullPath);
+      }
+    }
+
+    return result.sort((a, b) => a.localeCompare(b));
+  }
+
+  private normalizeComparableResourceMetadata(content: string): string {
+    try {
+      const parsed = YAML.parse(content) as unknown;
+      if (!this.isRecord(parsed)) return content;
+      const normalized = { ...parsed };
+      delete normalized.version;
+      return YAML.stringify(normalized);
+    } catch {
+      return content;
+    }
+  }
+
+  private resourceSnapshotsEqual(
+    a: Map<string, string>,
+    b: Map<string, string>,
+  ): boolean {
+    if (a.size !== b.size) return false;
+    for (const [file, content] of a) {
+      if (b.get(file) !== content) return false;
+    }
+    return true;
+  }
+
+  private toPosixPath(filePath: string): string {
+    return filePath.split(path.sep).join("/");
   }
 
   private invalidResourceMetadata(
