@@ -133,7 +133,7 @@ your-himan-source/
 
 | 命令                             | 说明                                                                                |
 | -------------------------------- | ----------------------------------------------------------------------------------- |
-| `list [type] [--agent a,b] [--json]` | 列出当前 default source 的资源；可按 agent 过滤；`type` 默认 `rule` |
+| `list [type] [--agent a,b] [--brief] [--installed] [--json]` | 默认列出当前 default source 的资源；未传 `type` 时按 `rule`/`command`/`skill` 分组展示全部资源；可按 agent 过滤；默认显示描述，`--brief` 可隐藏描述；`--installed` 改为查看当前项目 `himan.lock` 中的已安装资源 |
 | `history <type> <name> [--json]` | 按 tag 查看版本历史                                                                 |
 | `create <type> <name>`           | 脚手架；常用选项：`--description`、`--agent a,b`、`--dry-run`、`--force`、`--json` |
 
@@ -141,6 +141,7 @@ your-himan-source/
 
 | 命令                              | 说明                                                      |
 | --------------------------------- | --------------------------------------------------------- |
+| `list [type] [--agent a,b] [--json]` | 查看当前项目 `himan.lock` 中记录的已安装资源；未传 `type` 时按 `rule`/`command`/`skill` 分组展示 |
 | `install [type] [name[@version]] [--global] [--agent a,b] [--mode link\|copy]` | 有参数时从当前 default source 安装指定资源；**无参数**时按 `himan.lock` 记录的 source 批量安装；加 `--global` 时安装到用户级 agent 目录且不写项目 lock；可覆盖安装目标 agent 或安装模式 |
 | `dev <type> <name>`               | 切换到开发态，并按安装模式将项目目标指向或复制自 `.himan/dev/...` |
 | `uninstall <type> <name>`         | 从项目移除安装目标，并同步删除 `himan.lock` 条目           |
@@ -159,8 +160,8 @@ your-himan-source/
 
 - `himan resource list|history|create ...`
 - `himan-resource list|history|create ...`（兼容保留：也可执行 install/dev/uninstall/publish）
-- `himan project install|dev|uninstall|publish ...`
-- `himan-project install|dev|uninstall|publish ...`
+- `himan project list|install|dev|uninstall|publish ...`
+- `himan-project list|install|dev|uninstall|publish ...`
 - `himan agent list|use|current|clear ...`
 
 说明：资源与项目相关命令统一使用 `--agent` 指定目标 Agent。

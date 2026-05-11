@@ -53,8 +53,8 @@ Runtime agent configuration commands:
 
 - Top-level `init`
 - `source init|add|use|list|init-docs`
-- `resource list|history|create`
-- `project install|dev|uninstall|publish`
+- `resource list|history|create`; `resource list` without a type groups all source resources, `--brief` hides descriptions, and `--installed` lists current project installs instead of source resources
+- `project list|install|dev|uninstall|publish`
 - `agent list|use|current|clear`
 - Backward-compatible top-level resource/project lifecycle commands
 
@@ -127,6 +127,7 @@ There is no monorepo package sharing. Shared behavior is local to `src/`:
 - Registry source is reserved and intentionally returns `E_NOT_IMPLEMENTED`.
 - Version bumps use semver through `VersionResolver`.
 - Tests use Vitest, `node:fs` temp directories, mocked homes, and local Git repositories for CLI integration.
+- User-visible CLI behavior changes, new commands/options, output changes, and install/publish workflow changes should update `CHANGELOG.md` under `[Unreleased]`.
 
 ## Validation Notes
 

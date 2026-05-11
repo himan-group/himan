@@ -37,6 +37,15 @@ import { promises as fs } from "node:fs";
 import { VersionResolver } from "../adapters/version/version-resolver.js";
 import YAML from "yaml";
 
+export interface InstalledResource {
+  type: ResourceType;
+  name: string;
+  version: string;
+  agents: string[];
+  mode: InstallMode;
+  updatedAt: string;
+}
+
 export class ServiceFactory {
   private readonly stateStore = new StateStore();
   private readonly projectConfigStore = new ProjectConfigStore();
@@ -217,6 +226,40 @@ export class ServiceFactory {
     return resources.filter((resource) =>
       normalizeAgents(resource.agents).some((agent) => selected.includes(agent)),
     );
+  }
+
+  async listInstalled(
+    projectDir: string,
+    type?: ResourceType,
+    agents?: string[],
+  ): Promise<InstalledResource[]> {
+    const { lock, state } = await this.lockStore.loadWithState(projectDir);
+    if (state === "invalid") {
+      throw new HimanError(
+        errorCodes.LOCK_INVALID,
+        `Lock file is invalid: ${this.lockStore.getLockPath(projectDir)}`,
+      );
+    }
+    if (state === "missing" || !lock) {
+      return [];
+    }
+
+    const selectedAgents = agents?.length ? normalizeAgents(agents) : undefined;
+    return lock.resources
+      .filter((resource) => !type || resource.type === type)
+      .map((resource) => ({
+        type: resource.type,
+        name: resource.name,
+        version: resource.version,
+        agents: normalizeAgents(resource.agents),
+        mode: this.resolveInstallMode(resource.mode),
+        updatedAt: resource.updatedAt,
+      }))
+      .filter(
+        (resource) =>
+          !selectedAgents ||
+          resource.agents.some((agent) => selectedAgents.includes(agent)),
+      );
   }
 
   async history(type: ResourceType, name: string): Promise<VersionInfo[]> {

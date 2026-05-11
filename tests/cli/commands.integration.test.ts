@@ -182,9 +182,33 @@ describe("CLI commands with external git source", () => {
   });
 
   it("returns empty list and history before resources are prepared", () => {
+    const allListResult = runCli(["list", "--json"], projectDir, homeDir);
+    expect(allListResult.status).toBe(0);
+    expect(JSON.parse(allListResult.stdout)).toEqual({
+      rule: [],
+      command: [],
+      skill: [],
+    });
+
     const listResult = runCli(["list", "rule", "--json"], projectDir, homeDir);
     expect(listResult.status).toBe(0);
     expect(JSON.parse(listResult.stdout)).toEqual([]);
+
+    const installedListResult = runCli(["project", "list", "--json"], projectDir, homeDir);
+    expect(installedListResult.status).toBe(0);
+    expect(JSON.parse(installedListResult.stdout)).toEqual({
+      rule: [],
+      command: [],
+      skill: [],
+    });
+
+    const installedAliasResult = runCli(["list", "--installed", "--json"], projectDir, homeDir);
+    expect(installedAliasResult.status).toBe(0);
+    expect(JSON.parse(installedAliasResult.stdout)).toEqual({
+      rule: [],
+      command: [],
+      skill: [],
+    });
 
     const historyResult = runCli(
       ["history", "rule", "code-review", "--json"],
@@ -680,6 +704,39 @@ describe("CLI commands with external git source", () => {
       ]),
     );
 
+    const groupedListResult = runCli(["list", "--json"], projectDir, homeDir);
+    expect(groupedListResult.status).toBe(0);
+    const grouped = JSON.parse(groupedListResult.stdout) as Record<
+      "rule" | "command" | "skill",
+      Array<Record<string, unknown>>
+    >;
+    expect(grouped.rule).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "code-review", type: "rule" }),
+      ]),
+    );
+    expect(grouped.command).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "release-note", type: "command" }),
+      ]),
+    );
+    expect(grouped.skill).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "risk-check", type: "skill" }),
+      ]),
+    );
+
+    const groupedTextResult = runCli(["list"], projectDir, homeDir);
+    expect(groupedTextResult.status).toBe(0);
+    expect(groupedTextResult.stdout).toContain("Rules:\n");
+    expect(groupedTextResult.stdout).toContain(
+      "- rule/code-review: enforce code review standards",
+    );
+    expect(groupedTextResult.stdout).toContain("Commands:\n");
+    expect(groupedTextResult.stdout).toContain("- command/release-note");
+    expect(groupedTextResult.stdout).toContain("Skills:\n");
+    expect(groupedTextResult.stdout).toContain("- skill/risk-check");
+
     const historyResult = runCli(
       ["history", "rule", "code-review", "--json"],
       projectDir,
@@ -717,6 +774,37 @@ describe("CLI commands with external git source", () => {
       path.join(projectDir, ".himan", "dev", "rule", "code-review"),
     );
     expect(devLinkedRealPath).toBe(expectedDevPath);
+  });
+
+  it("can hide descriptions from resource list output", () => {
+    const listWithoutDescriptionResult = runCli(
+      ["list", "rule", "--brief", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(listWithoutDescriptionResult.status).toBe(0);
+    const listedWithoutDescription = JSON.parse(
+      listWithoutDescriptionResult.stdout,
+    ) as Array<Record<string, unknown>>;
+    expect(listedWithoutDescription).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "code-review", type: "rule" }),
+      ]),
+    );
+    expect(
+      listedWithoutDescription.find((item) => item.name === "code-review"),
+    ).not.toHaveProperty("description");
+
+    const groupedTextWithoutDescriptionResult = runCli(
+      ["list", "--brief"],
+      projectDir,
+      homeDir,
+    );
+    expect(groupedTextWithoutDescriptionResult.status).toBe(0);
+    expect(groupedTextWithoutDescriptionResult.stdout).toContain("- rule/code-review\n");
+    expect(groupedTextWithoutDescriptionResult.stdout).not.toContain(
+      "enforce code review standards",
+    );
   });
 
   it("installs globally using the current project's agent config", async () => {
@@ -808,6 +896,89 @@ describe("CLI commands with external git source", () => {
     );
 
     expect(runCli(["agent", "clear", "--project"], projectDir, homeDir).status).toBe(0);
+  });
+
+  it("lists resources installed in the current project", () => {
+    const projectListResult = runCli(["project", "list", "--json"], projectDir, homeDir);
+    expect(projectListResult.status).toBe(0);
+    const projectList = JSON.parse(projectListResult.stdout) as Record<
+      "rule" | "command" | "skill",
+      Array<Record<string, unknown>>
+    >;
+    expect(projectList.rule).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "rule",
+          name: "code-review",
+          version: "1.0.0",
+          agents: ["codex"],
+          mode: "link",
+        }),
+      ]),
+    );
+    expect(projectList.command).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "command",
+          name: "release-note",
+          version: "0.1.0",
+        }),
+      ]),
+    );
+    expect(projectList.skill).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "skill",
+          name: "risk-check",
+          version: "0.0.1",
+        }),
+      ]),
+    );
+
+    const installedAliasResult = runCli(
+      ["list", "rule", "--installed", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(installedAliasResult.status).toBe(0);
+    const installedAlias = JSON.parse(installedAliasResult.stdout) as Array<
+      Record<string, unknown>
+    >;
+    expect(installedAlias).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "rule",
+          name: "code-review",
+          version: "1.0.0",
+          agents: ["codex"],
+        }),
+      ]),
+    );
+
+    const codexRulesResult = runCli(
+      ["project", "list", "rule", "--agent", "codex", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(codexRulesResult.status).toBe(0);
+    expect(JSON.parse(codexRulesResult.stdout)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "rule", name: "code-review" }),
+      ]),
+    );
+
+    const cursorRulesResult = runCli(
+      ["project", "list", "rule", "--agent", "cursor", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(cursorRulesResult.status).toBe(0);
+    expect(JSON.parse(cursorRulesResult.stdout)).toEqual([]);
+
+    const projectListText = runCli(["project", "list"], projectDir, homeDir);
+    expect(projectListText.status).toBe(0);
+    expect(projectListText.stdout).toContain("Rules:\n");
+    expect(projectListText.stdout).toContain("- rule/code-review@1.0.0 [codex] (link)");
   });
 
   it("writes himan.lock on install and can reproduce installs", async () => {
