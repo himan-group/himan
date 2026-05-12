@@ -123,4 +123,28 @@ export class ProjectLockStore {
     lock.updatedAt = new Date().toISOString();
     await fs.writeFile(this.getLockPath(projectDir), JSON.stringify(lock, null, 2), "utf8");
   }
+
+  async renameResource(
+    projectDir: string,
+    resource: { type: ResourceType; oldName: string; newName: string; version?: string },
+  ): Promise<void> {
+    const lock = await this.load(projectDir);
+    if (!lock) return;
+
+    const found = lock.resources.find(
+      (item) => item.type === resource.type && item.name === resource.oldName,
+    );
+    if (!found) return;
+
+    const now = new Date().toISOString();
+    found.name = resource.newName;
+    found.version = resource.version ?? found.version;
+    found.updatedAt = now;
+    lock.updatedAt = now;
+    lock.resources.sort((a, b) => {
+      if (a.type !== b.type) return a.type.localeCompare(b.type);
+      return a.name.localeCompare(b.name);
+    });
+    await fs.writeFile(this.getLockPath(projectDir), JSON.stringify(lock, null, 2), "utf8");
+  }
 }

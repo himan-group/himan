@@ -49,9 +49,9 @@
 
 - 基础：`init`、`list`、`history`、`create`
 - 源管理：`source add/use/list/init-docs`
-- 生命周期：`install`、`dev`、`uninstall`、`publish`
+- 生命周期：`install`、`dev`、`uninstall`、`publish`、`rename`（暂不推荐使用）
 - 发布能力：`publish` 集成 preflight 校验；PR 发布可选
-- 可复现能力：安装与卸载可与 lock 联动
+- 可复现能力：安装、卸载与重命名可与 lock 联动
 
 ---
 

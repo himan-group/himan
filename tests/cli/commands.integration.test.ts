@@ -1305,6 +1305,101 @@ describe("CLI commands with external git source", () => {
       lock.resources.some((item) => item.type === "skill" && item.name === "risk-check"),
     ).toBe(false);
   });
+
+  it("renames a resource and migrates the current project lock", async () => {
+    const renameHomeDir = path.join(tmpRoot, "rename-home");
+    const renameProjectDir = path.join(tmpRoot, "rename-project");
+    const renameRemoteDir = await createSingleRuleRemote(
+      "rename-resource",
+      "rename-me",
+      "1.0.0",
+      "rename test rule",
+      "Rename me content.",
+    );
+    await fs.mkdir(renameHomeDir, { recursive: true });
+    await fs.mkdir(renameProjectDir, { recursive: true });
+
+    expect(runCli(["init", renameRemoteDir], renameProjectDir, renameHomeDir).status).toBe(0);
+    const installResult = runCli(
+      ["install", "rule", "rename-me@1.0.0", "--agent", "codex"],
+      renameProjectDir,
+      renameHomeDir,
+    );
+    expect(installResult.status).toBe(0);
+
+    const dryRun = runCli(
+      ["rename", "rule", "rename-me", "renamed-rule", "--dry-run", "--json"],
+      renameProjectDir,
+      renameHomeDir,
+    );
+    expect(dryRun.status).toBe(0);
+    expect(JSON.parse(dryRun.stdout)).toEqual(
+      expect.objectContaining({
+        type: "rule",
+        oldName: "rename-me",
+        newName: "renamed-rule",
+        dryRun: true,
+        projectMigrated: false,
+      }),
+    );
+    await expect(
+      fs.access(path.join(renameProjectDir, ".agents", "rules", "renamed-rule")),
+    ).rejects.toThrow();
+
+    const renameResult = runCli(
+      ["resource", "rename", "rule", "rename-me", "renamed-rule", "--json"],
+      renameProjectDir,
+      renameHomeDir,
+    );
+    expect(renameResult.status).toBe(0);
+    expect(JSON.parse(renameResult.stdout)).toEqual(
+      expect.objectContaining({
+        type: "rule",
+        oldName: "rename-me",
+        newName: "renamed-rule",
+        latestVersion: "1.0.0",
+        tag: "rule/renamed-rule@1.0.0",
+        projectMigrated: true,
+      }),
+    );
+
+    await expect(
+      fs.access(path.join(renameProjectDir, ".agents", "rules", "rename-me")),
+    ).rejects.toThrow();
+    const renamedPath = path.join(renameProjectDir, ".agents", "rules", "renamed-rule");
+    expect((await fs.lstat(renamedPath)).isSymbolicLink()).toBe(false);
+    await expect(fs.readFile(path.join(renamedPath, "content.md"), "utf8")).resolves.toContain(
+      "Rename me content.",
+    );
+
+    const listResult = runCli(["list", "rule", "--json"], renameProjectDir, renameHomeDir);
+    expect(listResult.status).toBe(0);
+    const listed = JSON.parse(listResult.stdout) as Array<{ name: string }>;
+    expect(listed.some((item) => item.name === "renamed-rule")).toBe(true);
+    expect(listed.some((item) => item.name === "rename-me")).toBe(false);
+
+    const lockRaw = await fs.readFile(path.join(renameProjectDir, "himan.lock"), "utf8");
+    const lock = JSON.parse(lockRaw) as {
+      resources: Array<{ type: string; name: string; version: string; agents?: string[]; mode?: string }>;
+    };
+    expect(lock.resources).toEqual([
+      expect.objectContaining({
+        type: "rule",
+        name: "renamed-rule",
+        version: "1.0.0",
+        agents: ["codex"],
+        mode: "copy",
+      }),
+    ]);
+
+    await fs.rm(renamedPath, { recursive: true, force: true });
+    const restoreResult = runCli(["install"], renameProjectDir, renameHomeDir);
+    expect(restoreResult.status).toBe(0);
+    expect(restoreResult.stdout).toContain("Installed rule/renamed-rule@1.0.0");
+    await expect(fs.readFile(path.join(renamedPath, "content.md"), "utf8")).resolves.toContain(
+      "Rename me content.",
+    );
+  });
 });
 
 function runCli(args: string[], cwd: string, home: string) {
@@ -1371,6 +1466,67 @@ async function prepareRepoFixture(targetRepoDir: string): Promise<void> {
     targetRepoDir,
   );
   runGit(["tag", "-f", "rule/code-review@1.0.0"], targetRepoDir);
+}
+
+async function createSingleRuleRemote(
+  label: string,
+  name: string,
+  version: string,
+  description: string,
+  content: string,
+): Promise<string> {
+  const seedDir = path.join(tmpRoot, `${label}-seed`);
+  const remoteDir = path.join(tmpRoot, `${label}.git`);
+  const ruleDir = path.join(seedDir, "rules", name);
+
+  await fs.mkdir(ruleDir, { recursive: true });
+  await fs.mkdir(remoteDir, { recursive: true });
+  await fs.writeFile(
+    path.join(ruleDir, "himan.yaml"),
+    [
+      `name: ${name}`,
+      "type: rule",
+      `version: ${version}`,
+      "entry: content.md",
+      `description: ${description}`,
+      "agents:",
+      "  - cursor",
+    ].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(path.join(ruleDir, "content.md"), `${content}\n`, "utf8");
+
+  runGit(["init", "--initial-branch=main"], seedDir);
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "add",
+      ".",
+    ],
+    seedDir,
+  );
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "commit",
+      "-m",
+      `Add ${name} rule fixture`,
+    ],
+    seedDir,
+  );
+  runGit(["tag", `rule/${name}@${version}`], seedDir);
+  runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
+  runGit(["remote", "add", "origin", remoteDir], seedDir);
+  runGit(["push", "-u", "origin", "main"], seedDir);
+  runGit(["push", "--tags"], seedDir);
+
+  return remoteDir;
 }
 
 function runGit(args: string[], cwd: string): void {

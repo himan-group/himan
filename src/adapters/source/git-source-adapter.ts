@@ -2,6 +2,8 @@ import type {
   CreateOptions,
   CreateResult,
   PublishResult,
+  RenameOptions,
+  RenameResult,
   ResourceMeta,
   ResourceType,
   VersionInfo,
@@ -219,6 +221,104 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     };
   }
 
+  async rename(
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+    options: RenameOptions = {},
+  ): Promise<RenameResult> {
+    const repoDir = this.getRepoDir();
+    const typeDir = this.getTypeDir(type);
+    const previousResourceDir = path.join(repoDir, typeDir, oldName);
+    const resourceDir = path.join(repoDir, typeDir, newName);
+
+    if (!(await this.exists(previousResourceDir))) {
+      throw new HimanError(
+        errorCodes.RESOURCE_NOT_FOUND,
+        `Resource not found: ${type}/${oldName}`,
+      );
+    }
+    await this.ensureRenameTargetAvailable(repoDir, type, newName, resourceDir);
+
+    const history = await this.history(type, oldName);
+    const latestVersion = history[0]?.version;
+    const tag = latestVersion ? `${type}/${newName}@${latestVersion}` : undefined;
+
+    if (options.dryRun) {
+      return {
+        type,
+        oldName,
+        newName,
+        previousResourceDir,
+        resourceDir,
+        latestVersion,
+        tag,
+        committed: false,
+        dryRun: true,
+      };
+    }
+
+    await fs.mkdir(path.dirname(resourceDir), { recursive: true });
+    await fs.rename(previousResourceDir, resourceDir);
+    await this.updateRenamedResourceMetadata(resourceDir, type, oldName, newName);
+
+    const versionOverrides = latestVersion
+      ? new Map([[this.getResourceVersionOverrideKey(type, newName), latestVersion]])
+      : new Map<string, string>();
+    const docsPaths = await this.maintainSourceDocs(
+      repoDir,
+      {
+        section: "Changed",
+        line: `- Renamed \`${type}/${oldName}\` to \`${type}/${newName}\`.`,
+      },
+      versionOverrides,
+    );
+    const changedPaths = [
+      path.relative(repoDir, previousResourceDir),
+      path.relative(repoDir, resourceDir),
+      ...docsPaths.map((docPath) => path.relative(repoDir, docPath)),
+    ];
+
+    if (tag) {
+      await this.repoManager.commitTagAndPush(
+        repoDir,
+        `rename ${type}/${oldName} to ${type}/${newName}`,
+        tag,
+        undefined,
+        changedPaths,
+      );
+      return {
+        type,
+        oldName,
+        newName,
+        previousResourceDir,
+        resourceDir,
+        latestVersion,
+        tag,
+        committed: true,
+        dryRun: false,
+      };
+    }
+
+    const committed = await this.repoManager.commitAndPush(
+      repoDir,
+      `rename ${type}/${oldName} to ${type}/${newName}`,
+      undefined,
+      changedPaths,
+    );
+    return {
+      type,
+      oldName,
+      newName,
+      previousResourceDir,
+      resourceDir,
+      latestVersion,
+      tag,
+      committed,
+      dryRun: false,
+    };
+  }
+
   async initDocs(options: SourceDocsOptions = {}): Promise<SourceDocsResult> {
     const repoDir = this.getRepoDir();
     const files = [
@@ -290,6 +390,105 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     } catch {
       return false;
     }
+  }
+
+  private async ensureRenameTargetAvailable(
+    repoDir: string,
+    type: ResourceType,
+    newName: string,
+    resourceDir: string,
+  ): Promise<void> {
+    if (await this.exists(resourceDir)) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Resource already exists: ${type}/${newName}`,
+      );
+    }
+
+    const [resources, history] = await Promise.all([
+      this.scanner.scanByType(repoDir, type),
+      this.history(type, newName),
+    ]);
+    if (resources.some((resource) => resource.name === newName) || history.length > 0) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Resource already exists: ${type}/${newName}`,
+      );
+    }
+  }
+
+  private async updateRenamedResourceMetadata(
+    resourceDir: string,
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+  ): Promise<void> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (await this.exists(yamlPath)) {
+      const raw = await fs.readFile(yamlPath, "utf8");
+      let parsed: unknown;
+      try {
+        parsed = YAML.parse(raw);
+      } catch (error) {
+        throw this.invalidResourceMetadata(
+          type,
+          oldName,
+          "himan.yaml is not valid YAML.",
+          { yamlPath, reason: error instanceof Error ? error.message : String(error) },
+        );
+      }
+      if (!this.isRecord(parsed)) {
+        throw this.invalidResourceMetadata(
+          type,
+          oldName,
+          "himan.yaml must be an object.",
+          { yamlPath },
+        );
+      }
+      await fs.writeFile(
+        yamlPath,
+        YAML.stringify({
+          ...parsed,
+          name: newName,
+        }),
+        "utf8",
+      );
+      return;
+    }
+
+    if (type !== "skill") return;
+    await this.updateSkillFrontMatterName(
+      path.join(resourceDir, this.getDefaultEntry(type)),
+      oldName,
+      newName,
+    );
+  }
+
+  private async updateSkillFrontMatterName(
+    skillPath: string,
+    oldName: string,
+    newName: string,
+  ): Promise<void> {
+    if (!(await this.exists(skillPath))) return;
+
+    const raw = await fs.readFile(skillPath, "utf8");
+    const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(raw);
+    if (!match) return;
+
+    let parsed: unknown;
+    try {
+      parsed = YAML.parse(match[1]);
+    } catch {
+      return;
+    }
+    if (!this.isRecord(parsed) || parsed.name !== oldName) return;
+
+    const frontMatter = YAML.stringify({
+      ...parsed,
+      name: newName,
+    }).trimEnd();
+    const updated = `---\n${frontMatter}\n---\n${raw.slice(match[0].length)}`;
+    await fs.writeFile(skillPath, updated, "utf8");
   }
 
   private async validatePublishResource(

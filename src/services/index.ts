@@ -8,6 +8,7 @@ import type {
   CreateOptions,
   CreateResult,
   InstallMode,
+  RenameResult,
   ResourceMeta,
   ResourceType,
   VersionInfo,
@@ -445,6 +446,60 @@ export class ServiceFactory {
     });
   }
 
+  async rename(
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+    projectDir: string,
+    options: { dryRun?: boolean; migrateProject?: boolean } = {},
+  ): Promise<RenameResult & { projectMigrated: boolean }> {
+    this.validateRenameInput(type, oldName, newName);
+    const source = await this.loadSourceFromConfig();
+    const shouldMigrateProject = options.migrateProject !== false && !options.dryRun;
+
+    const locked = shouldMigrateProject
+      ? await this.getLockedResource(projectDir, type, oldName)
+      : undefined;
+    const installInfo = shouldMigrateProject
+      ? await this.tryResolveInstalledResource(projectDir, type, oldName)
+      : undefined;
+    const hasDevPath =
+      shouldMigrateProject &&
+      (await this.exists(this.getProjectDevPath(projectDir, type, oldName)));
+
+    if (shouldMigrateProject && (locked || installInfo || hasDevPath)) {
+      await this.ensureRenamedProjectResourceAvailable(
+        projectDir,
+        type,
+        oldName,
+        newName,
+        locked,
+        installInfo,
+      );
+    }
+
+    const result = await source.rename(type, oldName, newName, {
+      dryRun: options.dryRun,
+    });
+    const projectMigrated =
+      shouldMigrateProject &&
+      (await this.migrateRenamedProjectResource(
+        source,
+        type,
+        oldName,
+        newName,
+        projectDir,
+        result,
+        locked,
+        installInfo,
+      ));
+
+    return {
+      ...result,
+      projectMigrated,
+    };
+  }
+
   async installFromLock(
     projectDir: string,
     agents?: string[],
@@ -662,6 +717,121 @@ export class ServiceFactory {
     const lock = await this.lockStore.load(projectDir);
     if (!lock) return undefined;
     return lock.resources.find((item) => item.type === type && item.name === name);
+  }
+
+  private async ensureRenamedProjectResourceAvailable(
+    projectDir: string,
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+    locked: Awaited<ReturnType<ServiceFactory["getLockedResource"]>>,
+    installInfo:
+      | {
+          installedPath: string;
+          linkPaths: string[];
+          agents: string[];
+          mode: InstallMode;
+        }
+      | undefined,
+  ): Promise<void> {
+    const lockedNewName = await this.getLockedResource(projectDir, type, newName);
+    if (lockedNewName) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Installed resource already exists: ${type}/${newName}`,
+      );
+    }
+
+    const newDevPath = this.getProjectDevPath(projectDir, type, newName);
+    if (await this.exists(newDevPath)) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Development resource already exists: ${type}/${newName}`,
+      );
+    }
+
+    const agents = locked?.agents?.length
+      ? normalizeAgents(locked.agents)
+      : installInfo?.agents;
+    if (!agents?.length) return;
+
+    for (const linkPath of getProjectResourcePaths(projectDir, type, newName, agents)) {
+      if (await this.exists(linkPath)) {
+        throw new HimanError(
+          errorCodes.RESOURCE_EXISTS,
+          `Installed resource already exists: ${type}/${newName}`,
+        );
+      }
+    }
+  }
+
+  private async migrateRenamedProjectResource(
+    source: ResourceSourceAdapter,
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+    projectDir: string,
+    result: RenameResult,
+    locked: Awaited<ReturnType<ServiceFactory["getLockedResource"]>>,
+    installInfo:
+      | {
+          installedPath: string;
+          linkPaths: string[];
+          agents: string[];
+          mode: InstallMode;
+        }
+      | undefined,
+  ): Promise<boolean> {
+    const oldDevPath = this.getProjectDevPath(projectDir, type, oldName);
+    const newDevPath = this.getProjectDevPath(projectDir, type, newName);
+    const hasDevPath = await this.exists(oldDevPath);
+
+    if (!locked && !installInfo && !hasDevPath) {
+      return false;
+    }
+
+    let sourcePath: string | undefined;
+    if (hasDevPath) {
+      await fs.mkdir(path.dirname(newDevPath), { recursive: true });
+      await fs.rename(oldDevPath, newDevPath);
+      await this.updateRenamedResourceMetadata(newDevPath, type, oldName, newName);
+      sourcePath = newDevPath;
+    } else if (result.latestVersion) {
+      const storePath = this.getStorePath(type, newName, result.latestVersion);
+      if (!(await this.exists(storePath))) {
+        await source.pull(type, newName, result.latestVersion, storePath);
+      }
+      sourcePath = storePath;
+    } else if (installInfo) {
+      sourcePath = installInfo.installedPath;
+    } else {
+      sourcePath = result.resourceDir;
+    }
+
+    const agents = locked?.agents?.length
+      ? normalizeAgents(locked.agents)
+      : installInfo?.agents ?? normalizeAgents();
+    const mode = installInfo?.mode ?? this.resolveInstallMode(locked?.mode);
+    const oldLinkPaths =
+      installInfo?.linkPaths ?? getProjectResourcePaths(projectDir, type, oldName, agents);
+    const newLinkPaths = getProjectResourcePaths(projectDir, type, newName, agents);
+
+    for (const linkPath of newLinkPaths) {
+      await this.materializeResource(sourcePath, linkPath, mode);
+    }
+    for (const linkPath of oldLinkPaths) {
+      await fs.rm(linkPath, { recursive: true, force: true });
+    }
+    if (locked) {
+      await this.lockStore.renameResource(projectDir, {
+        type,
+        oldName,
+        newName,
+        version: result.latestVersion ?? locked.version,
+      });
+    }
+
+    return true;
   }
 
   private buildSourceConfig(
@@ -883,6 +1053,64 @@ export class ServiceFactory {
     };
   }
 
+  private async updateRenamedResourceMetadata(
+    resourceDir: string,
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+  ): Promise<void> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (await this.exists(yamlPath)) {
+      const raw = await fs.readFile(yamlPath, "utf8");
+      const parsed = YAML.parse(raw) as unknown;
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        return;
+      }
+      await fs.writeFile(
+        yamlPath,
+        YAML.stringify({
+          ...(parsed as Record<string, unknown>),
+          name: newName,
+        }),
+        "utf8",
+      );
+      return;
+    }
+
+    if (type !== "skill") return;
+    const entryPath = path.join(resourceDir, this.getDefaultEntry(type));
+    if (!(await this.exists(entryPath))) return;
+
+    const raw = await fs.readFile(entryPath, "utf8");
+    const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(raw);
+    if (!match) return;
+
+    let parsed: unknown;
+    try {
+      parsed = YAML.parse(match[1]);
+    } catch {
+      return;
+    }
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed) ||
+      (parsed as Record<string, unknown>).name !== oldName
+    ) {
+      return;
+    }
+
+    const frontMatter = YAML.stringify({
+      ...(parsed as Record<string, unknown>),
+      name: newName,
+    }).trimEnd();
+    await fs.writeFile(
+      entryPath,
+      `---\n${frontMatter}\n---\n${raw.slice(match[0].length)}`,
+      "utf8",
+    );
+  }
+
   private async readFrontMatter(
     filePath: string,
   ): Promise<Record<string, unknown> | null> {
@@ -998,6 +1226,33 @@ export class ServiceFactory {
       throw new HimanError(
         errorCodes.TEMPLATE_NOT_FOUND,
         `Template not found: ${options.template}`,
+      );
+    }
+  }
+
+  private validateRenameInput(
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+  ): void {
+    if (!["rule", "command", "skill"].includes(type)) {
+      throw new HimanError(
+        errorCodes.UNSUPPORTED_RESOURCE_TYPE,
+        `Unsupported resource type for rename: ${type}`,
+      );
+    }
+
+    if (oldName === newName) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "Old and new resource names must be different.",
+      );
+    }
+
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(newName)) {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_NAME,
+        `Invalid resource name: ${newName}. Use kebab-case only.`,
       );
     }
   }

@@ -229,6 +229,102 @@ describe("GitSourceAdapter", () => {
       fs.access(path.join(targetDir, "rules", "missing-entry")),
     ).rejects.toThrow();
   });
+
+  it("renames a tagged resource and creates a new latest-version tag", async () => {
+    const { remoteDir, targetDir } = await createRemoteFixture();
+    const adapter = new GitSourceAdapter();
+
+    await adapter.init({
+      type: "git",
+      repo: remoteDir,
+      repoDir: targetDir,
+      repoId: "test-source",
+    });
+    configureGitUser(targetDir);
+    runGit(["tag", "rule/code-review@1.0.0"], targetDir);
+
+    const result = await adapter.rename("rule", "code-review", "review-rules");
+
+    expect(result).toEqual({
+      type: "rule",
+      oldName: "code-review",
+      newName: "review-rules",
+      previousResourceDir: path.join(targetDir, "rules", "code-review"),
+      resourceDir: path.join(targetDir, "rules", "review-rules"),
+      latestVersion: "1.0.0",
+      tag: "rule/review-rules@1.0.0",
+      committed: true,
+      dryRun: false,
+    });
+    await expect(fs.access(path.join(targetDir, "rules", "code-review"))).rejects.toThrow();
+    await expect(
+      fs.readFile(path.join(targetDir, "rules", "review-rules", "himan.yaml"), "utf8"),
+    ).resolves.toContain("name: review-rules");
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "`rule/review-rules@1.0.0`: original description",
+    );
+    await expect(
+      fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
+    ).resolves.toContain("- Renamed `rule/code-review` to `rule/review-rules`.");
+    expect(runGitOutput(["tag", "--list", "rule/*@1.0.0"], targetDir).split("\n")).toEqual([
+      "rule/code-review@1.0.0",
+      "rule/review-rules@1.0.0",
+    ]);
+  });
+
+  it("renames metadata-less skill front matter", async () => {
+    const { remoteDir, targetDir } = await createRemoteFixture({ legacySkill: true });
+    const adapter = new GitSourceAdapter();
+
+    await adapter.init({
+      type: "git",
+      repo: remoteDir,
+      repoDir: targetDir,
+      repoId: "test-source",
+    });
+    configureGitUser(targetDir);
+
+    await adapter.rename("skill", "common-dev-pattern", "repo-map");
+
+    await expect(
+      fs.readFile(path.join(targetDir, "skills", "repo-map", "SKILL.md"), "utf8"),
+    ).resolves.toContain("name: repo-map");
+    const listed = await adapter.list("skill");
+    expect(listed).toEqual([
+      expect.objectContaining({
+        name: "repo-map",
+        type: "skill",
+        description: "Follow existing repository patterns.",
+      }),
+    ]);
+    expect(runGitOutput(["tag", "--list", "skill/repo-map@*"], targetDir)).toBe(
+      "skill/repo-map@0.1.0",
+    );
+  });
+
+  it("rejects rename when the target resource exists", async () => {
+    const { remoteDir, targetDir } = await createRemoteFixture();
+    const adapter = new GitSourceAdapter();
+
+    await adapter.init({
+      type: "git",
+      repo: remoteDir,
+      repoDir: targetDir,
+      repoId: "test-source",
+    });
+    await writeNamedRule(targetDir, {
+      name: "review-rules",
+      description: "existing target",
+      content: "# review-rules\n",
+    });
+
+    await expect(
+      adapter.rename("rule", "code-review", "review-rules"),
+    ).rejects.toMatchObject({
+      code: "E_RESOURCE_EXISTS",
+      message: "Resource already exists: rule/review-rules",
+    });
+  });
 });
 
 async function createRemoteFixture(options?: { legacySkill?: boolean }): Promise<{

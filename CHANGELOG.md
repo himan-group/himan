@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Added
+
+- Added `himan resource rename` and top-level `himan rename`, currently marked not recommended, to rename source resources, update metadata/docs, preserve old tags, create a latest-version tag for the new name, and migrate the current project's install targets and lock entry by default.
+
 ## [0.3.5] - 2026-05-12
 
 ### Changed

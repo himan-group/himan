@@ -171,6 +171,20 @@ v1.0 统一支持三类资源：
 
 可选扩展：PR 驱动发布（生成分支与 PR，而非直接推送主分支）。
 
+### 6.5 `rename`
+
+当前暂不推荐使用，保留为显式能力以便受控验证 rename 流程。
+
+重命名源仓库中的资源身份，支持 `rule`、`command`、`skill`。
+
+- source 目录从 `<type>s/<old-name>` 移动到 `<type>s/<new-name>`
+- `himan.yaml` 存在时同步更新 `name`
+- metadata-less skill 若 `SKILL.md` front matter 中存在旧 `name`，同步更新为新 `name`
+- 自动维护 source 根目录 README 资源索引和 CHANGELOG `[Unreleased]`
+- 已有旧 tag 不改写；若旧资源已有历史版本，则为新名字创建当前最新版本 tag
+- 默认迁移当前项目安装目标、`.himan/dev` 副本和 `himan.lock` 条目
+- `--no-project` 只改 source，不迁移当前项目
+
 ---
 
 ## 7. 索引与检索方案

@@ -41,3 +41,19 @@ export interface CreateResult {
   files: string[];
   dryRun: boolean;
 }
+
+export interface RenameOptions {
+  dryRun?: boolean;
+}
+
+export interface RenameResult {
+  type: ResourceType;
+  oldName: string;
+  newName: string;
+  previousResourceDir: string;
+  resourceDir: string;
+  latestVersion?: string;
+  tag?: string;
+  committed: boolean;
+  dryRun: boolean;
+}
