@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-05-12
+
 ### Changed
 
 - Changed the CLI version shortcut from `-V` to `-v`; `--version` remains supported.
