@@ -44,7 +44,7 @@
 - 命令层接受 `rule|command|skill`
 - 无版本则取该资源历史中的最新 semver
 - 若本地 store 已有该版本目录则不再从 Git 导出；否则从对应 tag 导出资源树到 store
-- 在项目中按 agent 和资源类型创建/更新安装目标，例如 `cursor -> .cursor/{rules|commands|skills}`、`codex -> .agents/{rules|commands|skills}`；默认软链到 store 中该版本，也可通过 `--mode copy` 复制内容
+- 在项目中按 agent 和资源类型创建/更新安装目标，例如 `cursor -> .cursor/{rules|commands|skills}`、`codex -> .agents/{rules|commands|skills}`；默认复制 store 中该版本，也可通过 `--mode link` 软链引用
 
 ### 2.5 `dev <type> <name>`
 

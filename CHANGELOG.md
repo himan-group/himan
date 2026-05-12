@@ -9,6 +9,7 @@ The format is based on Keep a Changelog, and this project follows semver for the
 ### Changed
 
 - Changed the CLI version shortcut from `-V` to `-v`; `--version` remains supported.
+- Changed the default install mode to `copy`; pass `--mode link` to install resources as symlinks.
 
 ## [0.3.4] - 2026-05-11
 
