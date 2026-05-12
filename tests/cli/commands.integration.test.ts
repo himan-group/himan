@@ -75,6 +75,17 @@ afterAll(async () => {
 });
 
 describe("CLI commands with external git source", () => {
+  it("prints package version with -v and documents the shortcut in help", () => {
+    const versionResult = runCli(["-v"], projectDir, homeDir);
+    expect(versionResult.status).toBe(0);
+    expect(versionResult.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+
+    const helpResult = runCli(["--help"], projectDir, homeDir);
+    expect(helpResult.status).toBe(0);
+    expect(helpResult.stdout).toContain("-v, --version");
+    expect(helpResult.stdout).not.toContain("-V, --version");
+  });
+
   it("initializes from the given test repository", async () => {
     const result = runCli(["init", TEST_REPO], projectDir, homeDir);
     expect(result.status).toBe(0);
