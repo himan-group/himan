@@ -14,7 +14,7 @@ The npm package exposes four binaries:
 ## Commands
 
 - `pnpm install` - install dependencies with pnpm 10.32.1.
-- `pnpm run dev -- <subcommand>` - run the main CLI from `src/bin/himan.ts` through `tsx`.
+- `pnpm cli <subcommand>` - run the main CLI from `src/bin/himan.ts` through `tsx`.
 - `pnpm run build` - compile TypeScript from `src/` to `dist/`.
 - `pnpm run typecheck` - run `tsc -p tsconfig.json --noEmit`.
 - `pnpm test` - run Vitest once.

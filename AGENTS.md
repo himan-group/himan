@@ -9,7 +9,7 @@ Use `docs/codex/repo-map.md` for the durable project map.
 ## Commands
 
 - `pnpm install` installs dependencies. The package manager is `pnpm@10.32.1`; Node is pinned by `.nvmrc` to `22.22.1`.
-- `pnpm run dev -- <subcommand>` runs the main CLI from source.
+- `pnpm cli <subcommand>` runs the main CLI from source.
 - `pnpm run build` compiles `src/` to `dist/`.
 - `pnpm run typecheck` runs TypeScript without emitting files.
 - `pnpm test` runs Vitest once.
