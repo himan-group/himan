@@ -1,6 +1,6 @@
 {
   "name": "@hi-man/himan",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Prompt and agent asset management CLI",
   "keywords": [
     "ai",
@@ -51,7 +51,7 @@
     "clean": "rm -rf dist",
     "prebuild": "rm -rf dist",
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/bin/himan.ts",
+    "cli": "tsx src/bin/himan.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

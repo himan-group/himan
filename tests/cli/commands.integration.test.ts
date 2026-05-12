@@ -75,6 +75,17 @@ afterAll(async () => {
 });
 
 describe("CLI commands with external git source", () => {
+  it("prints package version with -v and documents the shortcut in help", () => {
+    const versionResult = runCli(["-v"], projectDir, homeDir);
+    expect(versionResult.status).toBe(0);
+    expect(versionResult.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+
+    const helpResult = runCli(["--help"], projectDir, homeDir);
+    expect(helpResult.status).toBe(0);
+    expect(helpResult.stdout).toContain("-v, --version");
+    expect(helpResult.stdout).not.toContain("-V, --version");
+  });
+
   it("initializes from the given test repository", async () => {
     const result = runCli(["init", TEST_REPO], projectDir, homeDir);
     expect(result.status).toBe(0);
@@ -570,40 +581,46 @@ describe("CLI commands with external git source", () => {
     expect(installCommand.stdout).toContain("Installed command/release-note@0.1.0");
 
     const commandLinkPath = path.join(projectDir, ".cursor", "commands", "release-note");
-    const commandLinkedRealPath = await fs.realpath(commandLinkPath);
-    expect(commandLinkedRealPath).toContain(
-      path.join(homeDir, ".himan", "store", "command", "release-note", "0.1.0"),
-    );
+    expect((await fs.lstat(commandLinkPath)).isSymbolicLink()).toBe(false);
+    await expect(
+      fs.readFile(path.join(commandLinkPath, "content.md"), "utf8"),
+    ).resolves.toContain("Publish from create artifact.");
 
     const devCommand = runCli(["dev", "command", "release-note"], projectDir, homeDir);
     expect(devCommand.status).toBe(0);
     expect(devCommand.stdout).toContain("Switched command/release-note to dev mode");
 
-    const commandDevLinkedRealPath = await fs.realpath(commandLinkPath);
-    const expectedCommandDevPath = await fs.realpath(
-      path.join(projectDir, ".himan", "dev", "command", "release-note"),
-    );
-    expect(commandDevLinkedRealPath).toBe(expectedCommandDevPath);
+    const commandDevPath = path.join(projectDir, ".himan", "dev", "command", "release-note");
+    expect((await fs.lstat(commandLinkPath)).isSymbolicLink()).toBe(false);
+    await expect(
+      fs.readFile(path.join(commandDevPath, "content.md"), "utf8"),
+    ).resolves.toContain("Publish from create artifact.");
+    await expect(
+      fs.readFile(path.join(commandLinkPath, "content.md"), "utf8"),
+    ).resolves.toContain("Publish from create artifact.");
 
     const installSkill = runCli(["install", "skill", "risk-check@0.0.1"], projectDir, homeDir);
     expect(installSkill.status).toBe(0);
     expect(installSkill.stdout).toContain("Installed skill/risk-check@0.0.1");
 
     const skillLinkPath = path.join(projectDir, ".cursor", "skills", "risk-check");
-    const skillLinkedRealPath = await fs.realpath(skillLinkPath);
-    expect(skillLinkedRealPath).toContain(
-      path.join(homeDir, ".himan", "store", "skill", "risk-check", "0.0.1"),
-    );
+    expect((await fs.lstat(skillLinkPath)).isSymbolicLink()).toBe(false);
+    await expect(
+      fs.readFile(path.join(skillLinkPath, "SKILL.md"), "utf8"),
+    ).resolves.toContain("Skill published from create artifact.");
 
     const devSkill = runCli(["dev", "skill", "risk-check"], projectDir, homeDir);
     expect(devSkill.status).toBe(0);
     expect(devSkill.stdout).toContain("Switched skill/risk-check to dev mode");
 
-    const skillDevLinkedRealPath = await fs.realpath(skillLinkPath);
-    const expectedSkillDevPath = await fs.realpath(
-      path.join(projectDir, ".himan", "dev", "skill", "risk-check"),
-    );
-    expect(skillDevLinkedRealPath).toBe(expectedSkillDevPath);
+    const skillDevPath = path.join(projectDir, ".himan", "dev", "skill", "risk-check");
+    expect((await fs.lstat(skillLinkPath)).isSymbolicLink()).toBe(false);
+    await expect(
+      fs.readFile(path.join(skillDevPath, "SKILL.md"), "utf8"),
+    ).resolves.toContain("Skill published from create artifact.");
+    await expect(
+      fs.readFile(path.join(skillLinkPath, "SKILL.md"), "utf8"),
+    ).resolves.toContain("Skill published from create artifact.");
   });
 
   it("switches an existing Codex skill directory to dev mode", async () => {
@@ -642,7 +659,7 @@ describe("CLI commands with external git source", () => {
     ).resolves.toContain("common-project-startup");
   });
 
-  it("supports multi-agent links for claude-code/codex/openclaw", async () => {
+  it("supports multi-agent installs for claude-code/codex/openclaw", async () => {
     const createResult = runCli(
       [
         "create",
@@ -671,31 +688,29 @@ describe("CLI commands with external git source", () => {
     );
     expect(installResult.status).toBe(0);
 
-    await expect(
-      fs.realpath(path.join(projectDir, ".claude", "rules", "agent-style")),
-    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "agent-style", "0.0.1"));
-    await expect(
-      fs.realpath(path.join(projectDir, ".agents", "rules", "agent-style")),
-    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "agent-style", "0.0.1"));
-    await expect(
-      fs.realpath(path.join(projectDir, ".openclaw", "rules", "agent-style")),
-    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "agent-style", "0.0.1"));
+    const agentStyleTargets = [
+      path.join(projectDir, ".claude", "rules", "agent-style"),
+      path.join(projectDir, ".agents", "rules", "agent-style"),
+      path.join(projectDir, ".openclaw", "rules", "agent-style"),
+    ];
+    for (const targetPath of agentStyleTargets) {
+      expect((await fs.lstat(targetPath)).isSymbolicLink()).toBe(false);
+      await expect(
+        fs.readFile(path.join(targetPath, "content.md"), "utf8"),
+      ).resolves.toContain("Describe rule instructions here.");
+    }
 
     const devResult = runCli(["dev", "rule", "agent-style"], projectDir, homeDir);
     expect(devResult.status).toBe(0);
 
-    const expectedDevPath = await fs.realpath(
-      path.join(projectDir, ".himan", "dev", "rule", "agent-style"),
-    );
-    await expect(
-      fs.realpath(path.join(projectDir, ".claude", "rules", "agent-style")),
-    ).resolves.toBe(expectedDevPath);
-    await expect(
-      fs.realpath(path.join(projectDir, ".agents", "rules", "agent-style")),
-    ).resolves.toBe(expectedDevPath);
-    await expect(
-      fs.realpath(path.join(projectDir, ".openclaw", "rules", "agent-style")),
-    ).resolves.toBe(expectedDevPath);
+    const expectedDevPath = path.join(projectDir, ".himan", "dev", "rule", "agent-style");
+    const devContent = await fs.readFile(path.join(expectedDevPath, "content.md"), "utf8");
+    for (const targetPath of agentStyleTargets) {
+      expect((await fs.lstat(targetPath)).isSymbolicLink()).toBe(false);
+      await expect(fs.readFile(path.join(targetPath, "content.md"), "utf8")).resolves.toBe(
+        devContent,
+      );
+    }
   });
 
   it("supports list/history/install/dev after local fixture commit and tag", async () => {
@@ -768,12 +783,8 @@ describe("CLI commands with external git source", () => {
     expect(installResult.stdout).toContain("Installed rule/code-review@1.0.0");
 
     const linkedPath = path.join(projectDir, ".cursor", "rules", "code-review");
-    const linkedRealPath = await fs.realpath(linkedPath);
-    expect(linkedRealPath).toContain(
-      path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"),
-    );
-
-    const contentPath = path.join(linkedRealPath, "content.md");
+    expect((await fs.lstat(linkedPath)).isSymbolicLink()).toBe(false);
+    const contentPath = path.join(linkedPath, "content.md");
     const content = await fs.readFile(contentPath, "utf8");
     expect(content).toContain("Follow code review checklist");
 
@@ -781,11 +792,14 @@ describe("CLI commands with external git source", () => {
     expect(devResult.status).toBe(0);
     expect(devResult.stdout).toContain("Switched rule/code-review to dev mode");
 
-    const devLinkedRealPath = await fs.realpath(linkedPath);
-    const expectedDevPath = await fs.realpath(
-      path.join(projectDir, ".himan", "dev", "rule", "code-review"),
-    );
-    expect(devLinkedRealPath).toBe(expectedDevPath);
+    const expectedDevPath = path.join(projectDir, ".himan", "dev", "rule", "code-review");
+    expect((await fs.lstat(linkedPath)).isSymbolicLink()).toBe(false);
+    await expect(
+      fs.readFile(path.join(expectedDevPath, "content.md"), "utf8"),
+    ).resolves.toContain("Follow code review checklist");
+    await expect(
+      fs.readFile(path.join(linkedPath, "content.md"), "utf8"),
+    ).resolves.toContain("Follow code review checklist");
   });
 
   it("can hide descriptions from resource list output", () => {
@@ -835,9 +849,10 @@ describe("CLI commands with external git source", () => {
     expect(result.stdout).toContain("Installed global rule/code-review@1.0.0");
 
     const globalPath = path.join(homeDir, ".agents", "rules", "code-review");
-    await expect(fs.realpath(globalPath)).resolves.toContain(
-      path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"),
-    );
+    expect((await fs.lstat(globalPath)).isSymbolicLink()).toBe(false);
+    await expect(
+      fs.readFile(path.join(globalPath, "content.md"), "utf8"),
+    ).resolves.toContain("Follow code review checklist");
     await expect(
       fs.access(path.join(globalInstallProjectDir, ".agents", "rules", "code-review")),
     ).rejects.toThrow();
@@ -868,9 +883,11 @@ describe("CLI commands with external git source", () => {
     expect(globalResult.status).toBe(0);
     expect(globalResult.stdout).toContain("Installed global rule/code-review@1.0.0");
 
+    const globalPath = path.join(homeDir, ".claude", "rules", "code-review");
+    expect((await fs.lstat(globalPath)).isSymbolicLink()).toBe(false);
     await expect(
-      fs.realpath(path.join(homeDir, ".claude", "rules", "code-review")),
-    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"));
+      fs.readFile(path.join(globalPath, "content.md"), "utf8"),
+    ).resolves.toContain("Follow code review checklist");
     await expect(
       fs.access(path.join(homeDir, ".cursor", "rules", "code-review")),
     ).rejects.toThrow();
@@ -895,17 +912,18 @@ describe("CLI commands with external git source", () => {
 
     const result = runCli(["install", "rule", "code-review@1.0.0"], projectDir, homeDir);
     expect(result.status).toBe(0);
+    const codexRulePath = path.join(projectDir, ".agents", "rules", "code-review");
+    expect((await fs.lstat(codexRulePath)).isSymbolicLink()).toBe(false);
     await expect(
-      fs.realpath(path.join(projectDir, ".agents", "rules", "code-review")),
-    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"));
+      fs.readFile(path.join(codexRulePath, "content.md"), "utf8"),
+    ).resolves.toContain("Follow code review checklist");
 
     const devResult = runCli(["dev", "rule", "code-review"], projectDir, homeDir);
     expect(devResult.status).toBe(0);
+    expect((await fs.lstat(codexRulePath)).isSymbolicLink()).toBe(false);
     await expect(
-      fs.realpath(path.join(projectDir, ".agents", "rules", "code-review")),
-    ).resolves.toBe(
-      await fs.realpath(path.join(projectDir, ".himan", "dev", "rule", "code-review")),
-    );
+      fs.readFile(path.join(codexRulePath, "content.md"), "utf8"),
+    ).resolves.toContain("Follow code review checklist");
 
     expect(runCli(["agent", "clear", "--project"], projectDir, homeDir).status).toBe(0);
   });
@@ -924,7 +942,7 @@ describe("CLI commands with external git source", () => {
           name: "code-review",
           version: "1.0.0",
           agents: ["codex"],
-          mode: "link",
+          mode: "copy",
         }),
       ]),
     );
@@ -990,7 +1008,7 @@ describe("CLI commands with external git source", () => {
     const projectListText = runCli(["project", "list"], projectDir, homeDir);
     expect(projectListText.status).toBe(0);
     expect(projectListText.stdout).toContain("Rules:\n");
-    expect(projectListText.stdout).toContain("- rule/code-review@1.0.0 [codex] (link)");
+    expect(projectListText.stdout).toContain("- rule/code-review@1.0.0 [codex] (copy)");
   });
 
   it("writes himan.lock on install and can reproduce installs", async () => {
@@ -1017,19 +1035,19 @@ describe("CLI commands with external git source", () => {
           name: "code-review",
           version: "1.0.0",
           agents: ["codex"],
-          mode: "link",
+          mode: "copy",
         }),
         expect.objectContaining({
           type: "command",
           name: "release-note",
           version: "0.1.0",
-          mode: "link",
+          mode: "copy",
         }),
         expect.objectContaining({
           type: "skill",
           name: "risk-check",
           version: "0.0.1",
-          mode: "link",
+          mode: "copy",
         }),
       ]),
     );
@@ -1057,20 +1075,24 @@ describe("CLI commands with external git source", () => {
     expect(result.stdout).toContain("Installed command/release-note@0.1.0");
     expect(result.stdout).toContain("Installed skill/risk-check@0.0.1");
 
+    const restoredRulePath = path.join(projectDir, ".agents", "rules", "code-review");
+    expect((await fs.lstat(restoredRulePath)).isSymbolicLink()).toBe(false);
     await expect(
-      fs.realpath(path.join(projectDir, ".agents", "rules", "code-review")),
-    ).resolves.toContain(path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"));
+      fs.readFile(path.join(restoredRulePath, "content.md"), "utf8"),
+    ).resolves.toContain("Follow code review checklist");
+    const restoredCommandPath = path.join(projectDir, ".cursor", "commands", "release-note");
+    expect((await fs.lstat(restoredCommandPath)).isSymbolicLink()).toBe(false);
     await expect(
-      fs.realpath(path.join(projectDir, ".cursor", "commands", "release-note")),
-    ).resolves.toContain(
-      path.join(homeDir, ".himan", "store", "command", "release-note", "0.1.0"),
-    );
+      fs.readFile(path.join(restoredCommandPath, "content.md"), "utf8"),
+    ).resolves.toContain("Publish from create artifact.");
+    const restoredSkillPath = path.join(projectDir, ".cursor", "skills", "risk-check");
+    expect((await fs.lstat(restoredSkillPath)).isSymbolicLink()).toBe(false);
     await expect(
-      fs.realpath(path.join(projectDir, ".cursor", "skills", "risk-check")),
-    ).resolves.toContain(path.join(homeDir, ".himan", "store", "skill", "risk-check", "0.0.1"));
+      fs.readFile(path.join(restoredSkillPath, "SKILL.md"), "utf8"),
+    ).resolves.toContain("Skill published from create artifact.");
   });
 
-  it("updates lock and project link after publish when resource is locked", async () => {
+  it("updates lock and project target after publish when resource is locked", async () => {
     const devCommandPath = path.join(projectDir, ".himan", "dev", "command", "release-note");
     await fs.appendFile(path.join(devCommandPath, "content.md"), "lock sync on publish.\n", "utf8");
 
@@ -1184,9 +1206,9 @@ describe("CLI commands with external git source", () => {
     ]);
   });
 
-  it("supports copy install mode and restores it from lock", async () => {
+  it("uses copy install mode by default and restores it from lock", async () => {
     const installResult = runCli(
-      ["install", "skill", "risk-check@0.0.1", "--mode", "copy"],
+      ["install", "skill", "risk-check@0.0.1"],
       projectDir,
       homeDir,
     );
@@ -1221,6 +1243,45 @@ describe("CLI commands with external git source", () => {
 
     const restoredStat = await fs.lstat(skillPath);
     expect(restoredStat.isSymbolicLink()).toBe(false);
+  });
+
+  it("supports explicit link install mode and restores it from lock", async () => {
+    const linkModeProjectDir = path.join(tmpRoot, "link-mode-project");
+    await fs.mkdir(linkModeProjectDir, { recursive: true });
+
+    const installResult = runCli(
+      ["install", "rule", "code-review@1.0.0", "--mode", "link"],
+      linkModeProjectDir,
+      homeDir,
+    );
+    expect(installResult.status).toBe(0);
+
+    const rulePath = path.join(linkModeProjectDir, ".cursor", "rules", "code-review");
+    expect((await fs.lstat(rulePath)).isSymbolicLink()).toBe(true);
+    await expect(fs.realpath(rulePath)).resolves.toContain(
+      path.join(homeDir, ".himan", "store", "rule", "code-review", "1.0.0"),
+    );
+
+    const lockRaw = await fs.readFile(path.join(linkModeProjectDir, "himan.lock"), "utf8");
+    const lock = JSON.parse(lockRaw) as {
+      resources: Array<{ type: string; name: string; mode?: string }>;
+    };
+    expect(lock.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "rule",
+          name: "code-review",
+          mode: "link",
+        }),
+      ]),
+    );
+
+    await fs.rm(rulePath, { recursive: true, force: true });
+
+    const restoreResult = runCli(["install"], linkModeProjectDir, homeDir);
+    expect(restoreResult.status).toBe(0);
+    expect(restoreResult.stdout).toContain("Installed rule/code-review@1.0.0");
+    expect((await fs.lstat(rulePath)).isSymbolicLink()).toBe(true);
   });
 
   it("uninstalls resource and removes it from lock", async () => {

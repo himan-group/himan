@@ -43,7 +43,7 @@
 - 也支持 `himan install`（无参数）按 `himan.lock` 批量复现安装。
 - 未指定版本则安装该资源最新 tag 对应版本。
 - 若本地 store 中已有该版本缓存，则复用、不重新从 Git 导出；否则导出到 store。
-- 在项目下按安装模式创建目标（默认 `--mode link` 软链；`--mode copy` 复制）。
+- 在项目下按安装模式创建目标（默认 `--mode copy` 复制；`--mode link` 软链）。
 - 目标路径由 agent 和资源类型共同决定：
   - `cursor` -> `.cursor/{rules|commands|skills}/<name>`
   - `claude-code` -> `.claude/{rules|commands|skills}/<name>`
@@ -91,7 +91,7 @@
 - **领域**：资源类型、版本、路径约定
 - **适配**：Git 实现 + Registry 预留；扫描与解析元数据；版本计算；配置与全局路径
 
-**原则：** store 按版本目录追加、不覆盖已有缓存；开发目录与项目安装目标分离；项目侧默认以软链引用资源，也支持复制。
+**原则：** store 按版本目录追加、不覆盖已有缓存；开发目录与项目安装目标分离；项目侧默认复制资源，也支持软链引用。
 
 ### 3.2 目录与数据
 

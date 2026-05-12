@@ -13,7 +13,7 @@
 ```bash
 pnpm install
 pnpm run build
-pnpm run dev -- --help
+pnpm cli --help
 node dist/bin/himan.js --help
 ```
 
@@ -28,6 +28,7 @@ pnpm test
 | 命令 | 作用 |
 |------|------|
 | `pnpm run clean` | 删除 `dist/` |
+| `pnpm cli <subcommand>` | 从源码运行主 CLI |
 | `pnpm run build` | 清理并编译 TypeScript 到 `dist/` |
 | `pnpm run typecheck` | 运行 TypeScript 类型检查，不输出文件 |
 | `pnpm test` | 运行 Vitest 一次 |

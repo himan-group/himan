@@ -23,7 +23,7 @@ export function createBaseProgram(name: string, description: string): Command {
     },
   });
 
-  program.name(name).description(description).version(PACKAGE_VERSION);
+  program.name(name).description(description).version(PACKAGE_VERSION, "-v, --version");
   return program;
 }
 

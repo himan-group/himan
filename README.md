@@ -66,7 +66,7 @@ himan publish rule my-rule --patch
   - `command` -> `.himan/dev/command/<name>`
   - `skill` -> `.himan/dev/skill/<name>`
 - lock 文件：项目安装 `install <type> <name[@version]>` 会写入 `himan.lock`，记录 source、精确版本、agent 和安装模式；`himan install`（无参数）会按 lock 记录的 source 批量恢复安装，不受当前 default source 切换影响。`--global` 安装不写当前项目的 `himan.lock`。
-- 安装模式：默认 `--mode link` 使用软链；也可用 `--mode copy` 将资源复制到目标 agent 目录，lock 会记录并复现该模式。
+- 安装模式：默认 `--mode copy` 将资源复制到目标 agent 目录；也可用 `--mode link` 使用软链，lock 会记录并复现该模式。
 - 默认 agent：`agent use <agent>` 默认写当前项目 `.himan/config.json`；加 `--global` 写入 `~/.himan/config.json`。当前项目配置优先于全局配置。
 
 版本以 Git tag 为准，格式：`rule/my-rule@1.0.0`。更多设计见 [docs/mvp](./docs/mvp/README.md)。

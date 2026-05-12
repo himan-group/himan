@@ -273,7 +273,7 @@ export class ServiceFactory {
     version: string | undefined,
     projectDir: string,
     agents?: string[],
-    mode: InstallMode = "link",
+    mode: InstallMode = "copy",
   ): Promise<{
     type: ResourceType;
     name: string;
@@ -300,7 +300,7 @@ export class ServiceFactory {
     version: string | undefined,
     projectDir: string,
     agents?: string[],
-    mode: InstallMode = "link",
+    mode: InstallMode = "copy",
   ): Promise<{
     type: ResourceType;
     name: string;
@@ -723,7 +723,7 @@ export class ServiceFactory {
   }
 
   private resolveInstallMode(mode?: string): InstallMode {
-    return mode === "copy" ? "copy" : "link";
+    return mode === "link" ? "link" : "copy";
   }
 
   private async resolveInstalledResource(
