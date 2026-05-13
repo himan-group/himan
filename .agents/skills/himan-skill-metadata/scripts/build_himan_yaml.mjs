@@ -258,7 +258,19 @@ function formatScalar(value) {
   if (Array.isArray(value) && value.length === 0) return "[]";
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (value === null) return "null";
-  return JSON.stringify(String(value));
+  const text = String(value);
+  return canUsePlainScalar(text) ? text : JSON.stringify(text);
+}
+
+function canUsePlainScalar(text) {
+  if (text.length === 0) return false;
+  if (/^\s|\s$/.test(text)) return false;
+  if (/[\r\n\t]/.test(text)) return false;
+  if (/^(?:null|true|false|[-+]?(?:\d+|\d+\.\d+))(?:$|\s)/i.test(text)) return false;
+  if (/^[!&*?:[\]{}#,|>@`"']/.test(text)) return false;
+  if (text.includes(": ")) return false;
+  if (text.includes(" #")) return false;
+  return true;
 }
 
 function unquote(value) {

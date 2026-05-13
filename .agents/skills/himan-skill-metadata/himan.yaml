@@ -1,28 +1,32 @@
-name: "himan-skill-metadata"
-type: "skill"
-version: "0.1.0"
-entry: "SKILL.md"
-description: "Create or update Himan skill metadata. Use when Codex creates, edits, migrates, or audits a skill folder with SKILL.md and should also generate or refresh a matching himan.yaml file containing static analysis metadata such as content token estimates, hashes, dependencies, scripts, MCP tools, and generation details."
+name: himan-skill-metadata
+type: skill
+version: 0.0.2
+entry: SKILL.md
+description: Create or update Himan skill metadata. Use when Codex creates,
+  edits, migrates, or audits a skill folder with SKILL.md and should also
+  generate or refresh a matching himan.yaml file containing static analysis
+  metadata such as content token estimates, hashes, dependencies, scripts, MCP
+  tools, and generation details.
 agents:
-  - "codex"
+  - codex
 analysis:
   content:
-    tokenizer: "approx-char-v1"
-    tokenEstimator: "ceil(chars/4)"
+    tokenizer: approx-char-v1
+    tokenEstimator: ceil(chars/4)
     entryTokens: 745
-    packageTokens: 2937
-    contentHash: "sha256:5b6fa5b8d0de3baf82850d63996a93ade701a60dcba80964381657618fbb2474"
-    measuredAt: "2026-05-13T12:19:36.676Z"
-    measuredBy: "codex"
+    packageTokens: 3051
+    contentHash: sha256:e7d174c4e5025ff99d134c58f406c31ee99c4fe62d90ff6228c07786e5d4b72b
+    measuredAt: 2026-05-13T12:29:22.329Z
+    measuredBy: codex
   dependencies:
     skills:
-      - "skill-creator"
+      - skill-creator
     scripts:
-      - path: "scripts/build_himan_yaml.mjs"
+      - path: scripts/build_himan_yaml.mjs
     mcpTools:
-      - "functions.apply_patch"
-      - "functions.exec_command"
+      - functions.apply_patch
+      - functions.exec_command
   generation:
-    generatedBy: "codex"
-    generatedAt: "2026-05-13T12:19:36.676Z"
-    promptRef: "skill-creator"
+    generatedBy: codex
+    generatedAt: 2026-05-13T12:29:22.329Z
+    promptRef: skill-creator

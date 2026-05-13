@@ -6,7 +6,7 @@
     "repo": "https://git.garena.com/detao.li/himan-resource.git",
     "repoId": "https_git.garena.com_detao.li_himan-resource"
   },
-  "updatedAt": "2026-05-13T06:02:07.311Z",
+  "updatedAt": "2026-05-13T12:30:41.743Z",
   "resources": [
     {
       "type": "skill",
@@ -37,6 +37,16 @@
       ],
       "mode": "copy",
       "updatedAt": "2026-05-13T06:02:07.311Z"
+    },
+    {
+      "type": "skill",
+      "name": "himan-skill-metadata",
+      "version": "0.0.2",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-13T12:30:41.743Z"
     }
   ]
 }
