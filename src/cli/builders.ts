@@ -87,7 +87,8 @@ function appendCommandGroupsHelp(program: Command): void {
     `
 Command groups:
   source   Data source management (git now, registry reserved)
-           init, source init, source add, source use, source list, source init-docs
+           init, source init, source add, source use, source list,
+           source init-docs, source clone, source sync
   resource Source resource discovery and metadata
            list, list --installed, history, create, rename (not recommended yet),
            resource list, resource history, resource create, resource rename

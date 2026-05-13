@@ -17,6 +17,13 @@ import type {
   ResourceSourceAdapter,
   SourceConfig,
 } from "./resource-source-adapter.js";
+import type {
+  GitSourceCloneResult,
+  GitSourceSyncResult,
+  SourceCloneOptions,
+  SourceSyncOptions,
+  SourceSyncResource,
+} from "../../domain/source-transfer.js";
 import { RepoManager } from "../git/repo-manager.js";
 import { ResourceScanner } from "../resource/resource-scanner.js";
 import semver from "semver";
@@ -362,6 +369,30 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       dryRun: Boolean(options.dryRun),
       committed,
     };
+  }
+
+  async cloneTo(
+    targetRepo: string,
+    options: SourceCloneOptions = {},
+  ): Promise<GitSourceCloneResult> {
+    return this.repoManager.cloneManagedSourceRefs(
+      this.getRepoDir(),
+      targetRepo,
+      options,
+    );
+  }
+
+  async syncLatestTo(
+    targetRepo: string,
+    options: SourceSyncOptions = {},
+  ): Promise<GitSourceSyncResult> {
+    const resources = await this.collectLatestVersionedResources();
+    return this.repoManager.syncLatestSourceSnapshot(
+      this.getRepoDir(),
+      targetRepo,
+      resources,
+      options,
+    );
   }
 
   private getRepoDir(): string {
@@ -1191,6 +1222,49 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       }
       return undefined;
     }
+  }
+
+  private async collectLatestVersionedResources(): Promise<SourceSyncResource[]> {
+    const repoDir = this.getRepoDir();
+    const resources: SourceSyncResource[] = [];
+
+    for (const type of RESOURCE_TYPES) {
+      const scanned = await this.scanner.scanByType(repoDir, type);
+      for (const resource of scanned) {
+        const history = await this.history(type, resource.name);
+        const latest = history[0];
+        const metadataVersion = await this.readResourceVersion(
+          repoDir,
+          type,
+          resource.name,
+        );
+        const version = latest?.version ?? metadataVersion;
+
+        if (!version || !semver.valid(version)) {
+          throw new HimanError(
+            errorCodes.VERSION_NOT_FOUND,
+            `Latest version not found for ${type}/${resource.name}.`,
+          );
+        }
+
+        resources.push({
+          type,
+          name: resource.name,
+          version,
+          tag: `${type}/${resource.name}@${version}`,
+          sourceRef: latest ? latest.raw : undefined,
+          sourcePath: latest
+            ? undefined
+            : path.join(repoDir, this.getTypeDir(type), resource.name),
+        });
+      }
+    }
+
+    return resources.sort((a, b) => {
+      const typeOrder = RESOURCE_TYPES.indexOf(a.type) - RESOURCE_TYPES.indexOf(b.type);
+      if (typeOrder !== 0) return typeOrder;
+      return a.name.localeCompare(b.name);
+    });
   }
 
   private async getResourceRef(

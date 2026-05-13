@@ -1400,6 +1400,132 @@ describe("CLI commands with external git source", () => {
       "Rename me content.",
     );
   });
+
+  it("clones a git source into an empty target source", async () => {
+    const cloneHomeDir = path.join(tmpRoot, "clone-home");
+    const cloneProjectDir = path.join(tmpRoot, "clone-project");
+    const cloneSourceRemote = await createSingleRuleRemote(
+      "clone-source",
+      "clone-me",
+      "1.2.3",
+      "clone source rule",
+      "Clone me content.",
+    );
+    const cloneTargetRemote = path.join(tmpRoot, "clone-target.git");
+    await fs.mkdir(cloneHomeDir, { recursive: true });
+    await fs.mkdir(cloneProjectDir, { recursive: true });
+    await fs.mkdir(cloneTargetRemote, { recursive: true });
+    runGit(["init", "--bare", "--initial-branch=main"], cloneTargetRemote);
+
+    const cloneResult = runCli(
+      [
+        "source",
+        "clone",
+        cloneSourceRemote,
+        cloneTargetRemote,
+        "--add-source",
+        "cloned-source",
+        "--use",
+        "--json",
+      ],
+      cloneProjectDir,
+      cloneHomeDir,
+    );
+    expect(cloneResult.status).toBe(0);
+    expect(JSON.parse(cloneResult.stdout)).toEqual(
+      expect.objectContaining({
+        branch: "main",
+        targetBranch: "main",
+        tags: ["rule/clone-me@1.2.3"],
+        pushed: true,
+        addedSource: "cloned-source",
+        usedSource: "cloned-source",
+      }),
+    );
+
+    const historyResult = runCli(
+      ["history", "rule", "clone-me", "--json"],
+      cloneProjectDir,
+      cloneHomeDir,
+    );
+    expect(historyResult.status).toBe(0);
+    expect(JSON.parse(historyResult.stdout)).toEqual([
+      {
+        raw: "rule/clone-me@1.2.3",
+        version: "1.2.3",
+      },
+    ]);
+    expect(runGitOutput(["tag", "--list", "rule/clone-me@1.2.3"], cloneTargetRemote)).toBe(
+      "rule/clone-me@1.2.3",
+    );
+  });
+
+  it("syncs latest source resource snapshots into a target source", async () => {
+    const syncHomeDir = path.join(tmpRoot, "sync-home");
+    const syncProjectDir = path.join(tmpRoot, "sync-project");
+    const syncSourceRemote = await createSingleRuleRemote(
+      "sync-source",
+      "sync-me",
+      "2.3.4",
+      "sync source rule",
+      "Sync me content.",
+    );
+    const syncTargetRemote = path.join(tmpRoot, "sync-target.git");
+    await fs.mkdir(syncHomeDir, { recursive: true });
+    await fs.mkdir(syncProjectDir, { recursive: true });
+    await fs.mkdir(syncTargetRemote, { recursive: true });
+    runGit(["init", "--bare", "--initial-branch=main"], syncTargetRemote);
+
+    const syncResult = runCli(
+      [
+        "source",
+        "sync",
+        syncSourceRemote,
+        syncTargetRemote,
+        "--add-source",
+        "synced-source",
+        "--use",
+        "--json",
+      ],
+      syncProjectDir,
+      syncHomeDir,
+    );
+    expect(syncResult.status).toBe(0);
+    expect(JSON.parse(syncResult.stdout)).toEqual(
+      expect.objectContaining({
+        targetBranch: "main",
+        committed: true,
+        pushed: true,
+        addedSource: "synced-source",
+        usedSource: "synced-source",
+        resources: [
+          {
+            type: "rule",
+            name: "sync-me",
+            version: "2.3.4",
+            tag: "rule/sync-me@2.3.4",
+            action: "created",
+          },
+        ],
+      }),
+    );
+
+    const historyResult = runCli(
+      ["history", "rule", "sync-me", "--json"],
+      syncProjectDir,
+      syncHomeDir,
+    );
+    expect(historyResult.status).toBe(0);
+    expect(JSON.parse(historyResult.stdout)).toEqual([
+      {
+        raw: "rule/sync-me@2.3.4",
+        version: "2.3.4",
+      },
+    ]);
+    expect(runGitOutput(["show", "main:rules/sync-me/content.md"], syncTargetRemote)).toContain(
+      "Sync me content.",
+    );
+  });
 });
 
 function runCli(args: string[], cwd: string, home: string) {

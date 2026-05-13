@@ -17,6 +17,12 @@ import type {
   SourceDocsOptions,
   SourceDocsResult,
 } from "../domain/source-docs.js";
+import type {
+  GitSourceEndpoint,
+  SourceCloneResult,
+  SourceSyncResult,
+  SourceTransferOptions,
+} from "../domain/source-transfer.js";
 import { StateStore } from "../state/state-store.js";
 import { ProjectConfigStore } from "../state/project-config-store.js";
 import {
@@ -88,9 +94,7 @@ export class ServiceFactory {
     type: "git" | "registry",
     repo?: string,
   ): Promise<{ name: string; type: "git" | "registry"; repo?: string; repoId?: string }> {
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
-      throw new HimanError(errorCodes.INVALID_INPUT, `Invalid source name: ${name}`);
-    }
+    this.validateSourceName(name);
     await this.stateStore.ensureBaseDirs();
     const sourceConfig = this.buildSourceConfig(type, repo);
     const source = this.createSource(type);
@@ -156,6 +160,67 @@ export class ServiceFactory {
   async initSourceDocs(options: SourceDocsOptions): Promise<SourceDocsResult> {
     const source = await this.loadSourceFromConfig();
     return source.initDocs(options);
+  }
+
+  async cloneSource(
+    from: string,
+    to: string,
+    options: SourceTransferOptions = {},
+  ): Promise<SourceCloneResult> {
+    await this.stateStore.ensureBaseDirs();
+    this.validateSourceTransferOptions(to, options);
+    const sourceEndpoint = await this.resolveGitSourceEndpoint(from);
+    const targetEndpoint = await this.resolveGitSourceEndpoint(to);
+    this.validateSourceTransferUseTarget(targetEndpoint, options);
+    this.ensureDifferentGitSources(sourceEndpoint, targetEndpoint);
+
+    const source = await this.loadGitSourceFromEndpoint(sourceEndpoint);
+    const result = await source.cloneTo(targetEndpoint.repo, {
+      branch: options.branch,
+      targetBranch: options.targetBranch,
+      dryRun: options.dryRun,
+    });
+    const configUpdates = await this.applySourceTransferConfigUpdates(
+      targetEndpoint,
+      options,
+    );
+
+    return {
+      source: sourceEndpoint,
+      target: targetEndpoint,
+      ...result,
+      ...configUpdates,
+    };
+  }
+
+  async syncSource(
+    from: string,
+    to: string,
+    options: SourceTransferOptions = {},
+  ): Promise<SourceSyncResult> {
+    await this.stateStore.ensureBaseDirs();
+    this.validateSourceTransferOptions(to, options);
+    const sourceEndpoint = await this.resolveGitSourceEndpoint(from);
+    const targetEndpoint = await this.resolveGitSourceEndpoint(to);
+    this.validateSourceTransferUseTarget(targetEndpoint, options);
+    this.ensureDifferentGitSources(sourceEndpoint, targetEndpoint);
+
+    const source = await this.loadGitSourceFromEndpoint(sourceEndpoint);
+    const result = await source.syncLatestTo(targetEndpoint.repo, {
+      targetBranch: options.targetBranch,
+      dryRun: options.dryRun,
+    });
+    const configUpdates = await this.applySourceTransferConfigUpdates(
+      targetEndpoint,
+      options,
+    );
+
+    return {
+      source: sourceEndpoint,
+      target: targetEndpoint,
+      ...result,
+      ...configUpdates,
+    };
   }
 
   async setAgents(
@@ -629,6 +694,120 @@ export class ServiceFactory {
 
   private async loadSourceFromConfig(): Promise<ResourceSourceAdapter> {
     return (await this.loadSourceWithInfoFromConfig()).source;
+  }
+
+  private async resolveGitSourceEndpoint(ref: string): Promise<GitSourceEndpoint> {
+    const config = await this.stateStore.loadConfig();
+    const configured = config?.sources?.items[ref];
+
+    if (configured) {
+      if (configured.type !== "git" || !configured.repo) {
+        throw new HimanError(
+          errorCodes.INVALID_INPUT,
+          `Source is not a git source: ${ref}`,
+        );
+      }
+      return {
+        name: ref,
+        repo: configured.repo,
+        repoId: configured.repoId ?? toRepoId(configured.repo),
+      };
+    }
+
+    if (!ref.trim()) {
+      throw new HimanError(errorCodes.INVALID_INPUT, "Git repo is required.");
+    }
+
+    return {
+      repo: ref,
+      repoId: toRepoId(ref),
+    };
+  }
+
+  private async loadGitSourceFromEndpoint(
+    endpoint: GitSourceEndpoint,
+  ): Promise<GitSourceAdapter> {
+    const sourceConfig = this.buildSourceConfig(
+      "git",
+      endpoint.repo,
+      endpoint.repoId,
+    );
+    const source = new GitSourceAdapter();
+    await source.init(sourceConfig);
+    return source;
+  }
+
+  private validateSourceTransferOptions(
+    targetRef: string,
+    options: SourceTransferOptions,
+  ): void {
+    if (options.addSource) {
+      this.validateSourceName(options.addSource);
+    }
+
+    if (!options.use || options.addSource) {
+      return;
+    }
+
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(targetRef)) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "`--use` requires the target to be a configured source name or `--add-source <name>`.",
+      );
+    }
+  }
+
+  private validateSourceTransferUseTarget(
+    target: GitSourceEndpoint,
+    options: SourceTransferOptions,
+  ): void {
+    if (options.use && !options.addSource && !target.name) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "`--use` requires the target to be a configured source name or `--add-source <name>`.",
+      );
+    }
+  }
+
+  private ensureDifferentGitSources(
+    source: GitSourceEndpoint,
+    target: GitSourceEndpoint,
+  ): void {
+    if (source.repo === target.repo) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "Source and target repositories must be different.",
+      );
+    }
+  }
+
+  private async applySourceTransferConfigUpdates(
+    target: GitSourceEndpoint,
+    options: SourceTransferOptions,
+  ): Promise<{ addedSource?: string; usedSource?: string }> {
+    if (options.dryRun) return {};
+
+    let addedSource: string | undefined;
+    if (options.addSource) {
+      await this.addSource(options.addSource, "git", target.repo);
+      addedSource = options.addSource;
+    }
+
+    const sourceToUse = options.use ? options.addSource ?? target.name : undefined;
+    if (sourceToUse) {
+      await this.useSource(sourceToUse);
+    }
+
+    return {
+      addedSource,
+      usedSource: sourceToUse,
+    };
+  }
+
+  private validateSourceName(name: string): void {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+      throw new HimanError(errorCodes.INVALID_INPUT, `Invalid source name: ${name}`);
+    }
   }
 
   private async loadSourceWithInfoFromConfig(): Promise<{
