@@ -6,7 +6,7 @@
     "repo": "https://git.garena.com/detao.li/himan-resource.git",
     "repoId": "https_git.garena.com_detao.li_himan-resource"
   },
-  "updatedAt": "2026-05-11T08:37:10.348Z",
+  "updatedAt": "2026-05-13T06:02:07.311Z",
   "resources": [
     {
       "type": "skill",
@@ -27,6 +27,16 @@
       ],
       "mode": "copy",
       "updatedAt": "2026-05-11T08:36:35.621Z"
+    },
+    {
+      "type": "skill",
+      "name": "github-npm-publish",
+      "version": "0.0.1",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-13T06:02:07.311Z"
     }
   ]
 }
