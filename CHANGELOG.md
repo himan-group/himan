@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-13
+
 ### Added
 
 - Added the `github-npm-publish` skill for reusable GitHub Actions npm release workflow guidance.
