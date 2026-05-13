@@ -88,7 +88,7 @@ Resource source layout uses plural type directories in the source repo:
 - `CHANGELOG.md` is the recommended source-level change history for added, changed, deprecated, and removed resources.
 - `rules/<name>/himan.yaml` is recommended metadata; without it, publish and docs use `content.md` as the default entry.
 - `commands/<name>/himan.yaml` is recommended metadata; without it, publish and docs use `content.md` as the default entry.
-- `skills/<name>/himan.yaml` is recommended metadata; without it, publish and docs use `SKILL.md` as the default entry.
+- `skills/<name>/himan.yaml` is recommended metadata; without it, publish and docs use `SKILL.md` as the default entry. Newly scaffolded skill metadata includes `analysis` with static content token estimates, a content hash, empty dependency lists, and generation metadata for hooks/log analysis.
 
 Git tags use `<type>/<name>@<semver>`, for example `rule/code-review@1.0.0`.
 

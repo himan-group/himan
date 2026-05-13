@@ -26,6 +26,7 @@ import type {
 } from "../../domain/source-transfer.js";
 import { RepoManager } from "../git/repo-manager.js";
 import { ResourceScanner } from "../resource/resource-scanner.js";
+import { buildResourceAnalysisMetadata } from "../resource/resource-analysis.js";
 import semver from "semver";
 import { HimanError, errorCodes } from "../../utils/errors.js";
 import { promises as fs } from "node:fs";
@@ -190,27 +191,26 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       );
     }
 
+    const entryContent = this.getDefaultContent(type, name);
     const files = [path.join(resourceDir, "himan.yaml"), path.join(resourceDir, entry)];
     if (!options.dryRun) {
       await fs.rm(resourceDir, { recursive: true, force: true });
       await fs.mkdir(resourceDir, { recursive: true });
       await fs.writeFile(
         path.join(resourceDir, "himan.yaml"),
-        YAML.stringify({
-          name,
-          type,
-          version: "0.1.0",
-          entry,
-          description: options.description ?? `${type} resource ${name}`,
-          agents,
-        }),
+        YAML.stringify(
+          this.buildCreateResourceMetadata(
+            type,
+            name,
+            entry,
+            entryContent,
+            options.description ?? `${type} resource ${name}`,
+            agents,
+          ),
+        ),
         "utf8",
       );
-      await fs.writeFile(
-        path.join(resourceDir, entry),
-        this.getDefaultContent(type, name),
-        "utf8",
-      );
+      await fs.writeFile(path.join(resourceDir, entry), entryContent, "utf8");
       await this.maintainSourceDocs(repoDir, {
         section: resourceExists ? "Changed" : "Added",
         line: resourceExists
@@ -866,6 +866,35 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       return `# ${name}\n\nDescribe command behavior here.\n`;
     }
     return `# ${name}\n\nDescribe skill workflow here.\n`;
+  }
+
+  private buildCreateResourceMetadata(
+    type: ResourceType,
+    name: string,
+    entry: string,
+    entryContent: string,
+    description: string,
+    agents: string[],
+  ): PublishMetadata {
+    const metadata: PublishMetadata = {
+      name,
+      type,
+      version: "0.1.0",
+      entry,
+      description,
+      agents,
+    };
+
+    if (type === "skill") {
+      metadata.analysis = buildResourceAnalysisMetadata({
+        entry,
+        entryContent,
+        measuredBy: "himan",
+        generatedBy: "himan",
+      });
+    }
+
+    return metadata;
   }
 
   private async buildReadmeContent(

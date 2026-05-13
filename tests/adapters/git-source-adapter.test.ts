@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitSourceAdapter } from "../../src/adapters/source/git-source-adapter.js";
+import YAML from "yaml";
 
 let tmpRoot = "";
 let fakeHomeDir = "";
@@ -90,6 +91,67 @@ describe("GitSourceAdapter", () => {
     ).resolves.toContain("- Published `rule/published-rule@0.1.0`.");
     expect(runGitOutput(["tag", "--list", "rule/published-rule@0.1.0"], targetDir)).toBe(
       "rule/published-rule@0.1.0",
+    );
+  });
+
+  it("creates skill metadata with static analysis", async () => {
+    const { remoteDir, targetDir } = await createRemoteFixture();
+    const adapter = new GitSourceAdapter();
+
+    await adapter.init({
+      type: "git",
+      repo: remoteDir,
+      repoDir: targetDir,
+      repoId: "test-source",
+    });
+
+    await adapter.create("skill", "analysis-skill", {
+      description: "analyze skill metadata",
+      agents: ["codex"],
+    });
+
+    const raw = await fs.readFile(
+      path.join(targetDir, "skills", "analysis-skill", "himan.yaml"),
+      "utf8",
+    );
+    const parsed = YAML.parse(raw) as {
+      analysis?: {
+        content?: {
+          tokenizer?: string;
+          tokenEstimator?: string;
+          entryTokens?: number;
+          packageTokens?: number;
+          contentHash?: string;
+        };
+        dependencies?: {
+          skills?: string[];
+          scripts?: string[];
+          mcpTools?: string[];
+        };
+        generation?: {
+          generatedBy?: string;
+        };
+      };
+    };
+
+    expect(parsed.analysis?.content).toEqual(
+      expect.objectContaining({
+        tokenizer: "approx-char-v1",
+        tokenEstimator: "ceil(chars/4)",
+        entryTokens: expect.any(Number),
+        packageTokens: expect.any(Number),
+        contentHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      }),
+    );
+    expect(parsed.analysis?.dependencies).toEqual({
+      skills: [],
+      scripts: [],
+      mcpTools: [],
+    });
+    expect(parsed.analysis?.generation).toEqual(
+      expect.objectContaining({
+        generatedBy: "himan",
+      }),
     );
   });
 

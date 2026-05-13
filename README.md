@@ -96,8 +96,38 @@ your-himan-source/
 - `README.md`：source 仓库入口文档，建议记录资源目录说明、推荐安装方式、默认 agent 策略、常用资源索引和维护约定。
 - `CHANGELOG.md`：source 仓库级变更记录，建议记录新增、变更、废弃、移除的资源，以及重要版本发布说明。
 - `rules/`、`commands/`、`skills/`：按资源类型分组；每个子目录是一份 himan 资源。
-- `himan.yaml`：可选资源元数据；存在时供 himan 扫描、校验、读取入口和默认 agent。
+- `himan.yaml`：可选资源元数据；存在时供 himan 扫描、校验、读取入口和默认 agent；skill 资源可包含 `analysis` 静态分析信息。
 - `content.md` / `SKILL.md`：资源主入口；没有 `himan.yaml` 时，`rule` / `command` 默认使用 `content.md`，`skill` 默认使用 `SKILL.md`。
+
+skill 的 `himan.yaml` 推荐包含静态分析 metadata，便于 hooks、日志和后续分析系统关联 skill 内容成本与依赖：
+
+```yaml
+name: my-skill
+type: skill
+version: 0.1.0
+entry: SKILL.md
+description: Do the skill workflow.
+agents:
+  - codex
+analysis:
+  content:
+    tokenizer: approx-char-v1
+    tokenEstimator: ceil(chars/4)
+    entryTokens: 120
+    packageTokens: 180
+    contentHash: sha256:...
+    measuredAt: "2026-05-13T00:00:00.000Z"
+    measuredBy: codex
+  dependencies:
+    skills: []
+    scripts: []
+    mcpTools: []
+  generation:
+    generatedBy: codex
+    generatedAt: "2026-05-13T00:00:00.000Z"
+```
+
+`analysis` 是静态构建信息，不记录运行时 token 或执行耗时；`himan create skill` 会为新 skill scaffold 生成基础 `analysis`。
 
 可通过 `himan source init-docs` 为当前 default source 生成根目录文档模板；默认只创建缺失文件，`--force` 会覆盖已有 `README.md` / `CHANGELOG.md`，并把当前 source 中已有的 `rule`、`command`、`skill` 整理进 README 资源索引和 CHANGELOG 初始条目；资源引用会优先带上 Git tag 中的最新 semver 版本；对于尚未补齐 `himan.yaml` 的资源，会按默认入口识别，skill 还会读取 `skills/<name>/SKILL.md` front matter。`--dry-run` 可预览结果。有实际文件变更时，命令会提交并 push 到当前 Git source。
 

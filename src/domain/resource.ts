@@ -15,6 +15,29 @@ export interface ResourceMeta {
   agents?: string[];
 }
 
+export interface ResourceAnalysisMetadata {
+  content?: {
+    tokenizer?: string;
+    tokenEstimator?: string;
+    entryTokens?: number;
+    packageTokens?: number;
+    contentHash?: string;
+    measuredAt?: string;
+    measuredBy?: string;
+  };
+  dependencies?: {
+    skills?: Array<string | { name: string; optional?: boolean }>;
+    scripts?: Array<string | { path: string; optional?: boolean; purpose?: string }>;
+    mcpTools?: string[];
+  };
+  generation?: {
+    generatedBy?: string;
+    generatedAt?: string;
+    model?: string;
+    promptRef?: string;
+  };
+}
+
 export interface VersionInfo {
   version: string;
   raw: string;
