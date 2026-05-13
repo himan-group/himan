@@ -2,6 +2,8 @@ import type {
   CreateOptions,
   CreateResult,
   PublishResult,
+  RenameOptions,
+  RenameResult,
   ResourceMeta,
   ResourceType,
   VersionInfo,
@@ -41,5 +43,11 @@ export interface ResourceSourceAdapter {
     name: string,
     options: CreateOptions,
   ): Promise<CreateResult>;
+  rename(
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+    options?: RenameOptions,
+  ): Promise<RenameResult>;
   initDocs(options: SourceDocsOptions): Promise<SourceDocsResult>;
 }

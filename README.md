@@ -50,7 +50,7 @@ himan dev rule my-rule
 himan publish rule my-rule --patch
 ```
 
-- **rule / command / skill**：都支持 `create`、`list`、`history`、`install`、`dev`、`publish`、`uninstall`。
+- **rule / command / skill**：都支持 `create`、`rename`、`list`、`history`、`install`、`dev`、`publish`、`uninstall`；其中 `rename` 暂不推荐使用。
 - 安装后项目目标位置（按 `agents`，默认 `cursor`）：
   - `cursor` -> `.cursor/{rules|commands|skills}/<name>`
   - `claude-code` -> `.claude/{rules|commands|skills}/<name>`
@@ -96,15 +96,45 @@ your-himan-source/
 - `README.md`：source 仓库入口文档，建议记录资源目录说明、推荐安装方式、默认 agent 策略、常用资源索引和维护约定。
 - `CHANGELOG.md`：source 仓库级变更记录，建议记录新增、变更、废弃、移除的资源，以及重要版本发布说明。
 - `rules/`、`commands/`、`skills/`：按资源类型分组；每个子目录是一份 himan 资源。
-- `himan.yaml`：可选资源元数据；存在时供 himan 扫描、校验、读取入口和默认 agent。
+- `himan.yaml`：可选资源元数据；存在时供 himan 扫描、校验、读取入口和默认 agent；skill 资源可包含 `analysis` 静态分析信息。
 - `content.md` / `SKILL.md`：资源主入口；没有 `himan.yaml` 时，`rule` / `command` 默认使用 `content.md`，`skill` 默认使用 `SKILL.md`。
+
+skill 的 `himan.yaml` 推荐包含静态分析 metadata，便于 hooks、日志和后续分析系统关联 skill 内容成本与依赖：
+
+```yaml
+name: my-skill
+type: skill
+version: 0.1.0
+entry: SKILL.md
+description: Do the skill workflow.
+agents:
+  - codex
+analysis:
+  content:
+    tokenizer: approx-char-v1
+    tokenEstimator: ceil(chars/4)
+    entryTokens: 120
+    packageTokens: 180
+    contentHash: sha256:...
+    measuredAt: "2026-05-13T00:00:00.000Z"
+    measuredBy: codex
+  dependencies:
+    skills: []
+    scripts: []
+    mcpTools: []
+  generation:
+    generatedBy: codex
+    generatedAt: "2026-05-13T00:00:00.000Z"
+```
+
+`analysis` 是静态构建信息，不记录运行时 token 或执行耗时；`himan create skill` 会为新 skill scaffold 生成基础 `analysis`。
 
 可通过 `himan source init-docs` 为当前 default source 生成根目录文档模板；默认只创建缺失文件，`--force` 会覆盖已有 `README.md` / `CHANGELOG.md`，并把当前 source 中已有的 `rule`、`command`、`skill` 整理进 README 资源索引和 CHANGELOG 初始条目；资源引用会优先带上 Git tag 中的最新 semver 版本；对于尚未补齐 `himan.yaml` 的资源，会按默认入口识别，skill 还会读取 `skills/<name>/SKILL.md` front matter。`--dry-run` 可预览结果。有实际文件变更时，命令会提交并 push 到当前 Git source。
 
-`himan create` 和 `himan publish` 会自动维护 source 根目录文档：
+`himan create`、`himan rename` 和 `himan publish` 会自动维护 source 根目录文档：
 
 - `README.md`：只更新 `<!-- himan:resources:start -->` 和 `<!-- himan:resources:end -->` 之间的资源索引；如果没有 marker，会在文件末尾追加一个受控资源索引区。
-- `CHANGELOG.md`：向 `[Unreleased]` 下追加资源变更条目；`create` 记录 `Added`，`publish` 记录 `Changed` / published version。
+- `CHANGELOG.md`：向 `[Unreleased]` 下追加资源变更条目；`create` 记录 `Added`，`rename` / `publish` 记录 `Changed`。
 
 仓库根目录的 `README.md` 和 `CHANGELOG.md` 不会被安装到 agent 目录；agent 只消费被安装的具体资源目录。当前安装实现会 materialize 资源目录本身，因此对 Cursor 这类要求特定单文件格式的 agent，资源目录内应避免放入会干扰识别的额外文件。
 
@@ -136,6 +166,7 @@ your-himan-source/
 | `list [type] [--agent a,b] [--brief] [--installed] [--json]` | 默认列出当前 default source 的资源；未传 `type` 时按 `rule`/`command`/`skill` 分组展示全部资源；可按 agent 过滤；默认显示描述，`--brief` 可隐藏描述；`--installed` 改为查看当前项目 `himan.lock` 中的已安装资源 |
 | `history <type> <name> [--json]` | 按 tag 查看版本历史                                                                 |
 | `create <type> <name>`           | 脚手架；常用选项：`--description`、`--agent a,b`、`--dry-run`、`--force`、`--json` |
+| `rename <type> <old-name> <new-name>` | 暂不推荐使用；重命名当前 default source 中的资源；常用选项：`--dry-run`、`--no-project`、`--json` |
 
 ### 3) project（当前项目）
 
@@ -158,8 +189,8 @@ your-himan-source/
 
 也可使用分组命令（与上面等价）：
 
-- `himan resource list|history|create ...`
-- `himan-resource list|history|create ...`（兼容保留：也可执行 install/dev/uninstall/publish）
+- `himan resource list|history|create|rename ...`
+- `himan-resource list|history|create|rename ...`（兼容保留：也可执行 install/dev/uninstall/publish）
 - `himan project list|install|dev|uninstall|publish ...`
 - `himan-project list|install|dev|uninstall|publish ...`
 - `himan agent list|use|current|clear ...`
@@ -169,9 +200,11 @@ your-himan-source/
 
 `publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。若资源目录包含 `himan.yaml`，发布前会校验元数据与入口文件；若没有 `himan.yaml`，则按默认入口推断最小元数据并发布，不会强制创建 `himan.yaml`。若待发布资源内容与最新已发布版本一致，则以 `E_PUBLISH_NO_CHANGES` 终止发布。发布需要可推送的 Git 权限。发布 commit 会包含资源目录以及自动维护的 source 根目录 `README.md` / `CHANGELOG.md`。发布成功后会从新版本 store 以 `copy` 模式重新安装到项目目标、更新 lock，并删除对应 `.himan/dev/<type>/<name>` 开发目录。
 
+`rename` 暂不推荐使用。该命令会移动 source 仓库里的资源目录并更新资源 metadata 名称、README 资源索引和 CHANGELOG。已有发布 tag 不会被改写；若旧资源已有历史版本，rename 会为新名字创建一个指向当前最新版本的 tag。默认会迁移当前项目中对应的安装目标、`.himan/dev` 副本和 lock 条目；传 `--no-project` 时只改 source。对于 skill，命令只自动更新 metadata / front matter 中的精确 `name` 字段，不会自动替换 `SKILL.md` 正文中的旧名称引用。
+
 `--json` 模式下，失败时会输出机器可读错误 JSON（`stderr`）。错误码定义见 [docs/error-codes.md](./docs/error-codes.md)。
 
-多源说明：当前是「**多来源可配置，单来源生效**」模型。显式资源命令（`list/install <type> .../history/dev/publish`）作用于当前 default source；`himan install` 无参数恢复时使用 `himan.lock` 中记录的 source。
+多源说明：当前是「**多来源可配置，单来源生效**」模型。显式资源命令（`list/install <type> .../history/dev/publish/rename`）作用于当前 default source；`himan install` 无参数恢复时使用 `himan.lock` 中记录的 source。
 
 ## 当前范围
 

@@ -87,10 +87,11 @@ function appendCommandGroupsHelp(program: Command): void {
     `
 Command groups:
   source   Data source management (git now, registry reserved)
-           init, source init, source add, source use, source list, source init-docs
+           init, source init, source add, source use, source list,
+           source init-docs, source clone, source sync
   resource Source resource discovery and metadata
-           list, list --installed, history, create,
-           resource list, resource history, resource create
+           list, list --installed, history, create, rename (not recommended yet),
+           resource list, resource history, resource create, resource rename
   project  Resource usage lifecycle in current project or user-level agent dirs
            list, install, dev, uninstall, publish,
            project list, project install, project dev, project uninstall, project publish

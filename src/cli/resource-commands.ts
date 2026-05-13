@@ -147,6 +147,47 @@ export function registerResourceCommands(command: Command, services: ServiceFact
         });
       },
     );
+
+  command
+    .command("rename")
+    .argument("<type>", "resource type")
+    .argument("<old-name>", "current resource name")
+    .argument("<new-name>", "new resource name")
+    .option("--dry-run", "show rename result without writing")
+    .option("--no-project", "do not migrate current project install targets or lock")
+    .option("--json", "output json format")
+    .description("Rename resource in current default source (not recommended yet)")
+    .action(
+      async (
+        type: string,
+        oldName: string,
+        newName: string,
+        options: { dryRun?: boolean; project?: boolean; json?: boolean },
+      ) => {
+        await runAction(async () => {
+          const resourceType = ensureResourceType(type);
+          const result = await services.rename(
+            resourceType,
+            oldName,
+            newName,
+            process.cwd(),
+            {
+              dryRun: options.dryRun,
+              migrateProject: options.project,
+            },
+          );
+          if (options.json) {
+            process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+            return;
+          }
+          process.stdout.write(
+            `Renamed ${result.type}/${result.oldName} to ${result.type}/${result.newName}${
+              result.dryRun ? " (dry-run)" : ""
+            }\n`,
+          );
+        });
+      },
+    );
 }
 
 async function writeInstalledList(
