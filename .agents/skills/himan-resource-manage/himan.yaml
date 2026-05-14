@@ -2,20 +2,17 @@ name: himan-resource-manage
 type: skill
 version: 0.0.1
 entry: SKILL.md
-description: Create, edit, validate, and publish Himan rule, command, or skill
-  resources from project agent folders. Use when Codex needs to manage Himan
-  resources with `himan create`, `himan dev`, project/global install target
-  decisions, `himan publish`, and lock-file verification.
+description: Create, edit, validate, and publish Himan rule, command, or skill resources from project agent folders. Use when Codex needs to manage Himan resources with `himan create`, `himan dev`, project/global install target decisions, `himan publish`, lock-file verification, and a required Himan CLI version gate.
 agents:
   - codex
 analysis:
   content:
     tokenizer: approx-char-v1
     tokenEstimator: ceil(chars/4)
-    entryTokens: 1217
-    packageTokens: 1282
-    contentHash: sha256:4832e7ab2bbec8aaf8bc22dd0e50c7c7414f1b8b962e8d3f1841cc4710a6e10a
-    measuredAt: 2026-05-14T07:09:42.947Z
+    entryTokens: 1392
+    packageTokens: 1457
+    contentHash: sha256:626559c3676acac1961bea453f70be9f5f42f8a1be62d9740d84a567e2caa6f3
+    measuredAt: 2026-05-14T07:41:47.370Z
     measuredBy: codex
   dependencies:
     skills: []
@@ -23,5 +20,5 @@ analysis:
     mcpTools: []
   generation:
     generatedBy: codex
-    generatedAt: 2026-05-14T07:09:42.947Z
+    generatedAt: 2026-05-14T07:41:47.370Z
     promptRef: skill-creator

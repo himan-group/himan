@@ -1,11 +1,29 @@
 ---
 name: himan-resource-manage
-description: Create, edit, validate, and publish Himan rule, command, or skill resources from project agent folders. Use when Codex needs to manage Himan resources with `himan create`, `himan dev`, project/global install target decisions, `himan publish`, and lock-file verification.
+description: Create, edit, validate, and publish Himan rule, command, or skill resources from project agent folders. Use when Codex needs to manage Himan resources with `himan create`, `himan dev`, project/global install target decisions, `himan publish`, lock-file verification, and a required Himan CLI version gate.
 ---
 
 # Himan Resource Manage
 
 Use this skill to manage Himan resources in the same directories agents consume, then publish them back to the current default Git source.
+
+## Version Gate
+
+Run this gate before any create, dev, publish, or discovery command:
+
+```bash
+himan --version
+```
+
+Require Himan CLI `0.4.1` or newer. Version `0.4.1` introduced the project-agent-folder create/dev flow this skill relies on.
+
+If `himan` is missing, the version cannot be parsed, or the version is lower than `0.4.1`, stop the workflow. Tell the user:
+
+```text
+当前 himan 版本不支持项目目录内的资源 create/dev/publish 流程。请升级到 @hi-man/himan >= 0.4.1 后再继续。
+```
+
+Do not run `himan dev`, `himan create`, or `himan publish` after a failed version gate. Older versions may create `.himan/dev` copies or miss the publish/install lock-file behavior expected by this skill.
 
 ## Core Model
 

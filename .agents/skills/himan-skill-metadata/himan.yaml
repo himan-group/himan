@@ -2,21 +2,17 @@ name: himan-skill-metadata
 type: skill
 version: 0.0.3
 entry: SKILL.md
-description: Create or update Himan skill metadata. Use when Codex creates,
-  edits, migrates, or audits a skill folder with SKILL.md and should also
-  generate or refresh a matching himan.yaml file containing static analysis
-  metadata such as content token estimates, hashes, dependencies, scripts, MCP
-  tools, and generation details.
+description: Create or update Himan skill metadata. Use when Codex creates, edits, migrates, or audits a skill folder with SKILL.md and should also generate or refresh a matching himan.yaml file containing static analysis metadata such as content token estimates, hashes, dependencies, scripts, MCP tools, and generation details.
 agents:
   - codex
 analysis:
   content:
     tokenizer: approx-char-v1
     tokenEstimator: ceil(chars/4)
-    entryTokens: 774
-    packageTokens: 3079
-    contentHash: sha256:6c961a4867043af109032d1b54f2544b192bd852fd6ace5b246c2404351636ee
-    measuredAt: 2026-05-14T07:09:59.106Z
+    entryTokens: 934
+    packageTokens: 4287
+    contentHash: sha256:cdd0705fa63b411df4db44cbf82c6e282efa0844468afc3defcfe8381302b075
+    measuredAt: 2026-05-14T07:38:10.644Z
     measuredBy: codex
   dependencies:
     skills:
@@ -28,5 +24,5 @@ analysis:
       - functions.exec_command
   generation:
     generatedBy: codex
-    generatedAt: 2026-05-14T07:09:59.106Z
+    generatedAt: 2026-05-14T07:38:10.644Z
     promptRef: skill-creator
