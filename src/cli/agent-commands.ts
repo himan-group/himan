@@ -27,7 +27,7 @@ export function registerAgentCommands(command: Command, services: ServiceFactory
   command
     .command("use")
     .argument("<agent_list>", "agent list, comma separated")
-    .option("--global", "save as global default")
+    .option("-g, --global", "save as global default")
     .option("--project", "save as current project default")
     .option("--json", "output json format")
     .description("Set default agents globally or for current project")
@@ -73,7 +73,7 @@ export function registerAgentCommands(command: Command, services: ServiceFactory
 
   command
     .command("clear")
-    .option("--global", "clear global default agents")
+    .option("-g, --global", "clear global default agents")
     .option("--project", "clear current project default agents")
     .option("--json", "output json format")
     .description("Clear configured default agents")
@@ -95,7 +95,7 @@ function parseScope(options: { global?: boolean; project?: boolean }): AgentScop
   if (options.global && options.project) {
     throw new HimanError(
       errorCodes.CLI_USAGE,
-      "Use only one of --global or --project.",
+      "Use only one of -g/--global or --project.",
     );
   }
   return options.global ? "global" : "project";

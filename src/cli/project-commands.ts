@@ -65,7 +65,7 @@ export function registerProjectCommands(
     .argument("[name[@version]]", "resource name with optional @version")
     .option("--agent <list>", "install target agents, comma separated")
     .option("--mode <mode>", "install mode: link or copy")
-    .option("--global", "install into user-level agent directories")
+    .option("-g, --global", "install into user-level agent directories")
     .option("--include-archived", "allow installing an archived resource explicitly")
     .description("Install resource, or install from himan.lock")
     .action(
@@ -93,7 +93,7 @@ export function registerProjectCommands(
               throw new HimanError(
                 errorCodes.CLI_USAGE,
                 "Global install requires a resource:\n"
-                  + "  - himan install <type> <name[@version]> --global [--mode link|copy]",
+                  + "  - himan install <type> <name[@version]> -g [--mode link|copy]",
               );
             }
             const results = await services.installFromLock(process.cwd(), agents, mode);
@@ -113,7 +113,7 @@ export function registerProjectCommands(
               "Install usage:\n"
                 + "  - himan install  # install from himan.lock\n"
                 + "  - himan install <type> <name[@version]> [--mode link|copy]  # install single resource\n"
-                + "  - himan install <type> <name[@version]> --global [--mode link|copy]  # install single resource globally",
+                + "  - himan install <type> <name[@version]> -g [--mode link|copy]  # install single resource globally",
             );
           }
 
@@ -186,7 +186,7 @@ export function registerProjectCommands(
     .option("--patch", "patch release")
     .option("--minor", "minor release")
     .option("--major", "major release")
-    .option("--global", "install the published version into user-level agent directories")
+    .option("-g, --global", "install the published version into user-level agent directories")
     .description("Publish resource (default: --patch)")
     .action(
       async (
@@ -201,7 +201,7 @@ export function registerProjectCommands(
           process.stdout.write(
             options.global
               ? "Published resource will be installed globally; current project lock will not be updated.\n"
-              : "Published resource will be installed into the current project and recorded in himan.lock. Use --global to install globally instead.\n",
+              : "Published resource will be installed into the current project and recorded in himan.lock. Use -g/--global to install globally instead.\n",
           );
           const result = await services.publish(
             resourceType,

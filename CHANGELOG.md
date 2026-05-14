@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Added
+
+- Added `-g` as a shorthand for `--global` on `install`, `publish`, `agent use`, and `agent clear`.
+
 ## [0.5.1] - 2026-05-14
 
 ### Fixed
