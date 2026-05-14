@@ -24,7 +24,7 @@ Use the bundled script when possible:
 
 ```bash
 node scripts/build_himan_yaml.mjs <skill-dir> \
-  --version 0.1.0 \
+  --version 0.0.1 \
   --agent codex \
   --generated-by codex \
   --measured-by codex \
@@ -43,7 +43,7 @@ Use this structure for skill metadata:
 ```yaml
 name: example-skill
 type: skill
-version: 0.1.0
+version: 0.0.1
 entry: SKILL.md
 description: Do the example workflow.
 agents:
@@ -76,5 +76,6 @@ analysis:
 - Treat `analysis` as static build-time metadata, not runtime telemetry.
 - Keep token fields tied to the tokenizer or estimator that produced them.
 - Keep `contentHash` based on package text content, excluding `himan.yaml` itself.
+- Use `0.0.1` for newly created skill resources unless the user explicitly requests a different initial version.
 - Use `agents: [codex]` for Codex-only skills unless the user asks for another target.
 - Do not invent dependencies. Record only dependencies implied by the skill instructions or bundled files.
