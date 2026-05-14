@@ -20,23 +20,48 @@ export function registerResourceCommands(command: Command, services: ServiceFact
     .option("--agent <list>", "agent list filter, comma separated")
     .option("--brief", "hide resource descriptions")
     .option("--installed", "list resources installed in current project")
+    .option("--archived", "list archived resources only")
+    .option("--include-archived", "include archived resources in source list")
     .option("--json", "output json format")
     .description("List resources from current default source or project installs")
     .action(
       async (
         type: string | undefined,
-        options: { json?: boolean; agent?: string; brief?: boolean; installed?: boolean },
+        options: {
+          json?: boolean;
+          agent?: string;
+          brief?: boolean;
+          installed?: boolean;
+          archived?: boolean;
+          includeArchived?: boolean;
+        },
       ) => {
         await runAction(async () => {
           const agents = parseAgents(options.agent);
           const showDescription = !options.brief;
+          if (options.installed && (options.archived || options.includeArchived)) {
+            throw new HimanError(
+              errorCodes.CLI_USAGE,
+              "--archived and --include-archived only apply to source resource lists.",
+            );
+          }
+          if (options.archived && options.includeArchived) {
+            throw new HimanError(
+              errorCodes.CLI_USAGE,
+              "Use only one of --archived or --include-archived.",
+            );
+          }
+          const listOptions = {
+            archived: Boolean(options.archived),
+            includeArchived: Boolean(options.includeArchived),
+          };
           if (options.installed) {
             await writeInstalledList(services, type, agents, Boolean(options.json));
             return;
           }
 
           if (!type) {
-            const groups = await listGroupedResources(services, agents);
+            const groups = await listGroupedResources(services, agents, listOptions);
             if (options.json) {
               process.stdout.write(
                 `${JSON.stringify(formatResourceGroups(groups, showDescription), null, 2)}\n`,
@@ -48,7 +73,7 @@ export function registerResourceCommands(command: Command, services: ServiceFact
           }
 
           const resourceType = ensureResourceType(type);
-          const resources = await services.list(resourceType, agents);
+          const resources = await services.list(resourceType, agents, listOptions);
           if (options.json) {
             process.stdout.write(
               `${JSON.stringify(formatResources(resources, showDescription), null, 2)}\n`,
@@ -149,6 +174,70 @@ export function registerResourceCommands(command: Command, services: ServiceFact
     );
 
   command
+    .command("archive")
+    .argument("<type>", "resource type")
+    .argument("<name>", "resource name")
+    .option("--reason <text>", "archive reason")
+    .option("--dry-run", "show archive result without writing")
+    .option("--json", "output json format")
+    .description("Archive resource in current default source")
+    .action(
+      async (
+        type: string,
+        name: string,
+        options: { reason?: string; dryRun?: boolean; json?: boolean },
+      ) => {
+        await runAction(async () => {
+          const resourceType = ensureResourceType(type);
+          const result = await services.archive(resourceType, name, {
+            reason: options.reason,
+            dryRun: options.dryRun,
+          });
+          if (options.json) {
+            process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+            return;
+          }
+          process.stdout.write(
+            `Archived ${result.type}/${result.name}${
+              result.dryRun ? " (dry-run)" : ""
+            }\n`,
+          );
+        });
+      },
+    );
+
+  command
+    .command("restore")
+    .argument("<type>", "resource type")
+    .argument("<name>", "resource name")
+    .option("--dry-run", "show restore result without writing")
+    .option("--json", "output json format")
+    .description("Restore archived resource into current default source")
+    .action(
+      async (
+        type: string,
+        name: string,
+        options: { dryRun?: boolean; json?: boolean },
+      ) => {
+        await runAction(async () => {
+          const resourceType = ensureResourceType(type);
+          const result = await services.restore(resourceType, name, {
+            dryRun: options.dryRun,
+          });
+          if (options.json) {
+            process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+            return;
+          }
+          process.stdout.write(
+            `Restored ${result.type}/${result.name}${
+              result.dryRun ? " (dry-run)" : ""
+            }\n`,
+          );
+        });
+      },
+    );
+
+  command
     .command("rename")
     .argument("<type>", "resource type")
     .argument("<old-name>", "current resource name")
@@ -228,11 +317,12 @@ function ensureResourceType(type: string): ResourceType {
 async function listGroupedResources(
   services: ServiceFactory,
   agents?: string[],
+  options: { archived?: boolean; includeArchived?: boolean } = {},
 ): Promise<ResourceGroups> {
   return {
-    rule: await services.list("rule", agents),
-    command: await services.list("command", agents),
-    skill: await services.list("skill", agents),
+    rule: await services.list("rule", agents, options),
+    command: await services.list("command", agents, options),
+    skill: await services.list("skill", agents, options),
   };
 }
 
@@ -280,8 +370,9 @@ function writeResourceList(resources: ResourceMeta[], showDescription: boolean):
   }
 
   for (const resource of resources) {
+    const archived = resource.archived ? " [archived]" : "";
     process.stdout.write(
-      `- ${resource.type}/${resource.name}${
+      `- ${resource.type}/${resource.name}${archived}${
         showDescription && resource.description ? `: ${resource.description}` : ""
       }\n`,
     );

@@ -1,11 +1,16 @@
 import type {
+  ArchiveOptions,
+  ArchiveResult,
   CreateOptions,
   CreateResult,
   PublishResult,
   RenameOptions,
   RenameResult,
+  ResourceListOptions,
   ResourceMeta,
   ResourceType,
+  RestoreOptions,
+  RestoreResult,
   VersionInfo,
 } from "../../domain/resource.js";
 import type {
@@ -51,7 +56,7 @@ const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
 const README_RESOURCES_START = "<!-- himan:resources:start -->";
 const README_RESOURCES_END = "<!-- himan:resources:end -->";
 
-type ChangelogSection = "Added" | "Changed";
+type ChangelogSection = "Added" | "Changed" | "Deprecated" | "Removed";
 
 interface ChangelogEntry {
   section: ChangelogSection;
@@ -82,21 +87,37 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     await this.repoManager.cloneOrFetch(sourceConfig.repo, sourceConfig.repoDir);
   }
 
-  async list(type: ResourceType): Promise<ResourceMeta[]> {
+  async list(
+    type: ResourceType,
+    options: ResourceListOptions = {},
+  ): Promise<ResourceMeta[]> {
     const repoDir = this.getRepoDir();
+    if (options.archived) {
+      return this.scanner.scanByType(repoDir, type, { archived: true });
+    }
+
     const repoId = this.sourceConfig?.repoId ?? "default";
     const typeDir = this.getTypeDir(type);
     const baseDir = path.join(repoDir, typeDir);
     const metadataHash = await this.getResourceMetadataHash(baseDir, type);
 
     const cached = await this.indexStore.get(repoId, type);
+    let active: ResourceMeta[];
     if (cached && cached.metadataHash === metadataHash) {
-      return cached.resources;
+      active = cached.resources;
+    } else {
+      active = await this.scanner.scanByType(repoDir, type);
+      await this.indexStore.upsert(repoId, type, metadataHash, active);
     }
 
-    const scanned = await this.scanner.scanByType(repoDir, type);
-    await this.indexStore.upsert(repoId, type, metadataHash, scanned);
-    return scanned;
+    if (!options.includeArchived) {
+      return active;
+    }
+
+    const archived = await this.scanner.scanByType(repoDir, type, {
+      archived: true,
+    });
+    return [...active, ...archived].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   async history(type: ResourceType, name: string): Promise<VersionInfo[]> {
@@ -111,6 +132,10 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       .sort((a, b) => semver.rcompare(a.version, b.version));
 
     return versions;
+  }
+
+  async isArchived(type: ResourceType, name: string): Promise<boolean> {
+    return this.exists(path.join(this.getRepoDir(), "archive", this.getTypeDir(type), name));
   }
 
   async pull(
@@ -326,6 +351,152 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     };
   }
 
+  async archive(
+    type: ResourceType,
+    name: string,
+    options: ArchiveOptions = {},
+  ): Promise<ArchiveResult> {
+    const repoDir = this.getRepoDir();
+    const typeDir = this.getTypeDir(type);
+    const previousResourceDir = path.join(repoDir, typeDir, name);
+    const archiveDir = path.join(repoDir, "archive", typeDir, name);
+    const archiveReason = this.normalizeArchiveReason(options.reason);
+    const archivedAt = new Date().toISOString();
+
+    if (!(await this.exists(previousResourceDir))) {
+      if (await this.exists(archiveDir)) {
+        throw new HimanError(
+          errorCodes.RESOURCE_ARCHIVED,
+          `Resource already archived: ${type}/${name}`,
+        );
+      }
+      throw new HimanError(
+        errorCodes.RESOURCE_NOT_FOUND,
+        `Resource not found: ${type}/${name}`,
+      );
+    }
+    if (await this.exists(archiveDir)) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Archived resource already exists: ${type}/${name}`,
+      );
+    }
+
+    if (options.dryRun) {
+      return {
+        type,
+        name,
+        previousResourceDir,
+        archiveDir,
+        archivedAt,
+        archiveReason,
+        committed: false,
+        dryRun: true,
+      };
+    }
+
+    await this.markArchivedResourceMetadata(
+      previousResourceDir,
+      type,
+      name,
+      archivedAt,
+      archiveReason,
+    );
+    await fs.mkdir(path.dirname(archiveDir), { recursive: true });
+    await fs.rename(previousResourceDir, archiveDir);
+
+    const docsPaths = await this.maintainSourceDocs(repoDir, {
+      section: "Deprecated",
+      line: archiveReason
+        ? `- Archived \`${type}/${name}\`: ${archiveReason}.`
+        : `- Archived \`${type}/${name}\`.`,
+    });
+    const committed = await this.repoManager.commitAndPush(
+      repoDir,
+      `archive ${type}/${name}`,
+      undefined,
+      [
+        path.relative(repoDir, previousResourceDir),
+        path.relative(repoDir, archiveDir),
+        ...docsPaths.map((docPath) => path.relative(repoDir, docPath)),
+      ],
+    );
+
+    return {
+      type,
+      name,
+      previousResourceDir,
+      archiveDir,
+      archivedAt,
+      archiveReason,
+      committed,
+      dryRun: false,
+    };
+  }
+
+  async restore(
+    type: ResourceType,
+    name: string,
+    options: RestoreOptions = {},
+  ): Promise<RestoreResult> {
+    const repoDir = this.getRepoDir();
+    const typeDir = this.getTypeDir(type);
+    const previousArchiveDir = path.join(repoDir, "archive", typeDir, name);
+    const resourceDir = path.join(repoDir, typeDir, name);
+
+    if (!(await this.exists(previousArchiveDir))) {
+      throw new HimanError(
+        errorCodes.RESOURCE_NOT_FOUND,
+        `Archived resource not found: ${type}/${name}`,
+      );
+    }
+    if (await this.exists(resourceDir)) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Resource already exists: ${type}/${name}`,
+      );
+    }
+
+    if (options.dryRun) {
+      return {
+        type,
+        name,
+        previousArchiveDir,
+        resourceDir,
+        committed: false,
+        dryRun: true,
+      };
+    }
+
+    await this.clearArchivedResourceMetadata(previousArchiveDir, type, name);
+    await fs.mkdir(path.dirname(resourceDir), { recursive: true });
+    await fs.rename(previousArchiveDir, resourceDir);
+
+    const docsPaths = await this.maintainSourceDocs(repoDir, {
+      section: "Changed",
+      line: `- Restored \`${type}/${name}\` from archive.`,
+    });
+    const committed = await this.repoManager.commitAndPush(
+      repoDir,
+      `restore ${type}/${name}`,
+      undefined,
+      [
+        path.relative(repoDir, previousArchiveDir),
+        path.relative(repoDir, resourceDir),
+        ...docsPaths.map((docPath) => path.relative(repoDir, docPath)),
+      ],
+    );
+
+    return {
+      type,
+      name,
+      previousArchiveDir,
+      resourceDir,
+      committed,
+      dryRun: false,
+    };
+  }
+
   async initDocs(options: SourceDocsOptions = {}): Promise<SourceDocsResult> {
     const repoDir = this.getRepoDir();
     const files = [
@@ -520,6 +691,80 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     }).trimEnd();
     const updated = `---\n${frontMatter}\n---\n${raw.slice(match[0].length)}`;
     await fs.writeFile(skillPath, updated, "utf8");
+  }
+
+  private normalizeArchiveReason(reason: string | undefined): string | undefined {
+    const trimmed = reason?.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  private async markArchivedResourceMetadata(
+    resourceDir: string,
+    type: ResourceType,
+    name: string,
+    archivedAt: string,
+    archiveReason: string | undefined,
+  ): Promise<void> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (!(await this.exists(yamlPath))) return;
+
+    const parsed = await this.readResourceYamlObject(yamlPath, type, name);
+    await fs.writeFile(
+      yamlPath,
+      YAML.stringify({
+        ...parsed,
+        archived: true,
+        archivedAt,
+        ...(archiveReason ? { archiveReason } : {}),
+      }),
+      "utf8",
+    );
+  }
+
+  private async clearArchivedResourceMetadata(
+    resourceDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<void> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (!(await this.exists(yamlPath))) return;
+
+    const parsed = await this.readResourceYamlObject(yamlPath, type, name);
+    const {
+      archived: _archived,
+      archivedAt: _archivedAt,
+      archiveReason: _archiveReason,
+      ...rest
+    } = parsed;
+    await fs.writeFile(yamlPath, YAML.stringify(rest), "utf8");
+  }
+
+  private async readResourceYamlObject(
+    yamlPath: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<Record<string, unknown>> {
+    const raw = await fs.readFile(yamlPath, "utf8");
+    let parsed: unknown;
+    try {
+      parsed = YAML.parse(raw);
+    } catch (error) {
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        "himan.yaml is not valid YAML.",
+        { yamlPath, reason: error instanceof Error ? error.message : String(error) },
+      );
+    }
+    if (!this.isRecord(parsed)) {
+      throw this.invalidResourceMetadata(
+        type,
+        name,
+        "himan.yaml must be an object.",
+        { yamlPath },
+      );
+    }
+    return parsed;
   }
 
   private async validatePublishResource(
@@ -1221,7 +1466,12 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     blockEnd: number,
     section: ChangelogSection,
   ): number {
-    const sectionOrder: ChangelogSection[] = ["Added", "Changed"];
+    const sectionOrder: ChangelogSection[] = [
+      "Added",
+      "Changed",
+      "Deprecated",
+      "Removed",
+    ];
     const sectionRank = sectionOrder.indexOf(section);
     for (let index = unreleasedIndex + 1; index < blockEnd; index += 1) {
       const line = lines[index].trim();

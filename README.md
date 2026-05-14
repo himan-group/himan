@@ -98,11 +98,19 @@ your-himan-source/
     my-skill/
       himan.yaml
       SKILL.md
+  archive/
+    rules/
+      old-rule/
+        himan.yaml
+        content.md
+    commands/
+    skills/
 ```
 
 - `README.md`：source 仓库入口文档，建议记录资源目录说明、推荐安装方式、默认 agent 策略、常用资源索引和维护约定。
 - `CHANGELOG.md`：source 仓库级变更记录，建议记录新增、变更、废弃、移除的资源，以及重要版本发布说明。
 - `rules/`、`commands/`、`skills/`：按资源类型分组；每个子目录是一份 himan 资源。
+- `archive/rules/`、`archive/commands/`、`archive/skills/`：归档资源目录；默认列表、文档索引和 source sync 不把它们视为 active 资源。
 - `himan.yaml`：可选资源元数据；存在时供 himan 扫描、校验、读取入口和默认 agent；skill 资源可包含 `analysis` 静态分析信息。
 - `content.md` / `SKILL.md`：资源主入口；没有 `himan.yaml` 时，`rule` / `command` 默认使用 `content.md`，`skill` 默认使用 `SKILL.md`。
 
@@ -176,9 +184,11 @@ analysis:
 
 | 命令                             | 说明                                                                                |
 | -------------------------------- | ----------------------------------------------------------------------------------- |
-| `list [type] [--agent a,b] [--brief] [--installed] [--json]` | 默认列出当前 default source 的资源；未传 `type` 时按 `rule`/`command`/`skill` 分组展示全部资源；可按 agent 过滤；默认显示描述，`--brief` 可隐藏描述；`--installed` 改为查看当前项目 `himan.lock` 中的已安装资源 |
+| `list [type] [--agent a,b] [--brief] [--installed] [--archived] [--include-archived] [--json]` | 默认列出当前 default source 的 active 资源；未传 `type` 时按 `rule`/`command`/`skill` 分组展示全部资源；可按 agent 过滤；默认显示描述，`--brief` 可隐藏描述；`--installed` 改为查看当前项目 `himan.lock` 中的已安装资源；`--archived` 只看归档资源，`--include-archived` 同时展示 active 和归档资源 |
 | `history <type> <name> [--json]` | 按 tag 查看版本历史                                                                 |
 | `create <type> <name>`           | 在当前项目 agent 目录创建脚手架；常用选项：`--description`、`--agent a,b`、`--dry-run`、`--force`、`--json` |
+| `archive <type> <name>`          | 将当前 default source 中的资源移动到 `archive/<plural>/<name>`；常用选项：`--reason`、`--dry-run`、`--json` |
+| `restore <type> <name>`          | 将归档资源恢复回 active 类型目录；常用选项：`--dry-run`、`--json` |
 | `rename <type> <old-name> <new-name>` | 暂不推荐使用；重命名当前 default source 中的资源；常用选项：`--dry-run`、`--no-project`、`--json` |
 
 ### 3) project（当前项目）
@@ -186,7 +196,7 @@ analysis:
 | 命令                              | 说明                                                      |
 | --------------------------------- | --------------------------------------------------------- |
 | `list [type] [--agent a,b] [--json]` | 查看当前项目 `himan.lock` 中记录的已安装资源；未传 `type` 时按 `rule`/`command`/`skill` 分组展示 |
-| `install [type] [name[@version]] [--global] [--agent a,b] [--mode link\|copy]` | 有参数时从当前 default source 安装指定资源；**无参数**时按 `himan.lock` 记录的 source 批量安装；加 `--global` 时安装到用户级 agent 目录且不写项目 lock；可覆盖安装目标 agent 或安装模式 |
+| `install [type] [name[@version]] [--global] [--agent a,b] [--mode link\|copy] [--include-archived]` | 有参数时从当前 default source 安装指定资源；**无参数**时按 `himan.lock` 记录的 source 批量安装；加 `--global` 时安装到用户级 agent 目录且不写项目 lock；可覆盖安装目标 agent 或安装模式；归档资源必须显式传 `--include-archived` 才能按历史版本安装 |
 | `dev <type> <name>`               | 切换到开发态；项目资源原地编辑，全局资源先复制到当前项目目标目录 |
 | `uninstall <type> <name>`         | 从项目移除安装目标，并同步删除 `himan.lock` 条目           |
 | `publish <type> <name> [--global]` | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个）；发布后默认安装到当前项目并更新 lock，`--global` 安装到用户级目录 |
@@ -204,12 +214,12 @@ analysis:
 
 | 命令 | 说明 |
 |------|------|
-| `doctor [--json]` | 检查 Node/Git、Himan home、当前 source、资源扫描、默认 agent、项目 lock 和已安装目标；存在 error 时以非零状态退出 |
+| `doctor [--json]` | 检查 Node/Git、Himan home、当前 source、资源扫描、默认 agent、项目 lock、归档资源引用和已安装目标；存在 error 时以非零状态退出 |
 
 也可使用分组命令（与上面等价）：
 
-- `himan resource list|history|create|rename ...`
-- `himan-resource list|history|create|rename ...`（兼容保留：也可执行 install/dev/uninstall/publish）
+- `himan resource list|history|create|archive|restore|rename ...`
+- `himan-resource list|history|create|archive|restore|rename ...`（兼容保留：也可执行 install/dev/uninstall/publish）
 - `himan project list|install|dev|uninstall|publish ...`
 - `himan-project list|install|dev|uninstall|publish ...`
 - `himan agent list|use|current|clear ...`
@@ -221,6 +231,8 @@ analysis:
 `publish` 会展示 prepare、resolve-version、publish-source、sync-store、install、cleanup、done 等阶段日志。发布源优先使用旧版 `.himan/dev` 目录，其次使用当前项目 agent 目标目录，最后回退到 source 仓库对应资源目录。若资源目录包含 `himan.yaml`，发布前会校验元数据与入口文件；若没有 `himan.yaml`，则按默认入口推断最小元数据并发布，不会强制创建 `himan.yaml`。若待发布资源内容与最新已发布版本一致，则以 `E_PUBLISH_NO_CHANGES` 终止发布。发布需要可推送的 Git 权限。发布 commit 会包含资源目录以及自动维护的 source 根目录 `README.md` / `CHANGELOG.md`。发布成功后会从新版本 store 以 `copy` 模式重新安装；默认安装到当前项目并更新 `himan.lock`，传 `--global` 时安装到用户级目录且不写当前项目 lock。
 
 `rename` 暂不推荐使用。该命令会移动 source 仓库里的资源目录并更新资源 metadata 名称、README 资源索引和 CHANGELOG。已有发布 tag 不会被改写；若旧资源已有历史版本，rename 会为新名字创建一个指向当前最新版本的 tag。默认会迁移当前项目中对应的安装目标、`.himan/dev` 副本和 lock 条目；传 `--no-project` 时只改 source。对于 skill，命令只自动更新 metadata / front matter 中的精确 `name` 字段，不会自动替换 `SKILL.md` 正文中的旧名称引用。
+
+`archive` 是 source 级软下线操作：它把资源目录移动到 `archive/<plural>/<name>`，从默认 `list`、source README 资源索引和 `source sync` 的 active 快照中移除，并在 `CHANGELOG.md` 记录归档事件；已有 Git tag、本地 store、项目安装目录和 `himan.lock` 不会被删除。直接安装归档资源会返回 `E_RESOURCE_ARCHIVED`，需要显式加 `--include-archived`；无参数 `himan install` 仍会按 lock 恢复已记录的归档资源。`doctor` 会对 lock 中引用归档资源的项目给出 warning。`restore` 会把资源从 archive 目录移回 active 类型目录。
 
 `--json` 模式下，失败时会输出机器可读错误 JSON（`stderr`）。错误码定义见 [docs/error-codes.md](./docs/error-codes.md)。
 

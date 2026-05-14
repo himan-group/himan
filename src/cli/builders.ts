@@ -92,10 +92,12 @@ Command groups:
            init, source init, source add, source use, source list,
            source init-docs, source clone, source sync
   resource Source resource discovery and metadata
-           list, list --installed, history, create, rename (not recommended yet),
-           resource list, resource history, resource create, resource rename
+           list, list --archived, list --installed, history, create,
+           archive, restore, rename (not recommended yet),
+           resource list, resource history, resource create,
+           resource archive, resource restore, resource rename
   project  Resource usage lifecycle in current project or user-level agent dirs
-           list, install, dev, uninstall, publish,
+           list, install, install --include-archived, dev, uninstall, publish,
            project list, project install, project dev, project uninstall, project publish
   agent    Default agent configuration
            agent list, agent use, agent current, agent clear

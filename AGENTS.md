@@ -18,7 +18,7 @@ Use `docs/codex/repo-map.md` for the durable project map.
 
 There is no lint script in `package.json`.
 
-Runtime CLI commands include `himan init --agent ... --install ...` for quick-start setup, `himan agent list|use|current|clear` for default agent configuration, and `himan doctor` for local health checks.
+Runtime CLI commands include `himan init --agent ... --install ...` for quick-start setup, `himan resource archive|restore` for source resource lifecycle management, `himan agent list|use|current|clear` for default agent configuration, and `himan doctor` for local health checks.
 
 ## Architecture
 
@@ -56,6 +56,7 @@ There is no HTTP API. The CLI works with Git and filesystem state:
 - `<project>/himan.lock` records installed resources.
 - `<project>/.himan/config.json` stores project default agents.
 - `<project>/.himan/dev/<type>/<name>` stores editable dev copies.
+- Source-level archived resources live under `archive/rules`, `archive/commands`, and `archive/skills`; default source lists and sync ignore them unless explicitly requested.
 - Installed resources are materialized under `.cursor`, `.claude`, `.agents` for Codex, or `.openclaw`; install mode controls whether targets are symlinks or copies.
 
 ## Generated Files

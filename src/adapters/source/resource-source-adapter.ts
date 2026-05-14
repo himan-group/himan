@@ -1,11 +1,16 @@
 import type {
+  ArchiveOptions,
+  ArchiveResult,
   CreateOptions,
   CreateResult,
   PublishResult,
   RenameOptions,
   RenameResult,
+  ResourceListOptions,
   ResourceMeta,
   ResourceType,
+  RestoreOptions,
+  RestoreResult,
   VersionInfo,
 } from "../../domain/resource.js";
 import type {
@@ -23,8 +28,9 @@ export interface SourceConfig {
 
 export interface ResourceSourceAdapter {
   init(sourceConfig: SourceConfig): Promise<void>;
-  list(type: ResourceType): Promise<ResourceMeta[]>;
+  list(type: ResourceType, options?: ResourceListOptions): Promise<ResourceMeta[]>;
   history(type: ResourceType, name: string): Promise<VersionInfo[]>;
+  isArchived(type: ResourceType, name: string): Promise<boolean>;
   pull(
     type: ResourceType,
     name: string,
@@ -49,5 +55,15 @@ export interface ResourceSourceAdapter {
     newName: string,
     options?: RenameOptions,
   ): Promise<RenameResult>;
+  archive(
+    type: ResourceType,
+    name: string,
+    options?: ArchiveOptions,
+  ): Promise<ArchiveResult>;
+  restore(
+    type: ResourceType,
+    name: string,
+    options?: RestoreOptions,
+  ): Promise<RestoreResult>;
   initDocs(options: SourceDocsOptions): Promise<SourceDocsResult>;
 }

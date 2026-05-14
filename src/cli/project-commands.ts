@@ -66,17 +66,29 @@ export function registerProjectCommands(
     .option("--agent <list>", "install target agents, comma separated")
     .option("--mode <mode>", "install mode: link or copy")
     .option("--global", "install into user-level agent directories")
+    .option("--include-archived", "allow installing an archived resource explicitly")
     .description("Install resource, or install from himan.lock")
     .action(
       async (
         type: string | undefined,
         nameVersion: string | undefined,
-        options: { agent?: string; mode?: string; global?: boolean },
+        options: {
+          agent?: string;
+          mode?: string;
+          global?: boolean;
+          includeArchived?: boolean;
+        },
       ) => {
         await runAction(async () => {
           const agents = parseAgents(options.agent);
           const mode = parseInstallMode(options.mode);
           if (!type && !nameVersion) {
+            if (options.includeArchived) {
+              throw new HimanError(
+                errorCodes.CLI_USAGE,
+                "--include-archived only applies to single-resource install.",
+              );
+            }
             if (options.global) {
               throw new HimanError(
                 errorCodes.CLI_USAGE,
@@ -115,6 +127,7 @@ export function registerProjectCommands(
                 process.cwd(),
                 agents,
                 mode,
+                { includeArchived: options.includeArchived },
               )
             : await services.install(
                 resourceType,
@@ -123,6 +136,7 @@ export function registerProjectCommands(
                 process.cwd(),
                 agents,
                 mode,
+                { includeArchived: options.includeArchived },
               );
           process.stdout.write(
             `Installed ${options.global ? "global " : ""}${result.type}/${result.name}@${result.version}\n`,

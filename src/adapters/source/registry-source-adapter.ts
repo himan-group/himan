@@ -1,11 +1,16 @@
 import type {
+  ArchiveOptions,
+  ArchiveResult,
   CreateOptions,
   CreateResult,
   PublishResult,
   RenameOptions,
   RenameResult,
+  ResourceListOptions,
   ResourceMeta,
   ResourceType,
+  RestoreOptions,
+  RestoreResult,
   VersionInfo,
 } from "../../domain/resource.js";
 import type {
@@ -26,7 +31,10 @@ export class RegistrySourceAdapter implements ResourceSourceAdapter {
     );
   }
 
-  async list(_type: ResourceType): Promise<ResourceMeta[]> {
+  async list(
+    _type: ResourceType,
+    _options?: ResourceListOptions,
+  ): Promise<ResourceMeta[]> {
     throw new HimanError(
       errorCodes.NOT_IMPLEMENTED,
       "Registry source is reserved for phase 2.",
@@ -34,6 +42,13 @@ export class RegistrySourceAdapter implements ResourceSourceAdapter {
   }
 
   async history(_type: ResourceType, _name: string): Promise<VersionInfo[]> {
+    throw new HimanError(
+      errorCodes.NOT_IMPLEMENTED,
+      "Registry source is reserved for phase 2.",
+    );
+  }
+
+  async isArchived(_type: ResourceType, _name: string): Promise<boolean> {
     throw new HimanError(
       errorCodes.NOT_IMPLEMENTED,
       "Registry source is reserved for phase 2.",
@@ -81,6 +96,28 @@ export class RegistrySourceAdapter implements ResourceSourceAdapter {
     _newName: string,
     _options?: RenameOptions,
   ): Promise<RenameResult> {
+    throw new HimanError(
+      errorCodes.NOT_IMPLEMENTED,
+      "Registry source is reserved for phase 2.",
+    );
+  }
+
+  async archive(
+    _type: ResourceType,
+    _name: string,
+    _options?: ArchiveOptions,
+  ): Promise<ArchiveResult> {
+    throw new HimanError(
+      errorCodes.NOT_IMPLEMENTED,
+      "Registry source is reserved for phase 2.",
+    );
+  }
+
+  async restore(
+    _type: ResourceType,
+    _name: string,
+    _options?: RestoreOptions,
+  ): Promise<RestoreResult> {
     throw new HimanError(
       errorCodes.NOT_IMPLEMENTED,
       "Registry source is reserved for phase 2.",

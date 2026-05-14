@@ -58,6 +58,12 @@
 - **常见触发**：安装不存在的资源、切换到不存在的 source 名称、发布目标资源不存在。
 - **建议处理**：先执行 `himan list <type>` / `himan source list` 确认名称。
 
+### `E_RESOURCE_ARCHIVED`
+
+- **含义**：资源已归档，默认不允许作为 active 资源继续使用。
+- **常见触发**：直接安装或发布已归档资源，或重复归档已经在 `archive/<plural>/<name>` 下的资源。
+- **建议处理**：如需继续维护，先执行 `himan resource restore <type> <name>`；如只需安装历史版本，显式传 `--include-archived`。
+
 ### `E_VERSION_NOT_FOUND`
 
 - **含义**：指定版本不存在。
