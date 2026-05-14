@@ -4,6 +4,7 @@ import type {
   ResourceSourceAdapter,
   SourceConfig,
 } from "../adapters/source/resource-source-adapter.js";
+import type { DoctorCheck, DoctorResult } from "../domain/doctor.js";
 import type {
   CreateOptions,
   CreateResult,
@@ -28,6 +29,7 @@ import { ProjectConfigStore } from "../state/project-config-store.js";
 import {
   ProjectLockStore,
   type LockSourceInfo,
+  type ProjectLock,
 } from "../state/project-lock-store.js";
 import type { SourceState } from "../state/state-store.js";
 import { PathResolver } from "../utils/path-resolver.js";
@@ -40,9 +42,14 @@ import {
   normalizeAgents,
 } from "../utils/agent-configs.js";
 import path from "node:path";
+import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
+import { promisify } from "node:util";
 import { VersionResolver } from "../adapters/version/version-resolver.js";
 import YAML from "yaml";
+
+const execFileAsync = promisify(execFile);
+const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
 
 export interface InstalledResource {
   type: ResourceType;
@@ -267,6 +274,48 @@ export class ServiceFactory {
     };
   }
 
+  async doctor(projectDir: string): Promise<DoctorResult> {
+    const checks: DoctorCheck[] = [];
+    checks.push(this.checkNodeVersion());
+    checks.push(await this.checkGit());
+    checks.push(await this.checkHomeState());
+
+    const config = await this.stateStore.loadConfig();
+    if (!config?.source) {
+      checks.push({
+        name: "source",
+        status: "error",
+        message: "No source configured. Run `himan init <git_repo>` first.",
+        details: { configPath: this.stateStore.getConfigPath() },
+      });
+    } else {
+      const currentName = config.sources?.default ?? "default";
+      const currentSource = config.sources?.items[currentName] ?? config.source;
+      checks.push({
+        name: "source",
+        status: "ok",
+        message: `Using ${currentSource.type} source ${currentName}.`,
+        details: {
+          name: currentName,
+          type: currentSource.type,
+          repo: currentSource.repo,
+          repoId: currentSource.repoId,
+        },
+      });
+      checks.push(await this.checkSourceResources());
+    }
+
+    checks.push(await this.checkAgents(projectDir));
+    const lockCheck = await this.checkProjectLock(projectDir);
+    checks.push(lockCheck.check);
+    checks.push(await this.checkProjectTargets(projectDir, lockCheck.lock));
+
+    return {
+      ok: !checks.some((check) => check.status === "error"),
+      checks,
+    };
+  }
+
   async clearAgents(
     scope: "global" | "project",
     projectDir: string,
@@ -282,6 +331,194 @@ export class ServiceFactory {
       agents: undefined,
     });
     return { scope };
+  }
+
+  private checkNodeVersion(): DoctorCheck {
+    const version = process.versions.node;
+    const major = Number(version.split(".")[0]);
+    if (major === 22) {
+      return {
+        name: "node",
+        status: "ok",
+        message: `Node.js ${version}.`,
+      };
+    }
+
+    return {
+      name: "node",
+      status: "error",
+      message: `Node.js ${version} is unsupported. Use Node.js 22.x.`,
+    };
+  }
+
+  private async checkGit(): Promise<DoctorCheck> {
+    try {
+      const result = await execFileAsync("git", ["--version"]);
+      return {
+        name: "git",
+        status: "ok",
+        message: result.stdout.trim() || "Git is available.",
+      };
+    } catch (error) {
+      return this.errorCheck("git", "Git is not available on PATH.", error);
+    }
+  }
+
+  private async checkHomeState(): Promise<DoctorCheck> {
+    const root = this.paths.getHimanRoot();
+    const reposDir = this.paths.getReposDir();
+    const storeDir = this.paths.getStoreDir();
+    const missing = [];
+    if (!(await this.exists(root))) missing.push(root);
+    if (!(await this.exists(reposDir))) missing.push(reposDir);
+    if (!(await this.exists(storeDir))) missing.push(storeDir);
+
+    if (missing.length > 0) {
+      return {
+        name: "home",
+        status: "warn",
+        message: "Himan home directories are not fully initialized yet.",
+        details: { root, reposDir, storeDir, missing },
+      };
+    }
+
+    return {
+      name: "home",
+      status: "ok",
+      message: `Himan home is initialized at ${root}.`,
+      details: { root, reposDir, storeDir },
+    };
+  }
+
+  private async checkSourceResources(): Promise<DoctorCheck> {
+    try {
+      const source = await this.loadSourceFromConfig();
+      const entries = await Promise.all(
+        RESOURCE_TYPES.map(async (type) => [type, await source.list(type)] as const),
+      );
+      const counts = Object.fromEntries(
+        entries.map(([type, resources]) => [type, resources.length]),
+      ) as Record<ResourceType, number>;
+      const total = RESOURCE_TYPES.reduce((sum, type) => sum + counts[type], 0);
+      return {
+        name: "resources",
+        status: "ok",
+        message: `Scanned ${total} resources from current source.`,
+        details: { counts },
+      };
+    } catch (error) {
+      return this.errorCheck("resources", "Cannot scan current source resources.", error);
+    }
+  }
+
+  private async checkAgents(projectDir: string): Promise<DoctorCheck> {
+    try {
+      const settings = await this.getAgentSettings(projectDir);
+      const scope = settings.project ? "project" : settings.global ? "global" : "default";
+      return {
+        name: "agents",
+        status: "ok",
+        message: `Effective agents: ${settings.effective.join(", ")} (${scope}).`,
+        details: settings,
+      };
+    } catch (error) {
+      return this.errorCheck("agents", "Cannot resolve effective agents.", error);
+    }
+  }
+
+  private async checkProjectLock(projectDir: string): Promise<{
+    check: DoctorCheck;
+    lock?: ProjectLock;
+  }> {
+    const lockPath = this.lockStore.getLockPath(projectDir);
+    const { lock, state } = await this.lockStore.loadWithState(projectDir);
+    if (state === "missing") {
+      return {
+        check: {
+          name: "lock",
+          status: "ok",
+          message: "No himan.lock found for this project yet.",
+          details: { lockPath },
+        },
+      };
+    }
+    if (state === "invalid" || !lock) {
+      return {
+        check: {
+          name: "lock",
+          status: "error",
+          message: `Lock file is invalid: ${lockPath}`,
+          details: { lockPath },
+        },
+      };
+    }
+    if (lock.resources.length === 0) {
+      return {
+        check: {
+          name: "lock",
+          status: "warn",
+          message: "himan.lock has no resources.",
+          details: { lockPath },
+        },
+        lock,
+      };
+    }
+    return {
+      check: {
+        name: "lock",
+        status: "ok",
+        message: `himan.lock tracks ${lock.resources.length} resources.`,
+        details: { lockPath, source: lock.source },
+      },
+      lock,
+    };
+  }
+
+  private async checkProjectTargets(
+    projectDir: string,
+    lock: ProjectLock | undefined,
+  ): Promise<DoctorCheck> {
+    if (!lock || lock.resources.length === 0) {
+      return {
+        name: "targets",
+        status: "ok",
+        message: "No locked project targets to verify.",
+      };
+    }
+
+    const missing: Array<{ resource: string; path: string }> = [];
+    for (const resource of lock.resources) {
+      const agents = normalizeAgents(resource.agents);
+      const targets = getProjectResourcePaths(
+        projectDir,
+        resource.type,
+        resource.name,
+        agents,
+      );
+      for (const targetPath of targets) {
+        if (!(await this.exists(targetPath))) {
+          missing.push({
+            resource: `${resource.type}/${resource.name}@${resource.version}`,
+            path: targetPath,
+          });
+        }
+      }
+    }
+
+    if (missing.length > 0) {
+      return {
+        name: "targets",
+        status: "warn",
+        message: `Missing ${missing.length} installed targets. Run \`himan install\` to restore them.`,
+        details: { missing },
+      };
+    }
+
+    return {
+      name: "targets",
+      status: "ok",
+      message: "All locked project targets exist.",
+    };
   }
 
   async list(type: ResourceType, agents?: string[]): Promise<ResourceMeta[]> {
@@ -1317,6 +1554,14 @@ export class ServiceFactory {
       .map((item) => item.trim())
       .filter(Boolean);
     return items.length > 0 ? items : undefined;
+  }
+
+  private errorCheck(name: string, message: string, error: unknown): DoctorCheck {
+    return {
+      name,
+      status: "error",
+      message: `${message} ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 
   private async exists(targetPath: string): Promise<boolean> {

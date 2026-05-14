@@ -37,7 +37,7 @@ Runtime agent configuration commands:
 - `src/bin/` contains executable entry files and the shared `runCliMain` wrapper.
 - `src/cli/` builds commander programs, command groups, command registration, and CLI error formatting.
 - `src/services/index.ts` contains `ServiceFactory`, the main application orchestration layer.
-- `src/domain/` contains resource types and data contracts.
+- `src/domain/` contains resource types, doctor result types, and data contracts.
 - `src/adapters/source/` defines the source adapter interface plus Git and reserved Registry adapters.
 - `src/adapters/git/` wraps Git operations through `simple-git`.
 - `src/adapters/resource/` scans resource metadata from source repositories.
@@ -51,7 +51,8 @@ Runtime agent configuration commands:
 
 `src/bin/himan.ts` builds the main grouped CLI through `buildCli()`. The main CLI exposes:
 
-- Top-level `init`
+- Top-level `init`, including optional `--agent`, `--install type/name[@version],...`, `--mode`, and `--json` quick-start setup
+- Top-level `doctor [--json]`
 - `source init|add|use|list|init-docs|clone|sync`
 - `resource list|history|create|rename`; `rename` is currently marked not recommended; `resource list` without a type groups all source resources, `--brief` hides descriptions, and `--installed` lists current project installs instead of source resources
 - `project list|install|dev|uninstall|publish`
@@ -81,6 +82,7 @@ The project has no HTTP API. It integrates with local Git repositories and files
 - Project development copies live under `<project>/.himan/dev/<type>/<name>`.
 - Project-installed resources are materialized under agent folders such as `.cursor/rules/<name>`, `.agents/skills/<name>` for Codex, `.claude/commands/<name>`, and `.openclaw/...`; install mode controls whether each target is a symlink or a copy.
 - `install <type> <name[@version]> --global` materializes the resource under the matching user-level agent folder below home, such as `~/.cursor/rules/<name>`, `~/.agents/skills/<name>` for Codex, `~/.claude/commands/<name>`, and `~/.openclaw/...`. Global installs prefer `--agent`, then the current project's lock entry for that resource, then the default install agent resolution, and do not write `<project>/himan.lock`.
+- `doctor` checks Node.js, Git, Himan home directories, current source configuration, source resource scanning, effective agent settings, project lock state, and materialized project install targets; it exits non-zero when any check has `error` status.
 
 Resource source layout uses plural type directories in the source repo:
 
@@ -123,6 +125,7 @@ There is no monorepo package sharing. Shared behavior is local to `src/`:
 - Resource types are limited to `rule`, `command`, and `skill`.
 - Supported agent configs are `cursor`, `claude-code`, `codex`, and `openclaw`; aliases and base directories are normalized in `src/utils/agent-configs.ts`.
 - Default agents are configured with `himan agent use`; project config takes precedence over global config.
+- `himan init --agent <agent[,agent]>` writes the current project default agent, and `himan init --install <type/name[@version],...>` installs selected resources after source initialization.
 - Business errors should use `HimanError` and stable `errorCodes` from `src/utils/errors.ts`.
 - Registry source is reserved and intentionally returns `E_NOT_IMPLEMENTED`.
 - Version bumps use semver through `VersionResolver`.
