@@ -10,6 +10,15 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 - Changed `create` and `dev` to use current project agent target directories for resource authoring, while `publish` now logs stages and can install the published version either into the current project or globally.
 
+## [0.4.0] - 2026-05-13
+
+### Added
+
+- Added the `github-npm-publish` skill for reusable GitHub Actions npm release workflow guidance.
+- Added `himan resource rename` and top-level `himan rename`, currently marked not recommended, to rename source resources, update metadata/docs, preserve old tags, create a latest-version tag for the new name, and migrate the current project's install targets and lock entry by default.
+- Added `himan source clone` and `himan source sync` for cloning Git sources and syncing latest resource snapshots into another Git source.
+- Added static `analysis` metadata to newly scaffolded skill `himan.yaml` files and a `himan-skill-metadata` skill for generating matching metadata when agents create skills.
+
 ## [0.3.5] - 2026-05-12
 
 ### Changed

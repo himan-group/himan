@@ -8,6 +8,7 @@ import type {
   CreateOptions,
   CreateResult,
   InstallMode,
+  RenameResult,
   ResourceMeta,
   ResourceType,
   VersionInfo,
@@ -16,6 +17,12 @@ import type {
   SourceDocsOptions,
   SourceDocsResult,
 } from "../domain/source-docs.js";
+import type {
+  GitSourceEndpoint,
+  SourceCloneResult,
+  SourceSyncResult,
+  SourceTransferOptions,
+} from "../domain/source-transfer.js";
 import { StateStore } from "../state/state-store.js";
 import { ProjectConfigStore } from "../state/project-config-store.js";
 import {
@@ -113,9 +120,7 @@ export class ServiceFactory {
     type: "git" | "registry",
     repo?: string,
   ): Promise<{ name: string; type: "git" | "registry"; repo?: string; repoId?: string }> {
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
-      throw new HimanError(errorCodes.INVALID_INPUT, `Invalid source name: ${name}`);
-    }
+    this.validateSourceName(name);
     await this.stateStore.ensureBaseDirs();
     const sourceConfig = this.buildSourceConfig(type, repo);
     const source = this.createSource(type);
@@ -181,6 +186,67 @@ export class ServiceFactory {
   async initSourceDocs(options: SourceDocsOptions): Promise<SourceDocsResult> {
     const source = await this.loadSourceFromConfig();
     return source.initDocs(options);
+  }
+
+  async cloneSource(
+    from: string,
+    to: string,
+    options: SourceTransferOptions = {},
+  ): Promise<SourceCloneResult> {
+    await this.stateStore.ensureBaseDirs();
+    this.validateSourceTransferOptions(to, options);
+    const sourceEndpoint = await this.resolveGitSourceEndpoint(from);
+    const targetEndpoint = await this.resolveGitSourceEndpoint(to);
+    this.validateSourceTransferUseTarget(targetEndpoint, options);
+    this.ensureDifferentGitSources(sourceEndpoint, targetEndpoint);
+
+    const source = await this.loadGitSourceFromEndpoint(sourceEndpoint);
+    const result = await source.cloneTo(targetEndpoint.repo, {
+      branch: options.branch,
+      targetBranch: options.targetBranch,
+      dryRun: options.dryRun,
+    });
+    const configUpdates = await this.applySourceTransferConfigUpdates(
+      targetEndpoint,
+      options,
+    );
+
+    return {
+      source: sourceEndpoint,
+      target: targetEndpoint,
+      ...result,
+      ...configUpdates,
+    };
+  }
+
+  async syncSource(
+    from: string,
+    to: string,
+    options: SourceTransferOptions = {},
+  ): Promise<SourceSyncResult> {
+    await this.stateStore.ensureBaseDirs();
+    this.validateSourceTransferOptions(to, options);
+    const sourceEndpoint = await this.resolveGitSourceEndpoint(from);
+    const targetEndpoint = await this.resolveGitSourceEndpoint(to);
+    this.validateSourceTransferUseTarget(targetEndpoint, options);
+    this.ensureDifferentGitSources(sourceEndpoint, targetEndpoint);
+
+    const source = await this.loadGitSourceFromEndpoint(sourceEndpoint);
+    const result = await source.syncLatestTo(targetEndpoint.repo, {
+      targetBranch: options.targetBranch,
+      dryRun: options.dryRun,
+    });
+    const configUpdates = await this.applySourceTransferConfigUpdates(
+      targetEndpoint,
+      options,
+    );
+
+    return {
+      source: sourceEndpoint,
+      target: targetEndpoint,
+      ...result,
+      ...configUpdates,
+    };
   }
 
   async setAgents(
@@ -609,6 +675,60 @@ export class ServiceFactory {
     };
   }
 
+  async rename(
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+    projectDir: string,
+    options: { dryRun?: boolean; migrateProject?: boolean } = {},
+  ): Promise<RenameResult & { projectMigrated: boolean }> {
+    this.validateRenameInput(type, oldName, newName);
+    const source = await this.loadSourceFromConfig();
+    const shouldMigrateProject = options.migrateProject !== false && !options.dryRun;
+
+    const locked = shouldMigrateProject
+      ? await this.getLockedResource(projectDir, type, oldName)
+      : undefined;
+    const installInfo = shouldMigrateProject
+      ? await this.tryResolveInstalledResource(projectDir, type, oldName)
+      : undefined;
+    const hasDevPath =
+      shouldMigrateProject &&
+      (await this.exists(this.getProjectDevPath(projectDir, type, oldName)));
+
+    if (shouldMigrateProject && (locked || installInfo || hasDevPath)) {
+      await this.ensureRenamedProjectResourceAvailable(
+        projectDir,
+        type,
+        oldName,
+        newName,
+        locked,
+        installInfo,
+      );
+    }
+
+    const result = await source.rename(type, oldName, newName, {
+      dryRun: options.dryRun,
+    });
+    const projectMigrated =
+      shouldMigrateProject &&
+      (await this.migrateRenamedProjectResource(
+        source,
+        type,
+        oldName,
+        newName,
+        projectDir,
+        result,
+        locked,
+        installInfo,
+      ));
+
+    return {
+      ...result,
+      projectMigrated,
+    };
+  }
+
   async installFromLock(
     projectDir: string,
     agents?: string[],
@@ -740,6 +860,120 @@ export class ServiceFactory {
     return (await this.loadSourceWithInfoFromConfig()).source;
   }
 
+  private async resolveGitSourceEndpoint(ref: string): Promise<GitSourceEndpoint> {
+    const config = await this.stateStore.loadConfig();
+    const configured = config?.sources?.items[ref];
+
+    if (configured) {
+      if (configured.type !== "git" || !configured.repo) {
+        throw new HimanError(
+          errorCodes.INVALID_INPUT,
+          `Source is not a git source: ${ref}`,
+        );
+      }
+      return {
+        name: ref,
+        repo: configured.repo,
+        repoId: configured.repoId ?? toRepoId(configured.repo),
+      };
+    }
+
+    if (!ref.trim()) {
+      throw new HimanError(errorCodes.INVALID_INPUT, "Git repo is required.");
+    }
+
+    return {
+      repo: ref,
+      repoId: toRepoId(ref),
+    };
+  }
+
+  private async loadGitSourceFromEndpoint(
+    endpoint: GitSourceEndpoint,
+  ): Promise<GitSourceAdapter> {
+    const sourceConfig = this.buildSourceConfig(
+      "git",
+      endpoint.repo,
+      endpoint.repoId,
+    );
+    const source = new GitSourceAdapter();
+    await source.init(sourceConfig);
+    return source;
+  }
+
+  private validateSourceTransferOptions(
+    targetRef: string,
+    options: SourceTransferOptions,
+  ): void {
+    if (options.addSource) {
+      this.validateSourceName(options.addSource);
+    }
+
+    if (!options.use || options.addSource) {
+      return;
+    }
+
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(targetRef)) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "`--use` requires the target to be a configured source name or `--add-source <name>`.",
+      );
+    }
+  }
+
+  private validateSourceTransferUseTarget(
+    target: GitSourceEndpoint,
+    options: SourceTransferOptions,
+  ): void {
+    if (options.use && !options.addSource && !target.name) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "`--use` requires the target to be a configured source name or `--add-source <name>`.",
+      );
+    }
+  }
+
+  private ensureDifferentGitSources(
+    source: GitSourceEndpoint,
+    target: GitSourceEndpoint,
+  ): void {
+    if (source.repo === target.repo) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "Source and target repositories must be different.",
+      );
+    }
+  }
+
+  private async applySourceTransferConfigUpdates(
+    target: GitSourceEndpoint,
+    options: SourceTransferOptions,
+  ): Promise<{ addedSource?: string; usedSource?: string }> {
+    if (options.dryRun) return {};
+
+    let addedSource: string | undefined;
+    if (options.addSource) {
+      await this.addSource(options.addSource, "git", target.repo);
+      addedSource = options.addSource;
+    }
+
+    const sourceToUse = options.use ? options.addSource ?? target.name : undefined;
+    if (sourceToUse) {
+      await this.useSource(sourceToUse);
+    }
+
+    return {
+      addedSource,
+      usedSource: sourceToUse,
+    };
+  }
+
+  private validateSourceName(name: string): void {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+      throw new HimanError(errorCodes.INVALID_INPUT, `Invalid source name: ${name}`);
+    }
+  }
+
   private async loadSourceWithInfoFromConfig(): Promise<{
     source: ResourceSourceAdapter;
     sourceInfo: LockSourceInfo;
@@ -826,6 +1060,121 @@ export class ServiceFactory {
     const lock = await this.lockStore.load(projectDir);
     if (!lock) return undefined;
     return lock.resources.find((item) => item.type === type && item.name === name);
+  }
+
+  private async ensureRenamedProjectResourceAvailable(
+    projectDir: string,
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+    locked: Awaited<ReturnType<ServiceFactory["getLockedResource"]>>,
+    installInfo:
+      | {
+          installedPath: string;
+          linkPaths: string[];
+          agents: string[];
+          mode: InstallMode;
+        }
+      | undefined,
+  ): Promise<void> {
+    const lockedNewName = await this.getLockedResource(projectDir, type, newName);
+    if (lockedNewName) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Installed resource already exists: ${type}/${newName}`,
+      );
+    }
+
+    const newDevPath = this.getProjectDevPath(projectDir, type, newName);
+    if (await this.exists(newDevPath)) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Development resource already exists: ${type}/${newName}`,
+      );
+    }
+
+    const agents = locked?.agents?.length
+      ? normalizeAgents(locked.agents)
+      : installInfo?.agents;
+    if (!agents?.length) return;
+
+    for (const linkPath of getProjectResourcePaths(projectDir, type, newName, agents)) {
+      if (await this.exists(linkPath)) {
+        throw new HimanError(
+          errorCodes.RESOURCE_EXISTS,
+          `Installed resource already exists: ${type}/${newName}`,
+        );
+      }
+    }
+  }
+
+  private async migrateRenamedProjectResource(
+    source: ResourceSourceAdapter,
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+    projectDir: string,
+    result: RenameResult,
+    locked: Awaited<ReturnType<ServiceFactory["getLockedResource"]>>,
+    installInfo:
+      | {
+          installedPath: string;
+          linkPaths: string[];
+          agents: string[];
+          mode: InstallMode;
+        }
+      | undefined,
+  ): Promise<boolean> {
+    const oldDevPath = this.getProjectDevPath(projectDir, type, oldName);
+    const newDevPath = this.getProjectDevPath(projectDir, type, newName);
+    const hasDevPath = await this.exists(oldDevPath);
+
+    if (!locked && !installInfo && !hasDevPath) {
+      return false;
+    }
+
+    let sourcePath: string | undefined;
+    if (hasDevPath) {
+      await fs.mkdir(path.dirname(newDevPath), { recursive: true });
+      await fs.rename(oldDevPath, newDevPath);
+      await this.updateRenamedResourceMetadata(newDevPath, type, oldName, newName);
+      sourcePath = newDevPath;
+    } else if (result.latestVersion) {
+      const storePath = this.getStorePath(type, newName, result.latestVersion);
+      if (!(await this.exists(storePath))) {
+        await source.pull(type, newName, result.latestVersion, storePath);
+      }
+      sourcePath = storePath;
+    } else if (installInfo) {
+      sourcePath = installInfo.installedPath;
+    } else {
+      sourcePath = result.resourceDir;
+    }
+
+    const agents = locked?.agents?.length
+      ? normalizeAgents(locked.agents)
+      : installInfo?.agents ?? normalizeAgents();
+    const mode = installInfo?.mode ?? this.resolveInstallMode(locked?.mode);
+    const oldLinkPaths =
+      installInfo?.linkPaths ?? getProjectResourcePaths(projectDir, type, oldName, agents);
+    const newLinkPaths = getProjectResourcePaths(projectDir, type, newName, agents);
+
+    for (const linkPath of newLinkPaths) {
+      await this.materializeResource(sourcePath, linkPath, mode);
+    }
+    for (const linkPath of oldLinkPaths) {
+      await fs.rm(linkPath, { recursive: true, force: true });
+    }
+    if (locked) {
+      await this.lockStore.renameResource(projectDir, {
+        type,
+        oldName,
+        newName,
+        version: result.latestVersion ?? locked.version,
+      });
+    }
+
+    return true;
   }
 
   private buildSourceConfig(
@@ -1159,6 +1508,64 @@ export class ServiceFactory {
     };
   }
 
+  private async updateRenamedResourceMetadata(
+    resourceDir: string,
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+  ): Promise<void> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (await this.exists(yamlPath)) {
+      const raw = await fs.readFile(yamlPath, "utf8");
+      const parsed = YAML.parse(raw) as unknown;
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        return;
+      }
+      await fs.writeFile(
+        yamlPath,
+        YAML.stringify({
+          ...(parsed as Record<string, unknown>),
+          name: newName,
+        }),
+        "utf8",
+      );
+      return;
+    }
+
+    if (type !== "skill") return;
+    const entryPath = path.join(resourceDir, this.getDefaultEntry(type));
+    if (!(await this.exists(entryPath))) return;
+
+    const raw = await fs.readFile(entryPath, "utf8");
+    const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(raw);
+    if (!match) return;
+
+    let parsed: unknown;
+    try {
+      parsed = YAML.parse(match[1]);
+    } catch {
+      return;
+    }
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed) ||
+      (parsed as Record<string, unknown>).name !== oldName
+    ) {
+      return;
+    }
+
+    const frontMatter = YAML.stringify({
+      ...(parsed as Record<string, unknown>),
+      name: newName,
+    }).trimEnd();
+    await fs.writeFile(
+      entryPath,
+      `---\n${frontMatter}\n---\n${raw.slice(match[0].length)}`,
+      "utf8",
+    );
+  }
+
   private async readFrontMatter(
     filePath: string,
   ): Promise<Record<string, unknown> | null> {
@@ -1293,6 +1700,33 @@ export class ServiceFactory {
       throw new HimanError(
         errorCodes.TEMPLATE_NOT_FOUND,
         `Template not found: ${options.template}`,
+      );
+    }
+  }
+
+  private validateRenameInput(
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+  ): void {
+    if (!["rule", "command", "skill"].includes(type)) {
+      throw new HimanError(
+        errorCodes.UNSUPPORTED_RESOURCE_TYPE,
+        `Unsupported resource type for rename: ${type}`,
+      );
+    }
+
+    if (oldName === newName) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "Old and new resource names must be different.",
+      );
+    }
+
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(newName)) {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_NAME,
+        `Invalid resource name: ${newName}. Use kebab-case only.`,
       );
     }
   }

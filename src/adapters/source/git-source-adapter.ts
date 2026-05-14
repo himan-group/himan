@@ -2,6 +2,8 @@ import type {
   CreateOptions,
   CreateResult,
   PublishResult,
+  RenameOptions,
+  RenameResult,
   ResourceMeta,
   ResourceType,
   VersionInfo,
@@ -15,8 +17,16 @@ import type {
   ResourceSourceAdapter,
   SourceConfig,
 } from "./resource-source-adapter.js";
+import type {
+  GitSourceCloneResult,
+  GitSourceSyncResult,
+  SourceCloneOptions,
+  SourceSyncOptions,
+  SourceSyncResource,
+} from "../../domain/source-transfer.js";
 import { RepoManager } from "../git/repo-manager.js";
 import { ResourceScanner } from "../resource/resource-scanner.js";
+import { buildResourceAnalysisMetadata } from "../resource/resource-analysis.js";
 import semver from "semver";
 import { HimanError, errorCodes } from "../../utils/errors.js";
 import { promises as fs } from "node:fs";
@@ -181,27 +191,26 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       );
     }
 
+    const entryContent = this.getDefaultContent(type, name);
     const files = [path.join(resourceDir, "himan.yaml"), path.join(resourceDir, entry)];
     if (!options.dryRun) {
       await fs.rm(resourceDir, { recursive: true, force: true });
       await fs.mkdir(resourceDir, { recursive: true });
       await fs.writeFile(
         path.join(resourceDir, "himan.yaml"),
-        YAML.stringify({
-          name,
-          type,
-          version: "0.1.0",
-          entry,
-          description: options.description ?? `${type} resource ${name}`,
-          agents,
-        }),
+        YAML.stringify(
+          this.buildCreateResourceMetadata(
+            type,
+            name,
+            entry,
+            entryContent,
+            options.description ?? `${type} resource ${name}`,
+            agents,
+          ),
+        ),
         "utf8",
       );
-      await fs.writeFile(
-        path.join(resourceDir, entry),
-        this.getDefaultContent(type, name),
-        "utf8",
-      );
+      await fs.writeFile(path.join(resourceDir, entry), entryContent, "utf8");
       await this.maintainSourceDocs(repoDir, {
         section: resourceExists ? "Changed" : "Added",
         line: resourceExists
@@ -216,6 +225,104 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       resourceDir,
       files,
       dryRun: Boolean(options.dryRun),
+    };
+  }
+
+  async rename(
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+    options: RenameOptions = {},
+  ): Promise<RenameResult> {
+    const repoDir = this.getRepoDir();
+    const typeDir = this.getTypeDir(type);
+    const previousResourceDir = path.join(repoDir, typeDir, oldName);
+    const resourceDir = path.join(repoDir, typeDir, newName);
+
+    if (!(await this.exists(previousResourceDir))) {
+      throw new HimanError(
+        errorCodes.RESOURCE_NOT_FOUND,
+        `Resource not found: ${type}/${oldName}`,
+      );
+    }
+    await this.ensureRenameTargetAvailable(repoDir, type, newName, resourceDir);
+
+    const history = await this.history(type, oldName);
+    const latestVersion = history[0]?.version;
+    const tag = latestVersion ? `${type}/${newName}@${latestVersion}` : undefined;
+
+    if (options.dryRun) {
+      return {
+        type,
+        oldName,
+        newName,
+        previousResourceDir,
+        resourceDir,
+        latestVersion,
+        tag,
+        committed: false,
+        dryRun: true,
+      };
+    }
+
+    await fs.mkdir(path.dirname(resourceDir), { recursive: true });
+    await fs.rename(previousResourceDir, resourceDir);
+    await this.updateRenamedResourceMetadata(resourceDir, type, oldName, newName);
+
+    const versionOverrides = latestVersion
+      ? new Map([[this.getResourceVersionOverrideKey(type, newName), latestVersion]])
+      : new Map<string, string>();
+    const docsPaths = await this.maintainSourceDocs(
+      repoDir,
+      {
+        section: "Changed",
+        line: `- Renamed \`${type}/${oldName}\` to \`${type}/${newName}\`.`,
+      },
+      versionOverrides,
+    );
+    const changedPaths = [
+      path.relative(repoDir, previousResourceDir),
+      path.relative(repoDir, resourceDir),
+      ...docsPaths.map((docPath) => path.relative(repoDir, docPath)),
+    ];
+
+    if (tag) {
+      await this.repoManager.commitTagAndPush(
+        repoDir,
+        `rename ${type}/${oldName} to ${type}/${newName}`,
+        tag,
+        undefined,
+        changedPaths,
+      );
+      return {
+        type,
+        oldName,
+        newName,
+        previousResourceDir,
+        resourceDir,
+        latestVersion,
+        tag,
+        committed: true,
+        dryRun: false,
+      };
+    }
+
+    const committed = await this.repoManager.commitAndPush(
+      repoDir,
+      `rename ${type}/${oldName} to ${type}/${newName}`,
+      undefined,
+      changedPaths,
+    );
+    return {
+      type,
+      oldName,
+      newName,
+      previousResourceDir,
+      resourceDir,
+      latestVersion,
+      tag,
+      committed,
+      dryRun: false,
     };
   }
 
@@ -264,6 +371,30 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     };
   }
 
+  async cloneTo(
+    targetRepo: string,
+    options: SourceCloneOptions = {},
+  ): Promise<GitSourceCloneResult> {
+    return this.repoManager.cloneManagedSourceRefs(
+      this.getRepoDir(),
+      targetRepo,
+      options,
+    );
+  }
+
+  async syncLatestTo(
+    targetRepo: string,
+    options: SourceSyncOptions = {},
+  ): Promise<GitSourceSyncResult> {
+    const resources = await this.collectLatestVersionedResources();
+    return this.repoManager.syncLatestSourceSnapshot(
+      this.getRepoDir(),
+      targetRepo,
+      resources,
+      options,
+    );
+  }
+
   private getRepoDir(): string {
     if (!this.sourceConfig?.repoDir) {
       throw new HimanError(
@@ -290,6 +421,105 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     } catch {
       return false;
     }
+  }
+
+  private async ensureRenameTargetAvailable(
+    repoDir: string,
+    type: ResourceType,
+    newName: string,
+    resourceDir: string,
+  ): Promise<void> {
+    if (await this.exists(resourceDir)) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Resource already exists: ${type}/${newName}`,
+      );
+    }
+
+    const [resources, history] = await Promise.all([
+      this.scanner.scanByType(repoDir, type),
+      this.history(type, newName),
+    ]);
+    if (resources.some((resource) => resource.name === newName) || history.length > 0) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Resource already exists: ${type}/${newName}`,
+      );
+    }
+  }
+
+  private async updateRenamedResourceMetadata(
+    resourceDir: string,
+    type: ResourceType,
+    oldName: string,
+    newName: string,
+  ): Promise<void> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (await this.exists(yamlPath)) {
+      const raw = await fs.readFile(yamlPath, "utf8");
+      let parsed: unknown;
+      try {
+        parsed = YAML.parse(raw);
+      } catch (error) {
+        throw this.invalidResourceMetadata(
+          type,
+          oldName,
+          "himan.yaml is not valid YAML.",
+          { yamlPath, reason: error instanceof Error ? error.message : String(error) },
+        );
+      }
+      if (!this.isRecord(parsed)) {
+        throw this.invalidResourceMetadata(
+          type,
+          oldName,
+          "himan.yaml must be an object.",
+          { yamlPath },
+        );
+      }
+      await fs.writeFile(
+        yamlPath,
+        YAML.stringify({
+          ...parsed,
+          name: newName,
+        }),
+        "utf8",
+      );
+      return;
+    }
+
+    if (type !== "skill") return;
+    await this.updateSkillFrontMatterName(
+      path.join(resourceDir, this.getDefaultEntry(type)),
+      oldName,
+      newName,
+    );
+  }
+
+  private async updateSkillFrontMatterName(
+    skillPath: string,
+    oldName: string,
+    newName: string,
+  ): Promise<void> {
+    if (!(await this.exists(skillPath))) return;
+
+    const raw = await fs.readFile(skillPath, "utf8");
+    const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(raw);
+    if (!match) return;
+
+    let parsed: unknown;
+    try {
+      parsed = YAML.parse(match[1]);
+    } catch {
+      return;
+    }
+    if (!this.isRecord(parsed) || parsed.name !== oldName) return;
+
+    const frontMatter = YAML.stringify({
+      ...parsed,
+      name: newName,
+    }).trimEnd();
+    const updated = `---\n${frontMatter}\n---\n${raw.slice(match[0].length)}`;
+    await fs.writeFile(skillPath, updated, "utf8");
   }
 
   private async validatePublishResource(
@@ -636,6 +866,35 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       return `# ${name}\n\nDescribe command behavior here.\n`;
     }
     return `# ${name}\n\nDescribe skill workflow here.\n`;
+  }
+
+  private buildCreateResourceMetadata(
+    type: ResourceType,
+    name: string,
+    entry: string,
+    entryContent: string,
+    description: string,
+    agents: string[],
+  ): PublishMetadata {
+    const metadata: PublishMetadata = {
+      name,
+      type,
+      version: "0.1.0",
+      entry,
+      description,
+      agents,
+    };
+
+    if (type === "skill") {
+      metadata.analysis = buildResourceAnalysisMetadata({
+        entry,
+        entryContent,
+        measuredBy: "himan",
+        generatedBy: "himan",
+      });
+    }
+
+    return metadata;
   }
 
   private async buildReadmeContent(
@@ -992,6 +1251,49 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       }
       return undefined;
     }
+  }
+
+  private async collectLatestVersionedResources(): Promise<SourceSyncResource[]> {
+    const repoDir = this.getRepoDir();
+    const resources: SourceSyncResource[] = [];
+
+    for (const type of RESOURCE_TYPES) {
+      const scanned = await this.scanner.scanByType(repoDir, type);
+      for (const resource of scanned) {
+        const history = await this.history(type, resource.name);
+        const latest = history[0];
+        const metadataVersion = await this.readResourceVersion(
+          repoDir,
+          type,
+          resource.name,
+        );
+        const version = latest?.version ?? metadataVersion;
+
+        if (!version || !semver.valid(version)) {
+          throw new HimanError(
+            errorCodes.VERSION_NOT_FOUND,
+            `Latest version not found for ${type}/${resource.name}.`,
+          );
+        }
+
+        resources.push({
+          type,
+          name: resource.name,
+          version,
+          tag: `${type}/${resource.name}@${version}`,
+          sourceRef: latest ? latest.raw : undefined,
+          sourcePath: latest
+            ? undefined
+            : path.join(repoDir, this.getTypeDir(type), resource.name),
+        });
+      }
+    }
+
+    return resources.sort((a, b) => {
+      const typeOrder = RESOURCE_TYPES.indexOf(a.type) - RESOURCE_TYPES.indexOf(b.type);
+      if (typeOrder !== 0) return typeOrder;
+      return a.name.localeCompare(b.name);
+    });
   }
 
   private async getResourceRef(

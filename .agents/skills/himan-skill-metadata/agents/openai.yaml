@@ -1,0 +1,4 @@
+interface:
+  display_name: "Himan Skill Metadata"
+  short_description: "Generate skill himan.yaml analysis metadata"
+  default_prompt: "Use $himan-skill-metadata when creating or updating a Himan/Codex skill so SKILL.md has a matching himan.yaml with analysis metadata."
