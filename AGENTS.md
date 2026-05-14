@@ -18,7 +18,7 @@ Use `docs/codex/repo-map.md` for the durable project map.
 
 There is no lint script in `package.json`.
 
-Runtime CLI commands include `himan agent list|use|current|clear` for default agent configuration.
+Runtime CLI commands include `himan init --agent ... --install ...` for quick-start setup, `himan agent list|use|current|clear` for default agent configuration, and `himan doctor` for local health checks.
 
 ## Architecture
 
@@ -42,7 +42,7 @@ The package is ESM with `moduleResolution: NodeNext`, so TypeScript source impor
 
 ## Entry Points And Routing
 
-The main CLI is built by `buildCli()` and exposes `source`, `resource`, and `project` groups plus backward-compatible top-level lifecycle commands. Dedicated binaries reuse the same builders for source, resource, and project command subsets.
+The main CLI is built by `buildCli()` and exposes `source`, `resource`, `project`, `agent`, and `doctor` commands plus backward-compatible top-level lifecycle commands. Dedicated binaries reuse the same builders for source, resource, and project command subsets.
 
 ## API And Data
 

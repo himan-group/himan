@@ -41,15 +41,21 @@ pnpm dlx @hi-man/himan --help
 以下示例假设你已有一个可访问的 himan Git source 仓库，仓库中存在 `my-rule` 的资源版本 tag，并且你拥有发布所需的 Git push 权限。
 
 ```bash
-himan init https://github.com/your-org/your-himan-registry.git
-himan list rule
-himan agent use codex
-himan install rule my-rule
+himan init https://github.com/your-org/your-himan-registry.git \
+  --agent codex \
+  --install rule/my-rule
+himan doctor
+himan create skill my-skill
+# 编辑并验证项目下 .agents/skills/my-skill/
+himan publish skill my-skill --patch
 himan dev rule my-rule
-# 编辑项目下 .himan/dev/rule/my-rule/
+# 直接编辑项目下 .agents/rules/my-rule/；若只存在全局安装，dev 会先复制到当前项目
 himan publish rule my-rule --patch
 ```
 
+- `init` 的 `--agent` 会写入当前项目默认 agent；`--install` 可一次选择要安装的资源，格式为 `type/name[@version]`，多个资源用逗号分隔，例如 `rule/my-rule,skill/my-skill@1.0.0`。
+- 也可以只执行 `himan init <git_url>` 跳过 agent 和资源安装，后续再用 `himan agent use ...`、`himan list ...`、`himan install ...` 单独配置。
+- `himan doctor` 会检查本机 Node/Git、Himan home、当前 source、资源扫描、默认 agent、lock 和已安装目标。
 - **rule / command / skill**：都支持 `create`、`rename`、`list`、`history`、`install`、`dev`、`publish`、`uninstall`；其中 `rename` 暂不推荐使用。
 - 安装后项目目标位置（按 `agents`，默认 `cursor`）：
   - `cursor` -> `.cursor/{rules|commands|skills}/<name>`
@@ -61,10 +67,11 @@ himan publish rule my-rule --patch
   - `claude-code` -> `~/.claude/{rules|commands|skills}/<name>`
   - `codex` -> `~/.agents/{rules|commands|skills}/<name>`
   - `openclaw` -> `~/.openclaw/{rules|commands|skills}/<name>`
-- 开发态目录：
-  - `rule` -> `.himan/dev/rule/<name>`
-  - `command` -> `.himan/dev/command/<name>`
-  - `skill` -> `.himan/dev/skill/<name>`
+- 创建与开发态目录默认就是当前项目的 agent 目标目录；例如 Codex：
+  - `rule` -> `.agents/rules/<name>`
+  - `command` -> `.agents/commands/<name>`
+  - `skill` -> `.agents/skills/<name>`
+  `dev` 修改项目内资源时不再创建 `.himan/dev`，只在资源仅存在于用户级全局目录时复制到当前项目对应 agent 目录。
 - lock 文件：项目安装 `install <type> <name[@version]>` 会写入 `himan.lock`，记录 source、精确版本、agent 和安装模式；`himan install`（无参数）会按 lock 记录的 source 批量恢复安装，不受当前 default source 切换影响。`--global` 安装不写当前项目的 `himan.lock`。
 - 安装模式：默认 `--mode copy` 将资源复制到目标 agent 目录；也可用 `--mode link` 使用软链，lock 会记录并复现该模式。
 - 默认 agent：`agent use <agent>` 默认写当前项目 `.himan/config.json`；加 `--global` 写入 `~/.himan/config.json`。当前项目配置优先于全局配置。
@@ -131,10 +138,12 @@ analysis:
 
 可通过 `himan source init-docs` 为当前 default source 生成根目录文档模板；默认只创建缺失文件，`--force` 会覆盖已有 `README.md` / `CHANGELOG.md`，并把当前 source 中已有的 `rule`、`command`、`skill` 整理进 README 资源索引和 CHANGELOG 初始条目；资源引用会优先带上 Git tag 中的最新 semver 版本；对于尚未补齐 `himan.yaml` 的资源，会按默认入口识别，skill 还会读取 `skills/<name>/SKILL.md` front matter。`--dry-run` 可预览结果。有实际文件变更时，命令会提交并 push 到当前 Git source。
 
-`himan create`、`himan rename` 和 `himan publish` 会自动维护 source 根目录文档：
+`himan create` 默认在当前项目 agent 目标目录创建资源脚手架，供用户直接验证；`himan publish` 会把项目目录中的资源同步回当前 default source，并自动维护 source 根目录文档：
 
 - `README.md`：只更新 `<!-- himan:resources:start -->` 和 `<!-- himan:resources:end -->` 之间的资源索引；如果没有 marker，会在文件末尾追加一个受控资源索引区。
-- `CHANGELOG.md`：向 `[Unreleased]` 下追加资源变更条目；`create` 记录 `Added`，`rename` / `publish` 记录 `Changed`。
+- `CHANGELOG.md`：`publish` 向 `[Unreleased]` 下追加 `Changed` / published version 条目。
+
+`himan rename` 也会维护 source 根目录文档：更新 README 资源索引，并向 CHANGELOG 的 `[Unreleased]` 追加 `Changed` 条目。
 
 仓库根目录的 `README.md` 和 `CHANGELOG.md` 不会被安装到 agent 目录；agent 只消费被安装的具体资源目录。当前安装实现会 materialize 资源目录本身，因此对 Cursor 这类要求特定单文件格式的 agent，资源目录内应避免放入会干扰识别的额外文件。
 
@@ -144,11 +153,13 @@ analysis:
 
 | 命令                          | 说明                                             |
 | ----------------------------- | ------------------------------------------------ |
-| `init <git_url>`              | 初始化默认源（当前为 Git）并写入 `~/.himan/config.json` |
+| `init <git_url> [--agent a,b] [--install type/name[@version],...] [--mode link\|copy] [--json]` | 初始化默认源（当前为 Git）并写入 `~/.himan/config.json`；可同时写当前项目默认 agent 并安装选定资源 |
 | `source add <name> <git_url>` | 添加命名 Git 源                                    |
 | `source use <name>`           | 切换默认源                                          |
 | `source list [--json]`        | 查看已配置源（标记当前 default）                     |
 | `source init-docs [--force] [--dry-run] [--json]` | 为当前 default source 生成仓库级 README/CHANGELOG |
+| `source clone <from> <to> [--branch b] [--target-branch b] [--add-source name] [--use] [--dry-run] [--json]` | 将 Git source 分支和 himan 管理的资源 tag 复制到空目标 Git 仓库 |
+| `source sync <from> <to> [--target-branch b] [--add-source name] [--use] [--dry-run] [--json]` | 将最新资源快照同步到目标 Git 仓库并创建对应最新 tag |
 | `source init <git_url>`       | 与 `init` 等价，便于统一走 `himan source ...` 入口     |
 
 等价独立命令：
@@ -158,6 +169,8 @@ analysis:
 - `himan-source use <name>`
 - `himan-source list [--json]`
 - `himan-source init-docs [--force] [--dry-run] [--json]`
+- `himan-source clone <from> <to> [...]`
+- `himan-source sync <from> <to> [...]`
 
 ### 2) resource（资源）
 
@@ -165,7 +178,7 @@ analysis:
 | -------------------------------- | ----------------------------------------------------------------------------------- |
 | `list [type] [--agent a,b] [--brief] [--installed] [--json]` | 默认列出当前 default source 的资源；未传 `type` 时按 `rule`/`command`/`skill` 分组展示全部资源；可按 agent 过滤；默认显示描述，`--brief` 可隐藏描述；`--installed` 改为查看当前项目 `himan.lock` 中的已安装资源 |
 | `history <type> <name> [--json]` | 按 tag 查看版本历史                                                                 |
-| `create <type> <name>`           | 脚手架；常用选项：`--description`、`--agent a,b`、`--dry-run`、`--force`、`--json` |
+| `create <type> <name>`           | 在当前项目 agent 目录创建脚手架；常用选项：`--description`、`--agent a,b`、`--dry-run`、`--force`、`--json` |
 | `rename <type> <old-name> <new-name>` | 暂不推荐使用；重命名当前 default source 中的资源；常用选项：`--dry-run`、`--no-project`、`--json` |
 
 ### 3) project（当前项目）
@@ -174,9 +187,9 @@ analysis:
 | --------------------------------- | --------------------------------------------------------- |
 | `list [type] [--agent a,b] [--json]` | 查看当前项目 `himan.lock` 中记录的已安装资源；未传 `type` 时按 `rule`/`command`/`skill` 分组展示 |
 | `install [type] [name[@version]] [--global] [--agent a,b] [--mode link\|copy]` | 有参数时从当前 default source 安装指定资源；**无参数**时按 `himan.lock` 记录的 source 批量安装；加 `--global` 时安装到用户级 agent 目录且不写项目 lock；可覆盖安装目标 agent 或安装模式 |
-| `dev <type> <name>`               | 切换到开发态，并按安装模式将项目目标指向或复制自 `.himan/dev/...` |
+| `dev <type> <name>`               | 切换到开发态；项目资源原地编辑，全局资源先复制到当前项目目标目录 |
 | `uninstall <type> <name>`         | 从项目移除安装目标，并同步删除 `himan.lock` 条目           |
-| `publish <type> <name>`           | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个） |
+| `publish <type> <name> [--global]` | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个）；发布后默认安装到当前项目并更新 lock，`--global` 安装到用户级目录 |
 
 ### 4) agent（默认 Agent）
 
@@ -187,6 +200,12 @@ analysis:
 | `agent current [--json]` | 查看当前项目、全局和最终生效的默认 agent |
 | `agent clear [--project\|--global] [--json]` | 清除当前项目或全局默认 agent；默认 `--project` |
 
+### 5) doctor（可用性检查）
+
+| 命令 | 说明 |
+|------|------|
+| `doctor [--json]` | 检查 Node/Git、Himan home、当前 source、资源扫描、默认 agent、项目 lock 和已安装目标；存在 error 时以非零状态退出 |
+
 也可使用分组命令（与上面等价）：
 
 - `himan resource list|history|create|rename ...`
@@ -194,11 +213,12 @@ analysis:
 - `himan project list|install|dev|uninstall|publish ...`
 - `himan-project list|install|dev|uninstall|publish ...`
 - `himan agent list|use|current|clear ...`
+- `himan doctor ...`
 
 说明：资源与项目相关命令统一使用 `--agent` 指定目标 Agent。
-若未显式传 `--agent`，`create` / `install` 会使用当前项目默认 agent、全局默认 agent、资源 metadata 或内置默认 `cursor` 中最合适的一项；`dev` 会优先使用 lock 中记录的 agent。`install --global` 会优先复用当前项目 lock 里该资源的 agent，未命中时再使用默认 install 解析顺序，但目标根目录是用户 home 下对应 agent 目录。
+若未显式传 `--agent`，`create` / `install` 会使用当前项目默认 agent、全局默认 agent、资源 metadata 或内置默认 `cursor` 中最合适的一项；`dev` 会优先使用当前项目已有安装位置，找不到时再从用户级全局安装位置复制到当前项目。`install --global` 会优先复用当前项目 lock 里该资源的 agent，未命中时再使用默认 install 解析顺序，但目标根目录是用户 home 下对应 agent 目录。
 
-`publish` 优先使用项目里 `.himan/dev` 对应目录，否则用源仓库里对应目录。若资源目录包含 `himan.yaml`，发布前会校验元数据与入口文件；若没有 `himan.yaml`，则按默认入口推断最小元数据并发布，不会强制创建 `himan.yaml`。若待发布资源内容与最新已发布版本一致，则以 `E_PUBLISH_NO_CHANGES` 终止发布。发布需要可推送的 Git 权限。发布 commit 会包含资源目录以及自动维护的 source 根目录 `README.md` / `CHANGELOG.md`。发布成功后会从新版本 store 以 `copy` 模式重新安装到项目目标、更新 lock，并删除对应 `.himan/dev/<type>/<name>` 开发目录。
+`publish` 会展示 prepare、resolve-version、publish-source、sync-store、install、cleanup、done 等阶段日志。发布源优先使用旧版 `.himan/dev` 目录，其次使用当前项目 agent 目标目录，最后回退到 source 仓库对应资源目录。若资源目录包含 `himan.yaml`，发布前会校验元数据与入口文件；若没有 `himan.yaml`，则按默认入口推断最小元数据并发布，不会强制创建 `himan.yaml`。若待发布资源内容与最新已发布版本一致，则以 `E_PUBLISH_NO_CHANGES` 终止发布。发布需要可推送的 Git 权限。发布 commit 会包含资源目录以及自动维护的 source 根目录 `README.md` / `CHANGELOG.md`。发布成功后会从新版本 store 以 `copy` 模式重新安装；默认安装到当前项目并更新 `himan.lock`，传 `--global` 时安装到用户级目录且不写当前项目 lock。
 
 `rename` 暂不推荐使用。该命令会移动 source 仓库里的资源目录并更新资源 metadata 名称、README 资源索引和 CHANGELOG。已有发布 tag 不会被改写；若旧资源已有历史版本，rename 会为新名字创建一个指向当前最新版本的 tag。默认会迁移当前项目中对应的安装目标、`.himan/dev` 副本和 lock 条目；传 `--no-project` 时只改 source。对于 skill，命令只自动更新 metadata / front matter 中的精确 `name` 字段，不会自动替换 `SKILL.md` 正文中的旧名称引用。
 

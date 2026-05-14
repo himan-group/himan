@@ -140,8 +140,14 @@ export function registerProjectCommands(
       await runAction(async () => {
         const resourceType = ensureResourceType(type);
         const result = await services.dev(resourceType, name, process.cwd());
+        if (result.sourceScope === "global") {
+          process.stdout.write(
+            `Copied global ${result.type}/${result.name} into current project: ${result.devPath}\n`,
+          );
+          return;
+        }
         process.stdout.write(
-          `Switched ${result.type}/${result.name} to dev mode: ${result.devPath}\n`,
+          `Editing ${result.type}/${result.name} in place: ${result.devPath}\n`,
         );
       });
     });
@@ -166,24 +172,39 @@ export function registerProjectCommands(
     .option("--patch", "patch release")
     .option("--minor", "minor release")
     .option("--major", "major release")
+    .option("--global", "install the published version into user-level agent directories")
     .description("Publish resource (default: --patch)")
     .action(
       async (
         type: string,
         name: string,
-        options: { patch?: boolean; minor?: boolean; major?: boolean },
+        options: { patch?: boolean; minor?: boolean; major?: boolean; global?: boolean },
       ) => {
         await runAction(async () => {
           const resourceType = ensureResourceType(type);
           const releaseType = resolveReleaseType(options);
+          const installScope = options.global ? "global" : "project";
+          process.stdout.write(
+            options.global
+              ? "Published resource will be installed globally; current project lock will not be updated.\n"
+              : "Published resource will be installed into the current project and recorded in himan.lock. Use --global to install globally instead.\n",
+          );
           const result = await services.publish(
             resourceType,
             name,
             releaseType,
             process.cwd(),
+            {
+              installScope,
+              onProgress: (progress) => {
+                process.stdout.write(`[publish:${progress.stage}] ${progress.message}\n`);
+              },
+            },
           );
           process.stdout.write(
-            `Published ${result.type}/${result.name}@${result.version}\n`,
+            `Published ${result.type}/${result.name}@${result.version} and installed ${
+              result.installScope === "global" ? "globally" : "into current project"
+            }\n`,
           );
         });
       },

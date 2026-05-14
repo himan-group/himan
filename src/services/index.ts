@@ -4,6 +4,7 @@ import type {
   ResourceSourceAdapter,
   SourceConfig,
 } from "../adapters/source/resource-source-adapter.js";
+import type { DoctorCheck, DoctorResult } from "../domain/doctor.js";
 import type {
   CreateOptions,
   CreateResult,
@@ -28,6 +29,7 @@ import { ProjectConfigStore } from "../state/project-config-store.js";
 import {
   ProjectLockStore,
   type LockSourceInfo,
+  type ProjectLock,
 } from "../state/project-lock-store.js";
 import type { SourceState } from "../state/state-store.js";
 import { PathResolver } from "../utils/path-resolver.js";
@@ -40,9 +42,14 @@ import {
   normalizeAgents,
 } from "../utils/agent-configs.js";
 import path from "node:path";
+import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
+import { promisify } from "node:util";
 import { VersionResolver } from "../adapters/version/version-resolver.js";
 import YAML from "yaml";
+
+const execFileAsync = promisify(execFile);
+const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
 
 export interface InstalledResource {
   type: ResourceType;
@@ -51,6 +58,32 @@ export interface InstalledResource {
   agents: string[];
   mode: InstallMode;
   updatedAt: string;
+}
+
+export type PublishInstallScope = "project" | "global";
+
+export interface PublishProgress {
+  stage:
+    | "prepare"
+    | "resolve-version"
+    | "publish-source"
+    | "sync-store"
+    | "install"
+    | "cleanup"
+    | "done";
+  message: string;
+}
+
+export interface PublishOptions {
+  installScope?: PublishInstallScope;
+  onProgress?: (progress: PublishProgress) => void;
+}
+
+interface ExistingResourceTarget {
+  resourcePath: string;
+  linkPaths: string[];
+  agents: string[];
+  mode: InstallMode;
 }
 
 export class ServiceFactory {
@@ -267,6 +300,48 @@ export class ServiceFactory {
     };
   }
 
+  async doctor(projectDir: string): Promise<DoctorResult> {
+    const checks: DoctorCheck[] = [];
+    checks.push(this.checkNodeVersion());
+    checks.push(await this.checkGit());
+    checks.push(await this.checkHomeState());
+
+    const config = await this.stateStore.loadConfig();
+    if (!config?.source) {
+      checks.push({
+        name: "source",
+        status: "error",
+        message: "No source configured. Run `himan init <git_repo>` first.",
+        details: { configPath: this.stateStore.getConfigPath() },
+      });
+    } else {
+      const currentName = config.sources?.default ?? "default";
+      const currentSource = config.sources?.items[currentName] ?? config.source;
+      checks.push({
+        name: "source",
+        status: "ok",
+        message: `Using ${currentSource.type} source ${currentName}.`,
+        details: {
+          name: currentName,
+          type: currentSource.type,
+          repo: currentSource.repo,
+          repoId: currentSource.repoId,
+        },
+      });
+      checks.push(await this.checkSourceResources());
+    }
+
+    checks.push(await this.checkAgents(projectDir));
+    const lockCheck = await this.checkProjectLock(projectDir);
+    checks.push(lockCheck.check);
+    checks.push(await this.checkProjectTargets(projectDir, lockCheck.lock));
+
+    return {
+      ok: !checks.some((check) => check.status === "error"),
+      checks,
+    };
+  }
+
   async clearAgents(
     scope: "global" | "project",
     projectDir: string,
@@ -282,6 +357,194 @@ export class ServiceFactory {
       agents: undefined,
     });
     return { scope };
+  }
+
+  private checkNodeVersion(): DoctorCheck {
+    const version = process.versions.node;
+    const major = Number(version.split(".")[0]);
+    if (major === 22) {
+      return {
+        name: "node",
+        status: "ok",
+        message: `Node.js ${version}.`,
+      };
+    }
+
+    return {
+      name: "node",
+      status: "error",
+      message: `Node.js ${version} is unsupported. Use Node.js 22.x.`,
+    };
+  }
+
+  private async checkGit(): Promise<DoctorCheck> {
+    try {
+      const result = await execFileAsync("git", ["--version"]);
+      return {
+        name: "git",
+        status: "ok",
+        message: result.stdout.trim() || "Git is available.",
+      };
+    } catch (error) {
+      return this.errorCheck("git", "Git is not available on PATH.", error);
+    }
+  }
+
+  private async checkHomeState(): Promise<DoctorCheck> {
+    const root = this.paths.getHimanRoot();
+    const reposDir = this.paths.getReposDir();
+    const storeDir = this.paths.getStoreDir();
+    const missing = [];
+    if (!(await this.exists(root))) missing.push(root);
+    if (!(await this.exists(reposDir))) missing.push(reposDir);
+    if (!(await this.exists(storeDir))) missing.push(storeDir);
+
+    if (missing.length > 0) {
+      return {
+        name: "home",
+        status: "warn",
+        message: "Himan home directories are not fully initialized yet.",
+        details: { root, reposDir, storeDir, missing },
+      };
+    }
+
+    return {
+      name: "home",
+      status: "ok",
+      message: `Himan home is initialized at ${root}.`,
+      details: { root, reposDir, storeDir },
+    };
+  }
+
+  private async checkSourceResources(): Promise<DoctorCheck> {
+    try {
+      const source = await this.loadSourceFromConfig();
+      const entries = await Promise.all(
+        RESOURCE_TYPES.map(async (type) => [type, await source.list(type)] as const),
+      );
+      const counts = Object.fromEntries(
+        entries.map(([type, resources]) => [type, resources.length]),
+      ) as Record<ResourceType, number>;
+      const total = RESOURCE_TYPES.reduce((sum, type) => sum + counts[type], 0);
+      return {
+        name: "resources",
+        status: "ok",
+        message: `Scanned ${total} resources from current source.`,
+        details: { counts },
+      };
+    } catch (error) {
+      return this.errorCheck("resources", "Cannot scan current source resources.", error);
+    }
+  }
+
+  private async checkAgents(projectDir: string): Promise<DoctorCheck> {
+    try {
+      const settings = await this.getAgentSettings(projectDir);
+      const scope = settings.project ? "project" : settings.global ? "global" : "default";
+      return {
+        name: "agents",
+        status: "ok",
+        message: `Effective agents: ${settings.effective.join(", ")} (${scope}).`,
+        details: settings,
+      };
+    } catch (error) {
+      return this.errorCheck("agents", "Cannot resolve effective agents.", error);
+    }
+  }
+
+  private async checkProjectLock(projectDir: string): Promise<{
+    check: DoctorCheck;
+    lock?: ProjectLock;
+  }> {
+    const lockPath = this.lockStore.getLockPath(projectDir);
+    const { lock, state } = await this.lockStore.loadWithState(projectDir);
+    if (state === "missing") {
+      return {
+        check: {
+          name: "lock",
+          status: "ok",
+          message: "No himan.lock found for this project yet.",
+          details: { lockPath },
+        },
+      };
+    }
+    if (state === "invalid" || !lock) {
+      return {
+        check: {
+          name: "lock",
+          status: "error",
+          message: `Lock file is invalid: ${lockPath}`,
+          details: { lockPath },
+        },
+      };
+    }
+    if (lock.resources.length === 0) {
+      return {
+        check: {
+          name: "lock",
+          status: "warn",
+          message: "himan.lock has no resources.",
+          details: { lockPath },
+        },
+        lock,
+      };
+    }
+    return {
+      check: {
+        name: "lock",
+        status: "ok",
+        message: `himan.lock tracks ${lock.resources.length} resources.`,
+        details: { lockPath, source: lock.source },
+      },
+      lock,
+    };
+  }
+
+  private async checkProjectTargets(
+    projectDir: string,
+    lock: ProjectLock | undefined,
+  ): Promise<DoctorCheck> {
+    if (!lock || lock.resources.length === 0) {
+      return {
+        name: "targets",
+        status: "ok",
+        message: "No locked project targets to verify.",
+      };
+    }
+
+    const missing: Array<{ resource: string; path: string }> = [];
+    for (const resource of lock.resources) {
+      const agents = normalizeAgents(resource.agents);
+      const targets = getProjectResourcePaths(
+        projectDir,
+        resource.type,
+        resource.name,
+        agents,
+      );
+      for (const targetPath of targets) {
+        if (!(await this.exists(targetPath))) {
+          missing.push({
+            resource: `${resource.type}/${resource.name}@${resource.version}`,
+            path: targetPath,
+          });
+        }
+      }
+    }
+
+    if (missing.length > 0) {
+      return {
+        name: "targets",
+        status: "warn",
+        message: `Missing ${missing.length} installed targets. Run \`himan install\` to restore them.`,
+        details: { missing },
+      };
+    }
+
+    return {
+      name: "targets",
+      status: "ok",
+      message: "All locked project targets exist.",
+    };
   }
 
   async list(type: ResourceType, agents?: string[]): Promise<ResourceMeta[]> {
@@ -398,23 +661,53 @@ export class ServiceFactory {
     devPath: string;
     linkPath: string;
     mode: InstallMode;
+    sourceScope: "project" | "global";
   }> {
-    const installInfo = await this.resolveInstalledResource(projectDir, type, name);
-    const installedPath = installInfo.installedPath;
-    const devPath = this.getProjectDevPath(projectDir, type, name);
-    if (!(await this.exists(devPath))) {
-      await fs.mkdir(path.dirname(devPath), { recursive: true });
-      await fs.cp(installedPath, devPath, { recursive: true });
+    const projectTarget = await this.tryResolveProjectResourceTarget(
+      projectDir,
+      type,
+      name,
+    );
+    if (projectTarget) {
+      return {
+        type,
+        name,
+        devPath: projectTarget.resourcePath,
+        linkPath: projectTarget.linkPaths[0],
+        mode: projectTarget.mode,
+        sourceScope: "project",
+      };
     }
-    for (const linkPath of installInfo.linkPaths) {
-      await this.materializeResource(devPath, linkPath, installInfo.mode);
+
+    const globalTarget = await this.tryResolveGlobalResourceTarget(
+      projectDir,
+      type,
+      name,
+    );
+    if (!globalTarget) {
+      throw new HimanError(
+        errorCodes.INSTALL_NOT_FOUND,
+        `Installed resource link not found for ${type}/${name}. Run install first.`,
+      );
+    }
+
+    const projectLinkPaths = getProjectResourcePaths(
+      projectDir,
+      type,
+      name,
+      globalTarget.agents,
+    );
+    for (const [index, linkPath] of projectLinkPaths.entries()) {
+      const sourcePath = globalTarget.linkPaths[index] ?? globalTarget.resourcePath;
+      await this.materializeResource(sourcePath, linkPath, "copy");
     }
     return {
       type,
       name,
-      devPath,
-      linkPath: installInfo.linkPaths[0],
-      mode: installInfo.mode,
+      devPath: projectLinkPaths[0],
+      linkPath: projectLinkPaths[0],
+      mode: "copy",
+      sourceScope: "global",
     };
   }
 
@@ -443,10 +736,25 @@ export class ServiceFactory {
     name: string,
     releaseType: "patch" | "minor" | "major",
     projectDir: string,
-  ): Promise<{ type: ResourceType; name: string; version: string; tag: string }> {
+    options: PublishOptions = {},
+  ): Promise<{
+    type: ResourceType;
+    name: string;
+    version: string;
+    tag: string;
+    installScope: PublishInstallScope;
+    linkPath: string;
+  }> {
+    const installScope = options.installScope ?? "project";
+    this.reportPublishProgress(options, "prepare", `Preparing ${type}/${name}.`);
     const source = await this.loadSourceFromConfig();
     const sourceDir = await this.resolvePublishSourceDir(type, name, projectDir);
     const existingInstallInfo = await this.tryResolveInstalledResource(
+      projectDir,
+      type,
+      name,
+    );
+    const existingGlobalInstallInfo = await this.tryResolveGlobalResourceTarget(
       projectDir,
       type,
       name,
@@ -455,42 +763,91 @@ export class ServiceFactory {
     const history = await source.history(type, name);
     const latest = history[0]?.version ?? "0.0.0";
     const nextVersion = this.versions.nextVersion(latest, releaseType);
+    this.reportPublishProgress(
+      options,
+      "resolve-version",
+      `Resolved ${releaseType} version ${nextVersion}.`,
+    );
+    this.reportPublishProgress(
+      options,
+      "publish-source",
+      `Publishing ${type}/${name}@${nextVersion} to the Git source.`,
+    );
     const result = await source.publish(type, name, nextVersion, sourceDir, {
       releaseType,
     });
 
     const storePath = this.getStorePath(type, name, nextVersion);
+    this.reportPublishProgress(
+      options,
+      "sync-store",
+      `Syncing ${type}/${name}@${nextVersion} into the local store.`,
+    );
     if (!(await this.exists(storePath))) {
       await source.pull(type, name, nextVersion, storePath);
     }
     const locked = await this.getLockedResource(projectDir, type, name);
     const resourceMeta = await this.readResourceMetaFromDir(storePath, type);
     const configuredAgents = await this.getConfiguredAgents(projectDir);
-    const nextAgents = locked?.agents?.length
-      ? normalizeAgents(locked.agents)
-      : existingInstallInfo?.agents.length
-        ? normalizeAgents(existingInstallInfo.agents)
-        : configuredAgents ?? normalizeAgents(resourceMeta?.agents);
     const installMode: InstallMode = "copy";
-    const linkPaths = getProjectResourcePaths(projectDir, type, name, nextAgents);
+    const nextAgents =
+      installScope === "global"
+        ? existingGlobalInstallInfo?.agents.length
+          ? normalizeAgents(existingGlobalInstallInfo.agents)
+          : existingInstallInfo?.agents.length
+            ? normalizeAgents(existingInstallInfo.agents)
+            : locked?.agents?.length
+              ? normalizeAgents(locked.agents)
+              : configuredAgents ?? normalizeAgents(resourceMeta?.agents)
+        : locked?.agents?.length
+          ? normalizeAgents(locked.agents)
+          : existingInstallInfo?.agents.length
+            ? normalizeAgents(existingInstallInfo.agents)
+            : configuredAgents ?? normalizeAgents(resourceMeta?.agents);
+    const linkPaths =
+      installScope === "global"
+        ? getGlobalResourcePaths(this.paths.getHomeDir(), type, name, nextAgents)
+        : getProjectResourcePaths(projectDir, type, name, nextAgents);
+    this.reportPublishProgress(
+      options,
+      "install",
+      installScope === "global"
+        ? `Installing published version globally for ${nextAgents.join(", ")}.`
+        : `Installing published version into the current project for ${nextAgents.join(", ")}.`,
+    );
     for (const linkPath of linkPaths) {
       await this.materializeResource(storePath, linkPath, installMode);
     }
 
-    const sourceInfo = await this.getLockSourceInfo();
-    await this.lockStore.upsertResource(projectDir, sourceInfo, {
-      type,
-      name,
-      version: nextVersion,
-      agents: nextAgents,
-      mode: installMode,
-    });
+    if (installScope === "project") {
+      const sourceInfo = await this.getLockSourceInfo();
+      await this.lockStore.upsertResource(projectDir, sourceInfo, {
+        type,
+        name,
+        version: nextVersion,
+        agents: nextAgents,
+        mode: installMode,
+      });
+    }
+    this.reportPublishProgress(options, "cleanup", `Cleaning up legacy dev copy if present.`);
     await fs.rm(this.getProjectDevPath(projectDir, type, name), {
       recursive: true,
       force: true,
     });
 
-    return { type, name, version: result.version, tag: result.tag };
+    this.reportPublishProgress(
+      options,
+      "done",
+      `Published ${type}/${name}@${result.version}.`,
+    );
+    return {
+      type,
+      name,
+      version: result.version,
+      tag: result.tag,
+      installScope,
+      linkPath: linkPaths[0],
+    };
   }
 
   async create(
@@ -500,15 +857,59 @@ export class ServiceFactory {
     projectDir: string,
   ): Promise<CreateResult> {
     this.validateCreateInput(type, name, options);
-    const source = await this.loadSourceFromConfig();
-    return source.create(type, name, {
-      description: options.description,
-      agents: await this.resolveEffectiveAgents(projectDir, options.agents),
-      entry: options.entry,
-      template: options.template ?? "basic",
-      force: options.force,
-      dryRun: options.dryRun,
-    });
+    await this.loadSourceFromConfig();
+
+    const agents = await this.resolveEffectiveAgents(projectDir, options.agents);
+    const resourcePaths = getProjectResourcePaths(projectDir, type, name, agents);
+    const entry = options.entry ?? this.getDefaultEntry(type);
+    const files = resourcePaths.flatMap((resourcePath) => [
+      path.join(resourcePath, "himan.yaml"),
+      path.join(resourcePath, entry),
+    ]);
+    const existingPaths: string[] = [];
+    for (const resourcePath of resourcePaths) {
+      if (await this.exists(resourcePath)) existingPaths.push(resourcePath);
+    }
+
+    if (existingPaths.length > 0 && !options.force) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Resource already exists: ${type}/${name}`,
+        { paths: existingPaths },
+      );
+    }
+
+    if (!options.dryRun) {
+      for (const resourcePath of resourcePaths) {
+        await fs.rm(resourcePath, { recursive: true, force: true });
+        await fs.mkdir(resourcePath, { recursive: true });
+        await fs.writeFile(
+          path.join(resourcePath, "himan.yaml"),
+          YAML.stringify({
+            name,
+            type,
+            version: "0.1.0",
+            entry,
+            description: options.description ?? `${type} resource ${name}`,
+            agents,
+          }),
+          "utf8",
+        );
+        await fs.writeFile(
+          path.join(resourcePath, entry),
+          this.getDefaultContent(type, name),
+          "utf8",
+        );
+      }
+    }
+
+    return {
+      type,
+      name,
+      resourceDir: resourcePaths[0],
+      files,
+      dryRun: Boolean(options.dryRun),
+    };
   }
 
   async rename(
@@ -1075,6 +1476,118 @@ export class ServiceFactory {
     return mode === "link" ? "link" : "copy";
   }
 
+  private reportPublishProgress(
+    options: PublishOptions,
+    stage: PublishProgress["stage"],
+    message: string,
+  ): void {
+    options.onProgress?.({ stage, message });
+  }
+
+  private async tryResolveProjectResourceTarget(
+    projectDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<ExistingResourceTarget | undefined> {
+    const locked = await this.getLockedResource(projectDir, type, name);
+    const configuredAgents = await this.getConfiguredAgents(projectDir);
+
+    if (locked?.agents?.length || configuredAgents?.length) {
+      const agents = locked?.agents?.length
+        ? normalizeAgents(locked.agents)
+        : (configuredAgents ?? normalizeAgents());
+      const linkPaths = getProjectResourcePaths(projectDir, type, name, agents);
+      const existingLinkPath = await this.findFirstExistingPath(linkPaths);
+      if (existingLinkPath) {
+        return {
+          resourcePath: existingLinkPath,
+          linkPaths,
+          agents,
+          mode: this.resolveInstallMode(locked?.mode ?? (await this.readPathMode(existingLinkPath))),
+        };
+      }
+    }
+
+    const existingCandidates = await this.findExistingAgentPaths(
+      projectDir,
+      type,
+      name,
+      "project",
+    );
+    if (existingCandidates.length === 0) {
+      return undefined;
+    }
+
+    const existingAgents = normalizeAgents(
+      existingCandidates.map((candidate) => candidate.agent),
+    );
+    const linkPaths = getProjectResourcePaths(projectDir, type, name, existingAgents);
+    return {
+      resourcePath: existingCandidates[0].path,
+      linkPaths,
+      agents: existingAgents,
+      mode: await this.readPathMode(existingCandidates[0].path),
+    };
+  }
+
+  private async tryResolveGlobalResourceTarget(
+    projectDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<ExistingResourceTarget | undefined> {
+    const existingCandidates = await this.findExistingAgentPaths(
+      projectDir,
+      type,
+      name,
+      "global",
+    );
+    if (existingCandidates.length === 0) {
+      return undefined;
+    }
+
+    const agents = normalizeAgents(existingCandidates.map((candidate) => candidate.agent));
+    const linkPaths = getGlobalResourcePaths(this.paths.getHomeDir(), type, name, agents);
+    return {
+      resourcePath: existingCandidates[0].path,
+      linkPaths,
+      agents,
+      mode: await this.readPathMode(existingCandidates[0].path),
+    };
+  }
+
+  private async findExistingAgentPaths(
+    projectDir: string,
+    type: ResourceType,
+    name: string,
+    scope: "project" | "global",
+  ): Promise<Array<{ agent: string; path: string }>> {
+    const rootDir = scope === "global" ? this.paths.getHomeDir() : projectDir;
+    const candidates = getSupportedAgentNames().map((agent) => ({
+      agent,
+      path:
+        scope === "global"
+          ? getGlobalResourcePaths(rootDir, type, name, [agent])[0]
+          : getProjectResourcePaths(rootDir, type, name, [agent])[0],
+    }));
+    const existingCandidates: Array<{ agent: string; path: string }> = [];
+    for (const candidate of candidates) {
+      if (await this.exists(candidate.path)) existingCandidates.push(candidate);
+    }
+    return existingCandidates;
+  }
+
+  private async findFirstExistingPath(paths: string[]): Promise<string | undefined> {
+    for (const targetPath of paths) {
+      if (await this.exists(targetPath)) return targetPath;
+    }
+    return undefined;
+  }
+
+  private async readPathMode(targetPath: string): Promise<InstallMode> {
+    const stat = await fs.lstat(targetPath);
+    return stat.isSymbolicLink() ? "link" : "copy";
+  }
+
   private async resolveInstalledResource(
     projectDir: string,
     type: ResourceType,
@@ -1319,6 +1832,14 @@ export class ServiceFactory {
     return items.length > 0 ? items : undefined;
   }
 
+  private errorCheck(name: string, message: string, error: unknown): DoctorCheck {
+    return {
+      name,
+      status: "error",
+      message: `${message} ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
   private async exists(targetPath: string): Promise<boolean> {
     try {
       await fs.access(targetPath);
@@ -1336,6 +1857,15 @@ export class ServiceFactory {
     const devPath = this.getProjectDevPath(projectDir, type, name);
     if (await this.exists(devPath)) {
       return devPath;
+    }
+
+    const projectTarget = await this.tryResolveProjectResourceTarget(
+      projectDir,
+      type,
+      name,
+    );
+    if (projectTarget) {
+      return projectTarget.resourcePath;
     }
 
     const repoResourceDir = await this.getRepoResourceDir(type, name);
@@ -1380,6 +1910,16 @@ export class ServiceFactory {
 
   private getDefaultEntry(type: ResourceType): string {
     return type === "skill" ? "SKILL.md" : "content.md";
+  }
+
+  private getDefaultContent(type: ResourceType, name: string): string {
+    if (type === "rule") {
+      return `# ${name}\n\nDescribe rule instructions here.\n`;
+    }
+    if (type === "command") {
+      return `# ${name}\n\nDescribe command behavior here.\n`;
+    }
+    return `# ${name}\n\nDescribe skill workflow here.\n`;
   }
 
   private validateCreateInput(

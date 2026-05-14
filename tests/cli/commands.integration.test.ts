@@ -86,6 +86,33 @@ describe("CLI commands with external git source", () => {
     expect(helpResult.stdout).not.toContain("-V, --version");
   });
 
+  it("reports doctor errors before init", async () => {
+    const doctorHomeDir = path.join(tmpRoot, "doctor-home");
+    const doctorProjectDir = path.join(tmpRoot, "doctor-project");
+    await fs.mkdir(doctorHomeDir, { recursive: true });
+    await fs.mkdir(doctorProjectDir, { recursive: true });
+
+    const result = runCli(["doctor", "--json"], doctorProjectDir, doctorHomeDir);
+    expect(result.status).toBe(1);
+
+    const payload = JSON.parse(result.stdout) as {
+      ok: boolean;
+      checks: Array<{ name: string; status: string; message: string }>;
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "source",
+          status: "error",
+        }),
+      ]),
+    );
+    expect(
+      payload.checks.find((check) => check.name === "source")?.message,
+    ).toContain("himan init");
+  });
+
   it("initializes from the given test repository", async () => {
     const result = runCli(["init", TEST_REPO], projectDir, homeDir);
     expect(result.status).toBe(0);
@@ -340,7 +367,7 @@ describe("CLI commands with external git source", () => {
     );
     expect(createResult.status).toBe(0);
     const meta = await fs.readFile(
-      path.join(repoDir, "rules", "project-default-agent", "himan.yaml"),
+      path.join(projectDir, ".openclaw", "rules", "project-default-agent", "himan.yaml"),
       "utf8",
     );
     expect(meta).toContain("agents:");
@@ -386,10 +413,12 @@ describe("CLI commands with external git source", () => {
       dryRun: boolean;
     };
     expect(payload.dryRun).toBe(false);
-    expect(payload.resourceDir).toContain(path.join(repoDir, "commands", "sync-docs"));
-    await expect(fs.access(path.join(repoDir, "commands", "sync-docs", "himan.yaml"))).resolves
+    expect(payload.resourceDir).toContain(path.join(projectDir, ".cursor", "commands", "sync-docs"));
+    await expect(fs.access(path.join(projectDir, ".cursor", "commands", "sync-docs", "himan.yaml"))).resolves
       .toBeUndefined();
-    await expect(fs.access(path.join(repoDir, "commands", "sync-docs", "content.md"))).resolves
+    await expect(fs.access(path.join(projectDir, ".cursor", "commands", "sync-docs", "content.md"))).resolves
+      .toBeUndefined();
+    await expect(fs.access(path.join(projectDir, ".claude", "commands", "sync-docs", "content.md"))).resolves
       .toBeUndefined();
 
     const createAgain = runCli(["create", "command", "sync-docs"], projectDir, homeDir);
@@ -417,31 +446,7 @@ describe("CLI commands with external git source", () => {
     );
     expect(createForce.status).toBe(0);
 
-    const listCommandResult = runCli(
-      ["list", "command", "--json"],
-      projectDir,
-      homeDir,
-    );
-    expect(listCommandResult.status).toBe(0);
-    const listedCommands = JSON.parse(listCommandResult.stdout) as Array<Record<string, unknown>>;
-    expect(listedCommands).toEqual(
-      expect.arrayContaining([
-        {
-          name: "sync-docs",
-          type: "command",
-          entry: "content.md",
-          description: expect.any(String),
-          agents: expect.any(Array),
-        },
-      ]),
-    );
-
-    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
-      "`command/sync-docs@0.1.0`: command resource sync-docs",
-    );
-    await expect(
-      fs.readFile(path.join(repoDir, "CHANGELOG.md"), "utf8"),
-    ).resolves.toContain("- Added `command/sync-docs`.");
+    await expect(fs.access(path.join(repoDir, "commands", "sync-docs"))).rejects.toThrow();
   });
 
   it("supports dry-run for skill create", async () => {
@@ -454,25 +459,12 @@ describe("CLI commands with external git source", () => {
     const payload = JSON.parse(dryRun.stdout) as { resourceDir: string; dryRun: boolean };
     expect(payload.dryRun).toBe(true);
 
-    await expect(fs.access(path.join(repoDir, "skills", "bug-analysis"))).rejects.toThrow();
+    await expect(fs.access(path.join(projectDir, ".cursor", "skills", "bug-analysis"))).rejects.toThrow();
 
     const createSkill = runCli(["create", "skill", "bug-analysis"], projectDir, homeDir);
     expect(createSkill.status).toBe(0);
 
-    const listSkillResult = runCli(["list", "skill", "--json"], projectDir, homeDir);
-    expect(listSkillResult.status).toBe(0);
-    const listedSkills = JSON.parse(listSkillResult.stdout) as Array<Record<string, unknown>>;
-    expect(listedSkills).toEqual(
-      expect.arrayContaining([
-        {
-          name: "bug-analysis",
-          type: "skill",
-          entry: "SKILL.md",
-          description: expect.any(String),
-          agents: expect.any(Array),
-        },
-      ]),
-    );
+    await expect(fs.access(path.join(projectDir, ".cursor", "skills", "bug-analysis", "SKILL.md"))).resolves.toBeUndefined();
   });
 
   it("publishes create artifact without dev workflow", async () => {
@@ -489,7 +481,7 @@ describe("CLI commands with external git source", () => {
     );
     expect(createResult.status).toBe(0);
 
-    const contentPath = path.join(repoDir, "commands", "release-note", "content.md");
+    const contentPath = path.join(projectDir, ".cursor", "commands", "release-note", "content.md");
     await fs.appendFile(contentPath, "Publish from create artifact.\n", "utf8");
 
     const publishResult = runCli(
@@ -498,6 +490,8 @@ describe("CLI commands with external git source", () => {
       homeDir,
     );
     expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("[publish:prepare]");
+    expect(publishResult.stdout).toContain("[publish:install]");
     expect(publishResult.stdout).toContain("Published command/release-note@0.1.0");
 
     const noChangePublishResult = runCli(
@@ -543,7 +537,7 @@ describe("CLI commands with external git source", () => {
     );
     expect(createResult.status).toBe(0);
 
-    const skillContentPath = path.join(repoDir, "skills", "risk-check", "SKILL.md");
+    const skillContentPath = path.join(projectDir, ".cursor", "skills", "risk-check", "SKILL.md");
     await fs.appendFile(skillContentPath, "Skill published from create artifact.\n", "utf8");
 
     const publishResult = runCli(
@@ -588,16 +582,15 @@ describe("CLI commands with external git source", () => {
 
     const devCommand = runCli(["dev", "command", "release-note"], projectDir, homeDir);
     expect(devCommand.status).toBe(0);
-    expect(devCommand.stdout).toContain("Switched command/release-note to dev mode");
+    expect(devCommand.stdout).toContain("Editing command/release-note in place");
 
-    const commandDevPath = path.join(projectDir, ".himan", "dev", "command", "release-note");
     expect((await fs.lstat(commandLinkPath)).isSymbolicLink()).toBe(false);
-    await expect(
-      fs.readFile(path.join(commandDevPath, "content.md"), "utf8"),
-    ).resolves.toContain("Publish from create artifact.");
     await expect(
       fs.readFile(path.join(commandLinkPath, "content.md"), "utf8"),
     ).resolves.toContain("Publish from create artifact.");
+    await expect(
+      fs.access(path.join(projectDir, ".himan", "dev", "command", "release-note")),
+    ).rejects.toThrow();
 
     const installSkill = runCli(["install", "skill", "risk-check@0.0.1"], projectDir, homeDir);
     expect(installSkill.status).toBe(0);
@@ -611,16 +604,15 @@ describe("CLI commands with external git source", () => {
 
     const devSkill = runCli(["dev", "skill", "risk-check"], projectDir, homeDir);
     expect(devSkill.status).toBe(0);
-    expect(devSkill.stdout).toContain("Switched skill/risk-check to dev mode");
+    expect(devSkill.stdout).toContain("Editing skill/risk-check in place");
 
-    const skillDevPath = path.join(projectDir, ".himan", "dev", "skill", "risk-check");
     expect((await fs.lstat(skillLinkPath)).isSymbolicLink()).toBe(false);
-    await expect(
-      fs.readFile(path.join(skillDevPath, "SKILL.md"), "utf8"),
-    ).resolves.toContain("Skill published from create artifact.");
     await expect(
       fs.readFile(path.join(skillLinkPath, "SKILL.md"), "utf8"),
     ).resolves.toContain("Skill published from create artifact.");
+    await expect(
+      fs.access(path.join(projectDir, ".himan", "dev", "skill", "risk-check")),
+    ).rejects.toThrow();
   });
 
   it("switches an existing Codex skill directory to dev mode", async () => {
@@ -647,16 +639,15 @@ describe("CLI commands with external git source", () => {
     );
     expect(devSkill.status).toBe(0);
     expect(devSkill.stdout).toContain(
-      "Switched skill/common-project-startup to dev mode",
+      "Editing skill/common-project-startup in place",
     );
 
-    const expectedDevPath = await fs.realpath(
-      path.join(codexProject, ".himan", "dev", "skill", "common-project-startup"),
-    );
-    await expect(fs.realpath(skillPath)).resolves.toBe(expectedDevPath);
     await expect(
-      fs.readFile(path.join(expectedDevPath, "SKILL.md"), "utf8"),
+      fs.readFile(path.join(skillPath, "SKILL.md"), "utf8"),
     ).resolves.toContain("common-project-startup");
+    await expect(
+      fs.access(path.join(codexProject, ".himan", "dev", "skill", "common-project-startup")),
+    ).rejects.toThrow();
   });
 
   it("supports multi-agent installs for claude-code/codex/openclaw", async () => {
@@ -702,15 +693,21 @@ describe("CLI commands with external git source", () => {
 
     const devResult = runCli(["dev", "rule", "agent-style"], projectDir, homeDir);
     expect(devResult.status).toBe(0);
+    expect(devResult.stdout).toContain("Editing rule/agent-style in place");
 
-    const expectedDevPath = path.join(projectDir, ".himan", "dev", "rule", "agent-style");
-    const devContent = await fs.readFile(path.join(expectedDevPath, "content.md"), "utf8");
+    const devContent = await fs.readFile(
+      path.join(agentStyleTargets[0], "content.md"),
+      "utf8",
+    );
     for (const targetPath of agentStyleTargets) {
       expect((await fs.lstat(targetPath)).isSymbolicLink()).toBe(false);
       await expect(fs.readFile(path.join(targetPath, "content.md"), "utf8")).resolves.toBe(
         devContent,
       );
     }
+    await expect(
+      fs.access(path.join(projectDir, ".himan", "dev", "rule", "agent-style")),
+    ).rejects.toThrow();
   });
 
   it("supports list/history/install/dev after local fixture commit and tag", async () => {
@@ -790,16 +787,78 @@ describe("CLI commands with external git source", () => {
 
     const devResult = runCli(["dev", "rule", "code-review"], projectDir, homeDir);
     expect(devResult.status).toBe(0);
-    expect(devResult.stdout).toContain("Switched rule/code-review to dev mode");
+    expect(devResult.stdout).toContain("Editing rule/code-review in place");
 
-    const expectedDevPath = path.join(projectDir, ".himan", "dev", "rule", "code-review");
     expect((await fs.lstat(linkedPath)).isSymbolicLink()).toBe(false);
-    await expect(
-      fs.readFile(path.join(expectedDevPath, "content.md"), "utf8"),
-    ).resolves.toContain("Follow code review checklist");
     await expect(
       fs.readFile(path.join(linkedPath, "content.md"), "utf8"),
     ).resolves.toContain("Follow code review checklist");
+    await expect(
+      fs.access(path.join(projectDir, ".himan", "dev", "rule", "code-review")),
+    ).rejects.toThrow();
+  });
+
+  it("initializes project agent and installs selected resources in one flow", async () => {
+    const quickstartProjectDir = path.join(tmpRoot, "quickstart-project");
+    await fs.mkdir(quickstartProjectDir, { recursive: true });
+
+    const result = runCli(
+      [
+        "init",
+        TEST_REPO,
+        "--agent",
+        "codex",
+        "--install",
+        "rule/code-review@1.0.0",
+        "--json",
+      ],
+      quickstartProjectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(0);
+
+    const payload = JSON.parse(result.stdout) as {
+      source: { sourceType: string; repo: string };
+      agents: { scope: string; agents: string[] };
+      installed: Array<{ type: string; name: string; version: string; mode: string }>;
+    };
+    expect(payload.source).toEqual(
+      expect.objectContaining({ sourceType: "git", repo: TEST_REPO }),
+    );
+    expect(payload.agents).toEqual({ scope: "project", agents: ["codex"] });
+    expect(payload.installed).toEqual([
+      expect.objectContaining({
+        type: "rule",
+        name: "code-review",
+        version: "1.0.0",
+        mode: "copy",
+      }),
+    ]);
+
+    const quickstartRulePath = path.join(
+      quickstartProjectDir,
+      ".agents",
+      "rules",
+      "code-review",
+    );
+    expect((await fs.lstat(quickstartRulePath)).isSymbolicLink()).toBe(false);
+    await expect(
+      fs.readFile(path.join(quickstartRulePath, "content.md"), "utf8"),
+    ).resolves.toContain("Follow code review checklist");
+
+    const doctor = runCli(["doctor", "--json"], quickstartProjectDir, homeDir);
+    expect(doctor.status).toBe(0);
+    const doctorPayload = JSON.parse(doctor.stdout) as {
+      ok: boolean;
+      checks: Array<{ name: string; status: string }>;
+    };
+    expect(doctorPayload.ok).toBe(true);
+    expect(doctorPayload.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "resources", status: "ok" }),
+        expect.objectContaining({ name: "targets", status: "ok" }),
+      ]),
+    );
   });
 
   it("can hide descriptions from resource list output", () => {
@@ -891,6 +950,75 @@ describe("CLI commands with external git source", () => {
     await expect(
       fs.access(path.join(homeDir, ".cursor", "rules", "code-review")),
     ).rejects.toThrow();
+  });
+
+  it("copies a global resource into the current project for dev and can publish it globally", async () => {
+    const globalEditProjectDir = path.join(tmpRoot, "global-edit-project");
+    const globalEditConsumerDir = path.join(tmpRoot, "global-edit-consumer");
+    await fs.mkdir(globalEditProjectDir, { recursive: true });
+    await fs.mkdir(globalEditConsumerDir, { recursive: true });
+
+    expect(runCli(["agent", "use", "codex"], globalEditProjectDir, homeDir).status).toBe(0);
+    expect(
+      runCli(["create", "rule", "global-edit", "--agent", "codex"], globalEditProjectDir, homeDir)
+        .status,
+    ).toBe(0);
+    await fs.appendFile(
+      path.join(globalEditProjectDir, ".agents", "rules", "global-edit", "content.md"),
+      "Initial global-edit publish.\n",
+      "utf8",
+    );
+
+    const firstPublish = runCli(
+      ["publish", "rule", "global-edit", "--patch"],
+      globalEditProjectDir,
+      homeDir,
+    );
+    expect(firstPublish.status).toBe(0);
+    expect(firstPublish.stdout).toContain("Published rule/global-edit@0.0.1");
+
+    const globalInstall = runCli(
+      ["install", "rule", "global-edit@0.0.1", "--global"],
+      globalEditProjectDir,
+      homeDir,
+    );
+    expect(globalInstall.status).toBe(0);
+    await fs.rm(path.join(globalEditProjectDir, ".agents", "rules", "global-edit"), {
+      recursive: true,
+      force: true,
+    });
+
+    const devGlobal = runCli(["dev", "rule", "global-edit"], globalEditConsumerDir, homeDir);
+    expect(devGlobal.status).toBe(0);
+    expect(devGlobal.stdout).toContain(
+      "Copied global rule/global-edit into current project",
+    );
+    const projectCopyPath = path.join(
+      globalEditConsumerDir,
+      ".agents",
+      "rules",
+      "global-edit",
+    );
+    await fs.appendFile(
+      path.join(projectCopyPath, "content.md"),
+      "Published back to global install.\n",
+      "utf8",
+    );
+
+    const publishGlobal = runCli(
+      ["publish", "rule", "global-edit", "--patch", "--global"],
+      globalEditConsumerDir,
+      homeDir,
+    );
+    expect(publishGlobal.status).toBe(0);
+    expect(publishGlobal.stdout).toContain(
+      "Published resource will be installed globally; current project lock will not be updated.",
+    );
+    expect(publishGlobal.stdout).toContain("Published rule/global-edit@0.0.2");
+    await expect(
+      fs.readFile(path.join(homeDir, ".agents", "rules", "global-edit", "content.md"), "utf8"),
+    ).resolves.toContain("Published back to global install.");
+    await expect(fs.access(path.join(globalEditConsumerDir, "himan.lock"))).rejects.toThrow();
   });
 
   it("filters list by agent via --agent", () => {
@@ -1093,8 +1221,8 @@ describe("CLI commands with external git source", () => {
   });
 
   it("updates lock and project target after publish when resource is locked", async () => {
-    const devCommandPath = path.join(projectDir, ".himan", "dev", "command", "release-note");
-    await fs.appendFile(path.join(devCommandPath, "content.md"), "lock sync on publish.\n", "utf8");
+    const commandLinkPath = path.join(projectDir, ".cursor", "commands", "release-note");
+    await fs.appendFile(path.join(commandLinkPath, "content.md"), "lock sync on publish.\n", "utf8");
 
     const publishResult = runCli(
       ["publish", "command", "release-note", "--patch"],
@@ -1104,7 +1232,6 @@ describe("CLI commands with external git source", () => {
     expect(publishResult.status).toBe(0);
     expect(publishResult.stdout).toContain("Published command/release-note@0.1.1");
 
-    const commandLinkPath = path.join(projectDir, ".cursor", "commands", "release-note");
     expect((await fs.lstat(commandLinkPath)).isSymbolicLink()).toBe(false);
     await expect(
       fs.readFile(path.join(commandLinkPath, "content.md"), "utf8"),
@@ -1162,9 +1289,8 @@ describe("CLI commands with external git source", () => {
   it("publishes dev changes and syncs latest version back to store", async () => {
     const devContentPath = path.join(
       projectDir,
-      ".himan",
-      "dev",
-      "rule",
+      ".cursor",
+      "rules",
       "code-review",
       "content.md",
     );

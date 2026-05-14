@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import { ServiceFactory } from "../services/index.js";
 import { registerAgentCommands } from "./agent-commands.js";
+import { registerDoctorCommand } from "./doctor-command.js";
 import { registerProjectCommands } from "./project-commands.js";
 import { registerResourceCommands } from "./resource-commands.js";
 import { registerInitCommand, registerSourceCommands } from "./source-commands.js";
@@ -15,6 +16,7 @@ export function buildCli(): Command {
   appendCommandGroupsHelp(program);
 
   registerInitCommand(program, services);
+  registerDoctorCommand(program, services);
 
   const sourceCmd = program.command("source").description("Manage source repositories");
   registerSourceCommands(sourceCmd, services, { includeInit: true });
@@ -97,6 +99,8 @@ Command groups:
            project list, project install, project dev, project uninstall, project publish
   agent    Default agent configuration
            agent list, agent use, agent current, agent clear
+  doctor   Runtime and project health checks
+           doctor
 `,
   );
 }

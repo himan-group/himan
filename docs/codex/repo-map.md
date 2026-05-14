@@ -2,7 +2,7 @@
 
 ## Overview
 
-`@hi-man/himan` is an ESM TypeScript CLI for managing prompt and agent assets. It manages `rule`, `command`, and `skill` resources from a Git-backed source, installs them into project-specific or user-level agent folders, supports local dev links, publishes semver-tagged versions, and keeps a `himan.lock` for reproducible project installs.
+`@hi-man/himan` is an ESM TypeScript CLI for managing prompt and agent assets. It manages `rule`, `command`, and `skill` resources from a Git-backed source, installs them into project-specific or user-level agent folders, supports in-place project development, publishes semver-tagged versions, and keeps a `himan.lock` for reproducible project installs.
 
 The npm package exposes four binaries:
 
@@ -37,7 +37,7 @@ Runtime agent configuration commands:
 - `src/bin/` contains executable entry files and the shared `runCliMain` wrapper.
 - `src/cli/` builds commander programs, command groups, command registration, and CLI error formatting.
 - `src/services/index.ts` contains `ServiceFactory`, the main application orchestration layer.
-- `src/domain/` contains resource types and data contracts.
+- `src/domain/` contains resource types, doctor result types, and data contracts.
 - `src/adapters/source/` defines the source adapter interface plus Git and reserved Registry adapters.
 - `src/adapters/git/` wraps Git operations through `simple-git`.
 - `src/adapters/resource/` scans resource metadata from source repositories.
@@ -51,7 +51,8 @@ Runtime agent configuration commands:
 
 `src/bin/himan.ts` builds the main grouped CLI through `buildCli()`. The main CLI exposes:
 
-- Top-level `init`
+- Top-level `init`, including optional `--agent`, `--install type/name[@version],...`, `--mode`, and `--json` quick-start setup
+- Top-level `doctor [--json]`
 - `source init|add|use|list|init-docs|clone|sync`
 - `resource list|history|create|rename`; `rename` is currently marked not recommended; `resource list` without a type groups all source resources, `--brief` hides descriptions, and `--installed` lists current project installs instead of source resources
 - `project list|install|dev|uninstall|publish`
@@ -78,9 +79,10 @@ The project has no HTTP API. It integrates with local Git repositories and files
 - Resource list cache is stored in `~/.himan/index.json`.
 - Project lock state is stored in `<project>/himan.lock`; no-argument `install` restores from the source recorded in the lock, not from the current default source.
 - Project default agents are stored in `<project>/.himan/config.json`.
-- Project development copies live under `<project>/.himan/dev/<type>/<name>`.
+- `create` and `dev` edit resources in the current project's agent target folders, such as `.agents/skills/<name>` for Codex. Legacy `.himan/dev/<type>/<name>` folders are still recognized as publish sources and cleaned up after publish.
 - Project-installed resources are materialized under agent folders such as `.cursor/rules/<name>`, `.agents/skills/<name>` for Codex, `.claude/commands/<name>`, and `.openclaw/...`; install mode controls whether each target is a symlink or a copy.
 - `install <type> <name[@version]> --global` materializes the resource under the matching user-level agent folder below home, such as `~/.cursor/rules/<name>`, `~/.agents/skills/<name>` for Codex, `~/.claude/commands/<name>`, and `~/.openclaw/...`. Global installs prefer `--agent`, then the current project's lock entry for that resource, then the default install agent resolution, and do not write `<project>/himan.lock`.
+- `doctor` checks Node.js, Git, Himan home directories, current source configuration, source resource scanning, effective agent settings, project lock state, and materialized project install targets; it exits non-zero when any check has `error` status.
 
 Resource source layout uses plural type directories in the source repo:
 
@@ -92,7 +94,9 @@ Resource source layout uses plural type directories in the source repo:
 
 Git tags use `<type>/<name>@<semver>`, for example `rule/code-review@1.0.0`.
 
-`himan source init-docs` scaffolds source-level `README.md` and `CHANGELOG.md` in the current default Git source cache, then commits and pushes when files changed. It preserves existing files by default, supports `--force`, `--dry-run`, and `--json`, and does not change agent install targets. With `--force`, generated docs scan existing `rule`, `command`, and `skill` resources into the README index and CHANGELOG initial entries; resource refs prefer the latest semver Git tag, falling back to `himan.yaml` `version`; when `himan.yaml` is absent, docs generation indexes resources by default entry and reads `SKILL.md` front matter for skill descriptions. `himan source clone` copies a Git source branch plus Himan-managed resource tags into an empty target Git repository; `himan source sync` writes the latest resource snapshots into one target commit and creates the corresponding latest resource tags. `create`, `rename`, and `publish` automatically update the source-level README resource index between `<!-- himan:resources:start -->` / `<!-- himan:resources:end -->` markers and append `[Unreleased]` changelog entries; publish includes those docs in the resource version commit. `rename` is currently marked not recommended; it moves the source resource directory, updates metadata names, preserves old tags, creates a new latest-version tag when old history exists, and by default migrates the current project's install targets, dev copy, and `himan.lock` entry. `publish` validates `himan.yaml` when present, but missing metadata is allowed when the default entry file exists; if the resource content matches the latest published version, publish stops with `E_PUBLISH_NO_CHANGES` before changing docs, tags, store, or lock state. After publish, the project target is reinstalled from the new store version in copy mode, `himan.lock` is updated, and the matching `.himan/dev/<type>/<name>` directory is removed.
+`himan source init-docs` scaffolds source-level `README.md` and `CHANGELOG.md` in the current default Git source cache, then commits and pushes when files changed. It preserves existing files by default, supports `--force`, `--dry-run`, and `--json`, and does not change agent install targets. With `--force`, generated docs scan existing `rule`, `command`, and `skill` resources into the README index and CHANGELOG initial entries; resource refs prefer the latest semver Git tag, falling back to `himan.yaml` `version`; when `himan.yaml` is absent, docs generation indexes resources by default entry and reads `SKILL.md` front matter for skill descriptions. `himan source clone` copies a Git source branch plus Himan-managed resource tags into an empty target Git repository; `himan source sync` writes the latest resource snapshots into one target commit and creates the corresponding latest resource tags.
+
+`create` writes a scaffold into the current project agent target folder for direct validation. `publish` uses legacy `.himan/dev` first, then current project agent target folders, then the source repo resource directory; it updates the source-level README resource index between `<!-- himan:resources:start -->` / `<!-- himan:resources:end -->` markers and appends `[Unreleased]` changelog entries. `publish` validates `himan.yaml` when present, but missing metadata is allowed when the default entry file exists; if the resource content matches the latest published version, publish stops with `E_PUBLISH_NO_CHANGES` before changing docs, tags, store, or lock state. After publish, the published version is installed from the new store version in copy mode. The default install target is the current project with `himan.lock` updated; `publish --global` installs to user-level agent folders without writing the project lock. `rename` is currently marked not recommended; it moves the source resource directory, updates metadata names, updates source-level docs, preserves old tags, creates a new latest-version tag when old history exists, and by default migrates the current project's install targets, legacy dev copy, and `himan.lock` entry.
 
 ## UI And Components
 
@@ -123,6 +127,7 @@ There is no monorepo package sharing. Shared behavior is local to `src/`:
 - Resource types are limited to `rule`, `command`, and `skill`.
 - Supported agent configs are `cursor`, `claude-code`, `codex`, and `openclaw`; aliases and base directories are normalized in `src/utils/agent-configs.ts`.
 - Default agents are configured with `himan agent use`; project config takes precedence over global config.
+- `himan init --agent <agent[,agent]>` writes the current project default agent, and `himan init --install <type/name[@version],...>` installs selected resources after source initialization.
 - Business errors should use `HimanError` and stable `errorCodes` from `src/utils/errors.ts`.
 - Registry source is reserved and intentionally returns `E_NOT_IMPLEMENTED`.
 - Version bumps use semver through `VersionResolver`.
