@@ -41,18 +41,21 @@ pnpm dlx @hi-man/himan --help
 以下示例假设你已有一个可访问的 himan Git source 仓库，仓库中存在 `my-rule` 的资源版本 tag，并且你拥有发布所需的 Git push 权限。
 
 ```bash
-himan init https://github.com/your-org/your-himan-registry.git
-himan list rule
-himan agent use codex
+himan init https://github.com/your-org/your-himan-registry.git \
+  --agent codex \
+  --install rule/my-rule
+himan doctor
 himan create skill my-skill
 # 编辑并验证项目下 .agents/skills/my-skill/
 himan publish skill my-skill --patch
-himan install rule my-rule
 himan dev rule my-rule
 # 直接编辑项目下 .agents/rules/my-rule/；若只存在全局安装，dev 会先复制到当前项目
 himan publish rule my-rule --patch
 ```
 
+- `init` 的 `--agent` 会写入当前项目默认 agent；`--install` 可一次选择要安装的资源，格式为 `type/name[@version]`，多个资源用逗号分隔，例如 `rule/my-rule,skill/my-skill@1.0.0`。
+- 也可以只执行 `himan init <git_url>` 跳过 agent 和资源安装，后续再用 `himan agent use ...`、`himan list ...`、`himan install ...` 单独配置。
+- `himan doctor` 会检查本机 Node/Git、Himan home、当前 source、资源扫描、默认 agent、lock 和已安装目标。
 - **rule / command / skill**：都支持 `create`、`rename`、`list`、`history`、`install`、`dev`、`publish`、`uninstall`；其中 `rename` 暂不推荐使用。
 - 安装后项目目标位置（按 `agents`，默认 `cursor`）：
   - `cursor` -> `.cursor/{rules|commands|skills}/<name>`
@@ -150,7 +153,7 @@ analysis:
 
 | 命令                          | 说明                                             |
 | ----------------------------- | ------------------------------------------------ |
-| `init <git_url>`              | 初始化默认源（当前为 Git）并写入 `~/.himan/config.json` |
+| `init <git_url> [--agent a,b] [--install type/name[@version],...] [--mode link\|copy] [--json]` | 初始化默认源（当前为 Git）并写入 `~/.himan/config.json`；可同时写当前项目默认 agent 并安装选定资源 |
 | `source add <name> <git_url>` | 添加命名 Git 源                                    |
 | `source use <name>`           | 切换默认源                                          |
 | `source list [--json]`        | 查看已配置源（标记当前 default）                     |
@@ -197,6 +200,12 @@ analysis:
 | `agent current [--json]` | 查看当前项目、全局和最终生效的默认 agent |
 | `agent clear [--project\|--global] [--json]` | 清除当前项目或全局默认 agent；默认 `--project` |
 
+### 5) doctor（可用性检查）
+
+| 命令 | 说明 |
+|------|------|
+| `doctor [--json]` | 检查 Node/Git、Himan home、当前 source、资源扫描、默认 agent、项目 lock 和已安装目标；存在 error 时以非零状态退出 |
+
 也可使用分组命令（与上面等价）：
 
 - `himan resource list|history|create|rename ...`
@@ -204,6 +213,7 @@ analysis:
 - `himan project list|install|dev|uninstall|publish ...`
 - `himan-project list|install|dev|uninstall|publish ...`
 - `himan agent list|use|current|clear ...`
+- `himan doctor ...`
 
 说明：资源与项目相关命令统一使用 `--agent` 指定目标 Agent。
 若未显式传 `--agent`，`create` / `install` 会使用当前项目默认 agent、全局默认 agent、资源 metadata 或内置默认 `cursor` 中最合适的一项；`dev` 会优先使用当前项目已有安装位置，找不到时再从用户级全局安装位置复制到当前项目。`install --global` 会优先复用当前项目 lock 里该资源的 agent，未命中时再使用默认 install 解析顺序，但目标根目录是用户 home 下对应 agent 目录。

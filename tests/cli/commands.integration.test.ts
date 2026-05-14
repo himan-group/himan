@@ -86,6 +86,33 @@ describe("CLI commands with external git source", () => {
     expect(helpResult.stdout).not.toContain("-V, --version");
   });
 
+  it("reports doctor errors before init", async () => {
+    const doctorHomeDir = path.join(tmpRoot, "doctor-home");
+    const doctorProjectDir = path.join(tmpRoot, "doctor-project");
+    await fs.mkdir(doctorHomeDir, { recursive: true });
+    await fs.mkdir(doctorProjectDir, { recursive: true });
+
+    const result = runCli(["doctor", "--json"], doctorProjectDir, doctorHomeDir);
+    expect(result.status).toBe(1);
+
+    const payload = JSON.parse(result.stdout) as {
+      ok: boolean;
+      checks: Array<{ name: string; status: string; message: string }>;
+    };
+    expect(payload.ok).toBe(false);
+    expect(payload.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "source",
+          status: "error",
+        }),
+      ]),
+    );
+    expect(
+      payload.checks.find((check) => check.name === "source")?.message,
+    ).toContain("himan init");
+  });
+
   it("initializes from the given test repository", async () => {
     const result = runCli(["init", TEST_REPO], projectDir, homeDir);
     expect(result.status).toBe(0);
@@ -769,6 +796,69 @@ describe("CLI commands with external git source", () => {
     await expect(
       fs.access(path.join(projectDir, ".himan", "dev", "rule", "code-review")),
     ).rejects.toThrow();
+  });
+
+  it("initializes project agent and installs selected resources in one flow", async () => {
+    const quickstartProjectDir = path.join(tmpRoot, "quickstart-project");
+    await fs.mkdir(quickstartProjectDir, { recursive: true });
+
+    const result = runCli(
+      [
+        "init",
+        TEST_REPO,
+        "--agent",
+        "codex",
+        "--install",
+        "rule/code-review@1.0.0",
+        "--json",
+      ],
+      quickstartProjectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(0);
+
+    const payload = JSON.parse(result.stdout) as {
+      source: { sourceType: string; repo: string };
+      agents: { scope: string; agents: string[] };
+      installed: Array<{ type: string; name: string; version: string; mode: string }>;
+    };
+    expect(payload.source).toEqual(
+      expect.objectContaining({ sourceType: "git", repo: TEST_REPO }),
+    );
+    expect(payload.agents).toEqual({ scope: "project", agents: ["codex"] });
+    expect(payload.installed).toEqual([
+      expect.objectContaining({
+        type: "rule",
+        name: "code-review",
+        version: "1.0.0",
+        mode: "copy",
+      }),
+    ]);
+
+    const quickstartRulePath = path.join(
+      quickstartProjectDir,
+      ".agents",
+      "rules",
+      "code-review",
+    );
+    expect((await fs.lstat(quickstartRulePath)).isSymbolicLink()).toBe(false);
+    await expect(
+      fs.readFile(path.join(quickstartRulePath, "content.md"), "utf8"),
+    ).resolves.toContain("Follow code review checklist");
+
+    const doctor = runCli(["doctor", "--json"], quickstartProjectDir, homeDir);
+    expect(doctor.status).toBe(0);
+    const doctorPayload = JSON.parse(doctor.stdout) as {
+      ok: boolean;
+      checks: Array<{ name: string; status: string }>;
+    };
+    expect(doctorPayload.ok).toBe(true);
+    expect(doctorPayload.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "resources", status: "ok" }),
+        expect.objectContaining({ name: "targets", status: "ok" }),
+      ]),
+    );
   });
 
   it("can hide descriptions from resource list output", () => {
