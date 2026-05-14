@@ -1,0 +1,4 @@
+interface:
+  display_name: "Himan Resource Manage"
+  short_description: "Manage and publish Himan resources"
+  default_prompt: "Use $himan-resource-manage to create or edit a Himan resource, validate it in the project agent folder, and publish it correctly."

@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Added
+
+- Added the `himan-resource-manage` skill for creating, editing, validating, and publishing Himan resources from project agent folders.
+
 ## [0.4.1] - 2026-05-14
 
 ### Added
