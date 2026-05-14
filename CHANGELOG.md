@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Changed
+
+- Changed `create` and `dev` to use current project agent target directories for resource authoring, while `publish` now logs stages and can install the published version either into the current project or globally.
+
 ## [0.3.5] - 2026-05-12
 
 ### Changed
