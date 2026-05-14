@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-14
+
 ### Added
 
 - Added `himan resource archive` and `himan resource restore` for moving source resources into `archive/<plural>/<name>`, listing archived resources, and explicitly installing archived history with `--include-archived`.
