@@ -88,7 +88,7 @@ function parseArgs(args) {
   }
 
   const options = {
-    version: "0.1.0",
+    version: "0.0.1",
     entry: "SKILL.md",
     agents: [],
     generatedBy: "codex",

@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `himan-skill-metadata` so newly generated skill metadata starts at version `0.0.1`.
+
 ## [0.5.0] - 2026-05-14
 
 ### Added
