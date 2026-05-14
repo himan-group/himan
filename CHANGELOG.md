@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-14
+
 ### Added
 
 - Added `himan doctor` to check local Node/Git availability, Himan home state, current source scanning, effective agents, project lock state, and installed targets.
