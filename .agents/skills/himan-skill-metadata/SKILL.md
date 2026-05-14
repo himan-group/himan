@@ -24,7 +24,6 @@ Use the bundled script when possible:
 
 ```bash
 node scripts/build_himan_yaml.mjs <skill-dir> \
-  --version 0.0.1 \
   --agent codex \
   --generated-by codex \
   --measured-by codex \
@@ -32,7 +31,16 @@ node scripts/build_himan_yaml.mjs <skill-dir> \
   --mcp-tool functions.exec_command
 ```
 
-The script writes `<skill-dir>/himan.yaml`. It reads `SKILL.md`, estimates static token counts, hashes text package content, detects bundled scripts, and records dependencies passed on the command line.
+The script writes `<skill-dir>/himan.yaml`. It reads `SKILL.md`, estimates static token counts, hashes text package content, detects bundled scripts, records dependencies passed on the command line, and resolves the resource version.
+
+Version resolution order:
+
+1. Explicit `--version`.
+2. Nearest project `himan.lock` entry matching `skill/<name>`.
+3. Source Git tags matching `skill/<name>@<version>`, when the skill directory is inside `skills/<name>` or `archive/skills/<name>`.
+4. Himan store path version when the skill directory is under `store/skill/<name>/<version>`.
+5. Existing `<skill-dir>/himan.yaml` `version`.
+6. `0.0.1` for a new skill with no known existing version.
 
 If an exact tokenizer is available in the environment, prefer exact token counts and set `analysis.content.tokenizer` to the tokenizer name. Otherwise the script uses `approx-char-v1` with `ceil(chars/4)` and records that estimator explicitly.
 
@@ -76,6 +84,7 @@ analysis:
 - Treat `analysis` as static build-time metadata, not runtime telemetry.
 - Keep token fields tied to the tokenizer or estimator that produced them.
 - Keep `contentHash` based on package text content, excluding `himan.yaml` itself.
-- Use `0.0.1` for newly created skill resources unless the user explicitly requests a different initial version.
+- Do not let the new-resource default overwrite an existing skill version; resolve it from lock/source metadata or pass `--version` explicitly.
+- Use `0.0.1` only for newly created skill resources with no known existing version, unless the user explicitly requests a different initial version.
 - Use `agents: [codex]` for Codex-only skills unless the user asks for another target.
 - Do not invent dependencies. Record only dependencies implied by the skill instructions or bundled files.

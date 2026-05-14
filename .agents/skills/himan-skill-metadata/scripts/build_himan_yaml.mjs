@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 
 const TEXT_EXTENSIONS = new Set([
   ".md",
@@ -17,6 +19,9 @@ const TEXT_EXTENSIONS = new Set([
 
 const TOKENIZER = "approx-char-v1";
 const TOKEN_ESTIMATOR = "ceil(chars/4)";
+const DEFAULT_VERSION = "0.0.1";
+const RESOURCE_TYPE = "skill";
+const execFileAsync = promisify(execFile);
 
 async function main() {
   const { skillDir, options } = parseArgs(process.argv.slice(2));
@@ -27,6 +32,7 @@ async function main() {
   const frontMatter = parseFrontMatter(skillRaw);
   const name = options.name ?? frontMatter.name ?? path.basename(root);
   const description = options.description ?? frontMatter.description;
+  const version = options.version ?? (await resolveVersion(root, name)) ?? DEFAULT_VERSION;
 
   if (!description) {
     throw new Error("Skill description not found. Set SKILL.md front matter or --description.");
@@ -43,7 +49,7 @@ async function main() {
   const metadata = {
     name,
     type: "skill",
-    version: options.version,
+    version,
     entry,
     description,
     agents: options.agents,
@@ -88,7 +94,7 @@ function parseArgs(args) {
   }
 
   const options = {
-    version: "0.0.1",
+    version: undefined,
     entry: "SKILL.md",
     agents: [],
     generatedBy: "codex",
@@ -128,6 +134,157 @@ function parseArgs(args) {
   options.scripts = [...new Set(options.scripts)].sort((a, b) => a.localeCompare(b));
   options.mcpTools = [...new Set(options.mcpTools)].sort((a, b) => a.localeCompare(b));
   return { skillDir, options };
+}
+
+async function resolveVersion(root, name) {
+  return (
+    (await readNearestLockVersion(root, name)) ??
+    (await readSourceGitTagVersion(root, name)) ??
+    readStorePathVersion(root, name) ??
+    (await readYamlStringField(path.join(root, "himan.yaml"), "version"))
+  );
+}
+
+async function readNearestLockVersion(startDir, name) {
+  let current = startDir;
+  while (true) {
+    const version = await readLockVersion(path.join(current, "himan.lock"), name);
+    if (version) return version;
+
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
+async function readLockVersion(lockPath, name) {
+  let parsed;
+  try {
+    parsed = JSON.parse(await fs.readFile(lockPath, "utf8"));
+  } catch {
+    return undefined;
+  }
+
+  if (!Array.isArray(parsed?.resources)) return undefined;
+  const found = parsed.resources.find(
+    (resource) =>
+      resource?.type === RESOURCE_TYPE &&
+      resource?.name === name &&
+      typeof resource?.version === "string" &&
+      resource.version.trim().length > 0,
+  );
+  return found?.version;
+}
+
+async function readSourceGitTagVersion(root, name) {
+  const repoRoot = await findGitRoot(root);
+  if (!repoRoot) return undefined;
+
+  const relative = toPosix(path.relative(repoRoot, root));
+  if (relative !== `skills/${name}` && relative !== `archive/skills/${name}`) {
+    return undefined;
+  }
+
+  const prefix = `${RESOURCE_TYPE}/${name}@`;
+  let stdout;
+  try {
+    ({ stdout } = await execFileAsync("git", [
+      "-C",
+      repoRoot,
+      "tag",
+      "--list",
+      `${prefix}*`,
+    ]));
+  } catch {
+    return undefined;
+  }
+
+  const versions = stdout
+    .split(/\r?\n/)
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.startsWith(prefix))
+    .map((tag) => tag.slice(prefix.length))
+    .filter((version) => parseVersion(version));
+
+  return versions.sort(compareVersions).at(-1);
+}
+
+async function findGitRoot(startDir) {
+  let current = startDir;
+  while (true) {
+    if (await pathExists(path.join(current, ".git"))) return current;
+
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
+function readStorePathVersion(root, name) {
+  const parts = toPosix(root).split("/");
+  for (let index = 0; index <= parts.length - 4; index += 1) {
+    if (
+      parts[index] === "store" &&
+      parts[index + 1] === RESOURCE_TYPE &&
+      parts[index + 2] === name &&
+      parseVersion(parts[index + 3])
+    ) {
+      return parts[index + 3];
+    }
+  }
+  return undefined;
+}
+
+async function readYamlStringField(filePath, fieldName) {
+  let raw;
+  try {
+    raw = await fs.readFile(filePath, "utf8");
+  } catch {
+    return undefined;
+  }
+
+  const pattern = new RegExp(`^${escapeRegExp(fieldName)}:\\s*(.+?)\\s*$`, "m");
+  const match = pattern.exec(raw);
+  if (!match) return undefined;
+
+  const value = unquote(match[1].trim());
+  return value ? value : undefined;
+}
+
+async function pathExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function compareVersions(left, right) {
+  const leftParsed = parseVersion(left);
+  const rightParsed = parseVersion(right);
+  if (!leftParsed || !rightParsed) return left.localeCompare(right);
+
+  for (const key of ["major", "minor", "patch"]) {
+    const diff = leftParsed[key] - rightParsed[key];
+    if (diff !== 0) return diff;
+  }
+  if (!leftParsed.preRelease && rightParsed.preRelease) return 1;
+  if (leftParsed.preRelease && !rightParsed.preRelease) return -1;
+  return leftParsed.preRelease.localeCompare(rightParsed.preRelease);
+}
+
+function parseVersion(version) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(
+    version,
+  );
+  if (!match) return null;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    preRelease: match[4] ?? "",
+  };
 }
 
 async function readPackageTextFiles(root) {

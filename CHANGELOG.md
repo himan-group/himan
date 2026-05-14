@@ -6,11 +6,15 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the `himan-resource-manage` skill to stop create/dev/publish workflows when the local Himan CLI is older than the project-directory resource flow.
+
 ## [0.5.1] - 2026-05-14
 
 ### Fixed
 
-- Fixed `himan-skill-metadata` so newly generated skill metadata starts at version `0.0.1`.
+- Fixed `himan-skill-metadata` version resolution so existing skills use lock/source metadata before falling back to `0.0.1` for new skills.
 
 ## [0.5.0] - 2026-05-14
 
