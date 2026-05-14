@@ -53,23 +53,20 @@
 ### 2.5 `dev`
 
 - `himan dev <type> <name>`，`type` 支持 `rule|command|skill`；需先 `install`。
-- 将当前安装内容复制到项目开发目录（已存在则默认不覆盖），再按安装模式更新项目目标：
-  - `rule`：`.himan/dev/rule/<name>`
-  - `command`：`.himan/dev/command/<name>`
-  - `skill`：`.himan/dev/skill/<name>`
+- 项目内资源直接在当前 agent 目标目录原地修改；若资源只存在于用户级全局目录，则复制到当前项目对应 agent 目标目录。
 
 ### 2.6 `publish`
 
-- `himan publish <type> <name> --patch|--minor|--major`（默认 patch，三选一）
-- 发布内容优先取项目 `.himan/dev/<type>/<name>`，否则取源仓库内对应资源目录。
+- `himan publish <type> <name> --patch|--minor|--major [--global]`（默认 patch，三选一）
+- 发布内容优先取旧版项目 `.himan/dev/<type>/<name>`，其次取当前项目 agent 目标目录，否则取源仓库内对应资源目录。
 - 新版本：基于已有 tag 最新 semver 递增；无任何历史时从 `0.0.0` 起算。
 - 写回源仓库、提交、打 tag、推送，并将该版本同步到本地 store。
-- 发布成功后，用新版本 store 以 copy 模式重新安装到项目目标、更新 lock，并删除对应 `.himan/dev/<type>/<name>`。
+- 发布过程展示阶段日志。发布成功后，用新版本 store 以 copy 模式重新安装；默认安装到项目目标并更新 lock，`--global` 安装到用户级目录且不写项目 lock。
 
 ### 2.7 `create`
 
 - `himan create <type> <name>` 及常用选项（描述、目标 agent、dry-run、force、json 等）
-- 生成 `rule` / `command` / `skill` 标准目录与 `himan.yaml`、入口模板
+- 在当前项目 agent 目标目录生成 `rule` / `command` / `skill` 标准目录与 `himan.yaml`、入口模板
 - 与 `publish` 衔接：`create → 编辑 → publish`
 
 ### 2.8 `agent`
@@ -103,7 +100,7 @@
 **项目目录：**
 - `.cursor` / `.claude` / `.agents` / `.openclaw`：按 agent 和资源类型保存运行态目标（软链或副本）
 - `.himan/config.json`：项目默认 agent 配置
-- `.himan/dev/<type>/<name>`：资源开发态可编辑副本
+- 当前项目 agent 目标目录：资源创建和开发态可编辑位置；旧版 `.himan/dev/<type>/<name>` 仍可作为 publish 输入
 
 **源仓库内资源布局：**
 - `rules/<name>/`、`commands/<name>/`、`skills/<name>/`，可含 `himan.yaml`，并包含约定入口文件（如 `content.md`、`SKILL.md`）。
