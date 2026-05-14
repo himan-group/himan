@@ -56,6 +56,92 @@ describe("GitSourceAdapter", () => {
     ]);
   });
 
+  it("archives and restores source resources outside the active type directories", async () => {
+    const { remoteDir, targetDir } = await createRemoteFixture();
+    const adapter = new GitSourceAdapter();
+
+    await adapter.init({
+      type: "git",
+      repo: remoteDir,
+      repoDir: targetDir,
+      repoId: "test-source",
+    });
+    configureGitUser(targetDir);
+
+    const archived = await adapter.archive("rule", "code-review", {
+      reason: "replaced by stricter rule",
+    });
+
+    expect(archived).toEqual(
+      expect.objectContaining({
+        type: "rule",
+        name: "code-review",
+        archiveReason: "replaced by stricter rule",
+        committed: true,
+        dryRun: false,
+      }),
+    );
+    await expect(
+      fs.access(path.join(targetDir, "rules", "code-review")),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(targetDir, "archive", "rules", "code-review")),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.readFile(
+        path.join(targetDir, "archive", "rules", "code-review", "himan.yaml"),
+        "utf8",
+      ),
+    ).resolves.toContain("archiveReason: replaced by stricter rule");
+    expect(await adapter.list("rule")).toEqual([]);
+    expect(await adapter.list("rule", { archived: true })).toEqual([
+      expect.objectContaining({
+        name: "code-review",
+        archived: true,
+        archiveReason: "replaced by stricter rule",
+      }),
+    ]);
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "- No rule resources yet.",
+    );
+    await expect(
+      fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
+    ).resolves.toContain("- Archived `rule/code-review`: replaced by stricter rule.");
+
+    const restored = await adapter.restore("rule", "code-review");
+
+    expect(restored).toEqual(
+      expect.objectContaining({
+        type: "rule",
+        name: "code-review",
+        committed: true,
+        dryRun: false,
+      }),
+    );
+    await expect(
+      fs.access(path.join(targetDir, "rules", "code-review")),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(targetDir, "archive", "rules", "code-review")),
+    ).rejects.toThrow();
+    const restoredYaml = await fs.readFile(
+      path.join(targetDir, "rules", "code-review", "himan.yaml"),
+      "utf8",
+    );
+    expect(restoredYaml).not.toContain("archived:");
+    expect(restoredYaml).not.toContain("archiveReason:");
+    expect(await adapter.list("rule")).toEqual([
+      expect.objectContaining({ name: "code-review" }),
+    ]);
+    expect(await adapter.list("rule", { archived: true })).toEqual([]);
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "`rule/code-review`: original description",
+    );
+    await expect(
+      fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
+    ).resolves.toContain("- Restored `rule/code-review` from archive.");
+  });
+
   it("publishes a valid resource and writes the requested version", async () => {
     const { remoteDir, targetDir } = await createRemoteFixture();
     const adapter = new GitSourceAdapter();

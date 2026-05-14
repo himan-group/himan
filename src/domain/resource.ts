@@ -13,6 +13,9 @@ export interface ResourceMeta {
   entry: string;
   description?: string;
   agents?: string[];
+  archived?: boolean;
+  archivedAt?: string;
+  archiveReason?: string;
 }
 
 export interface ResourceAnalysisMetadata {
@@ -77,6 +80,40 @@ export interface RenameResult {
   resourceDir: string;
   latestVersion?: string;
   tag?: string;
+  committed: boolean;
+  dryRun: boolean;
+}
+
+export interface ResourceListOptions {
+  archived?: boolean;
+  includeArchived?: boolean;
+}
+
+export interface ArchiveOptions {
+  reason?: string;
+  dryRun?: boolean;
+}
+
+export interface ArchiveResult {
+  type: ResourceType;
+  name: string;
+  previousResourceDir: string;
+  archiveDir: string;
+  archivedAt?: string;
+  archiveReason?: string;
+  committed: boolean;
+  dryRun: boolean;
+}
+
+export interface RestoreOptions {
+  dryRun?: boolean;
+}
+
+export interface RestoreResult {
+  type: ResourceType;
+  name: string;
+  previousArchiveDir: string;
+  resourceDir: string;
   committed: boolean;
   dryRun: boolean;
 }

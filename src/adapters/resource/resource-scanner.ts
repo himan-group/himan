@@ -3,13 +3,23 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
 
+interface ResourceScanOptions {
+  archived?: boolean;
+}
+
 export class ResourceScanner {
   async scanRules(repoDir: string): Promise<ResourceMeta[]> {
     return this.scanByType(repoDir, "rule");
   }
 
-  async scanByType(repoDir: string, type: ResourceType): Promise<ResourceMeta[]> {
-    const baseDir = path.join(repoDir, this.getTypeDir(type));
+  async scanByType(
+    repoDir: string,
+    type: ResourceType,
+    options: ResourceScanOptions = {},
+  ): Promise<ResourceMeta[]> {
+    const baseDir = options.archived
+      ? path.join(repoDir, "archive", this.getTypeDir(type))
+      : path.join(repoDir, this.getTypeDir(type));
     const hasBaseDir = await this.exists(baseDir);
     if (!hasBaseDir) return [];
 
@@ -34,6 +44,13 @@ export class ResourceScanner {
           agents: Array.isArray((parsed as { agents?: unknown }).agents)
             ? ((parsed as { agents?: string[] }).agents ?? [])
             : ((parsed as { targets?: string[] }).targets ?? []),
+          ...(options.archived
+            ? {
+                archived: true,
+                archivedAt: this.readStringMetadata(parsed, "archivedAt"),
+                archiveReason: this.readStringMetadata(parsed, "archiveReason"),
+              }
+            : {}),
         });
         continue;
       }
@@ -42,6 +59,7 @@ export class ResourceScanner {
         path.join(baseDir, resourceDir.name),
         resourceDir.name,
         type,
+        options,
       );
       if (inferred) result.push(inferred);
     }
@@ -53,6 +71,7 @@ export class ResourceScanner {
     resourceDir: string,
     dirName: string,
     type: ResourceType,
+    options: ResourceScanOptions,
   ): Promise<ResourceMeta | undefined> {
     const entry = this.getDefaultEntry(type);
     const entryPath = path.join(resourceDir, entry);
@@ -69,6 +88,7 @@ export class ResourceScanner {
         this.readStringArrayMetadata(metadata, "agents") ??
         this.readStringArrayMetadata(metadata, "targets") ??
         [],
+      ...(options.archived ? { archived: true } : {}),
     };
   }
 

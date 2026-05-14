@@ -170,4 +170,44 @@ describe("ResourceScanner", () => {
       },
     ]);
   });
+
+  it("scans archived resources from archive type directories", async () => {
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "himan-repo-"));
+    tmpDirs.push(repoDir);
+
+    await fs.mkdir(path.join(repoDir, "archive", "rules", "old-rule"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(repoDir, "archive", "rules", "old-rule", "himan.yaml"),
+      [
+        "name: old-rule",
+        "type: rule",
+        "entry: content.md",
+        "description: old rule",
+        "archived: true",
+        "archivedAt: 2026-05-14T00:00:00.000Z",
+        "archiveReason: replaced",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const scanner = new ResourceScanner();
+    const resources = await scanner.scanByType(repoDir, "rule", {
+      archived: true,
+    });
+
+    expect(resources).toEqual([
+      {
+        name: "old-rule",
+        type: "rule",
+        entry: "content.md",
+        description: "old rule",
+        agents: [],
+        archived: true,
+        archivedAt: "2026-05-14T00:00:00.000Z",
+        archiveReason: "replaced",
+      },
+    ]);
+  });
 });

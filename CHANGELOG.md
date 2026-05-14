@@ -8,7 +8,12 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ### Added
 
+- Added `himan resource archive` and `himan resource restore` for moving source resources into `archive/<plural>/<name>`, listing archived resources, and explicitly installing archived history with `--include-archived`.
 - Added the `himan-resource-manage` skill for creating, editing, validating, and publishing Himan resources from project agent folders.
+
+### Changed
+
+- Changed `himan doctor` to warn when a project lock references resources archived in its recorded source.
 
 ## [0.4.1] - 2026-05-14
 

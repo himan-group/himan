@@ -1527,6 +1527,149 @@ describe("CLI commands with external git source", () => {
     );
   });
 
+  it("archives source resources and requires an explicit flag for direct installs", async () => {
+    const archiveHomeDir = path.join(tmpRoot, "archive-home");
+    const archiveProjectDir = path.join(tmpRoot, "archive-project");
+    const archiveRemoteDir = await createSingleRuleRemote(
+      "archive-source",
+      "archive-me",
+      "1.0.0",
+      "archive test rule",
+      "Archive me content.",
+    );
+    await fs.mkdir(archiveHomeDir, { recursive: true });
+    await fs.mkdir(archiveProjectDir, { recursive: true });
+
+    expect(runCli(["init", archiveRemoteDir], archiveProjectDir, archiveHomeDir).status).toBe(0);
+    const installResult = runCli(
+      ["install", "rule", "archive-me@1.0.0", "--agent", "codex"],
+      archiveProjectDir,
+      archiveHomeDir,
+    );
+    expect(installResult.status).toBe(0);
+
+    const archiveResult = runCli(
+      [
+        "resource",
+        "archive",
+        "rule",
+        "archive-me",
+        "--reason",
+        "superseded",
+        "--json",
+      ],
+      archiveProjectDir,
+      archiveHomeDir,
+    );
+    expect(archiveResult.status).toBe(0);
+    expect(JSON.parse(archiveResult.stdout)).toEqual(
+      expect.objectContaining({
+        type: "rule",
+        name: "archive-me",
+        archiveReason: "superseded",
+        committed: true,
+        dryRun: false,
+      }),
+    );
+
+    const activeList = runCli(
+      ["list", "rule", "--json"],
+      archiveProjectDir,
+      archiveHomeDir,
+    );
+    expect(activeList.status).toBe(0);
+    expect(JSON.parse(activeList.stdout)).toEqual([]);
+
+    const archivedList = runCli(
+      ["list", "rule", "--archived", "--json"],
+      archiveProjectDir,
+      archiveHomeDir,
+    );
+    expect(archivedList.status).toBe(0);
+    expect(JSON.parse(archivedList.stdout)).toEqual([
+      expect.objectContaining({
+        name: "archive-me",
+        archived: true,
+        archiveReason: "superseded",
+      }),
+    ]);
+
+    const installPath = path.join(archiveProjectDir, ".agents", "rules", "archive-me");
+    await fs.rm(installPath, { recursive: true, force: true });
+    const directInstall = runCli(
+      ["install", "rule", "archive-me@1.0.0", "--agent", "codex"],
+      archiveProjectDir,
+      archiveHomeDir,
+    );
+    expect(directInstall.status).toBe(1);
+    expect(directInstall.stderr).toContain("E_RESOURCE_ARCHIVED");
+    await expect(fs.access(installPath)).rejects.toThrow();
+
+    const explicitInstall = runCli(
+      [
+        "install",
+        "rule",
+        "archive-me@1.0.0",
+        "--agent",
+        "codex",
+        "--include-archived",
+      ],
+      archiveProjectDir,
+      archiveHomeDir,
+    );
+    expect(explicitInstall.status).toBe(0);
+    await expect(fs.readFile(path.join(installPath, "content.md"), "utf8")).resolves.toContain(
+      "Archive me content.",
+    );
+
+    await fs.rm(installPath, { recursive: true, force: true });
+    const restoreFromLock = runCli(["install"], archiveProjectDir, archiveHomeDir);
+    expect(restoreFromLock.status).toBe(0);
+    expect(restoreFromLock.stdout).toContain("Installed rule/archive-me@1.0.0");
+    await expect(fs.readFile(path.join(installPath, "content.md"), "utf8")).resolves.toContain(
+      "Archive me content.",
+    );
+
+    const doctor = runCli(["doctor", "--json"], archiveProjectDir, archiveHomeDir);
+    expect(doctor.status).toBe(0);
+    const doctorPayload = JSON.parse(doctor.stdout) as {
+      checks: Array<{ name: string; status: string; details?: { resources?: string[] } }>;
+    };
+    expect(doctorPayload.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "archive",
+          status: "warn",
+          details: { resources: ["rule/archive-me@1.0.0"] },
+        }),
+      ]),
+    );
+
+    const restoreResult = runCli(
+      ["resource", "restore", "rule", "archive-me", "--json"],
+      archiveProjectDir,
+      archiveHomeDir,
+    );
+    expect(restoreResult.status).toBe(0);
+    expect(JSON.parse(restoreResult.stdout)).toEqual(
+      expect.objectContaining({
+        type: "rule",
+        name: "archive-me",
+        committed: true,
+        dryRun: false,
+      }),
+    );
+    const restoredList = runCli(
+      ["list", "rule", "--json"],
+      archiveProjectDir,
+      archiveHomeDir,
+    );
+    expect(restoredList.status).toBe(0);
+    expect(JSON.parse(restoredList.stdout)).toEqual([
+      expect.objectContaining({ name: "archive-me" }),
+    ]);
+  }, 15_000);
+
   it("clones a git source into an empty target source", async () => {
     const cloneHomeDir = path.join(tmpRoot, "clone-home");
     const cloneProjectDir = path.join(tmpRoot, "clone-project");

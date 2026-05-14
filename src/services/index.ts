@@ -6,12 +6,17 @@ import type {
 } from "../adapters/source/resource-source-adapter.js";
 import type { DoctorCheck, DoctorResult } from "../domain/doctor.js";
 import type {
+  ArchiveOptions,
+  ArchiveResult,
   CreateOptions,
   CreateResult,
   InstallMode,
   RenameResult,
+  ResourceListOptions,
   ResourceMeta,
   ResourceType,
+  RestoreOptions,
+  RestoreResult,
   VersionInfo,
 } from "../domain/resource.js";
 import type {
@@ -77,6 +82,10 @@ export interface PublishProgress {
 export interface PublishOptions {
   installScope?: PublishInstallScope;
   onProgress?: (progress: PublishProgress) => void;
+}
+
+interface InstallOptions {
+  includeArchived?: boolean;
 }
 
 interface ExistingResourceTarget {
@@ -334,6 +343,7 @@ export class ServiceFactory {
     checks.push(await this.checkAgents(projectDir));
     const lockCheck = await this.checkProjectLock(projectDir);
     checks.push(lockCheck.check);
+    checks.push(await this.checkProjectArchiveStatus(lockCheck.lock));
     checks.push(await this.checkProjectTargets(projectDir, lockCheck.lock));
 
     return {
@@ -500,6 +510,53 @@ export class ServiceFactory {
     };
   }
 
+  private async checkProjectArchiveStatus(
+    lock: ProjectLock | undefined,
+  ): Promise<DoctorCheck> {
+    if (!lock || lock.resources.length === 0) {
+      return {
+        name: "archive",
+        status: "ok",
+        message: "No locked resources to check for archive status.",
+      };
+    }
+
+    try {
+      const source = await this.loadSourceFromLock(
+        this.normalizeLockSourceInfo(lock.source),
+      );
+      const archived: string[] = [];
+      for (const resource of lock.resources) {
+        if (await source.isArchived(resource.type, resource.name)) {
+          archived.push(`${resource.type}/${resource.name}@${resource.version}`);
+        }
+      }
+
+      if (archived.length > 0) {
+        return {
+          name: "archive",
+          status: "warn",
+          message: `${archived.length} locked resources are archived in the current source.`,
+          details: { resources: archived },
+        };
+      }
+
+      return {
+        name: "archive",
+        status: "ok",
+        message: "No locked resources are archived in the current source.",
+      };
+    } catch (error) {
+      return {
+        name: "archive",
+        status: "warn",
+        message: `Cannot check archived resources. ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
+  }
+
   private async checkProjectTargets(
     projectDir: string,
     lock: ProjectLock | undefined,
@@ -547,14 +604,41 @@ export class ServiceFactory {
     };
   }
 
-  async list(type: ResourceType, agents?: string[]): Promise<ResourceMeta[]> {
+  async list(
+    type: ResourceType,
+    agents?: string[],
+    options: ResourceListOptions = {},
+  ): Promise<ResourceMeta[]> {
     const source = await this.loadSourceFromConfig();
-    const resources = await source.list(type);
+    const resources = await source.list(type, options);
     if (!agents?.length) return resources;
     const selected = normalizeAgents(agents);
     return resources.filter((resource) =>
       normalizeAgents(resource.agents).some((agent) => selected.includes(agent)),
     );
+  }
+
+  async archive(
+    type: ResourceType,
+    name: string,
+    options: ArchiveOptions = {},
+  ): Promise<ArchiveResult> {
+    this.validateResourceIdentity(type, name, "archive");
+    const source = await this.loadSourceFromConfig();
+    return source.archive(type, name, {
+      ...options,
+      reason: options.reason?.trim(),
+    });
+  }
+
+  async restore(
+    type: ResourceType,
+    name: string,
+    options: RestoreOptions = {},
+  ): Promise<RestoreResult> {
+    this.validateResourceIdentity(type, name, "restore");
+    const source = await this.loadSourceFromConfig();
+    return source.restore(type, name, options);
   }
 
   async listInstalled(
@@ -603,6 +687,7 @@ export class ServiceFactory {
     projectDir: string,
     agents?: string[],
     mode: InstallMode = "copy",
+    options: InstallOptions = {},
   ): Promise<{
     type: ResourceType;
     name: string;
@@ -620,6 +705,8 @@ export class ServiceFactory {
       projectDir,
       agents,
       mode,
+      "project",
+      options,
     );
   }
 
@@ -630,6 +717,7 @@ export class ServiceFactory {
     projectDir: string,
     agents?: string[],
     mode: InstallMode = "copy",
+    options: InstallOptions = {},
   ): Promise<{
     type: ResourceType;
     name: string;
@@ -648,6 +736,7 @@ export class ServiceFactory {
       agents,
       mode,
       "global",
+      options,
     );
   }
 
@@ -748,6 +837,12 @@ export class ServiceFactory {
     const installScope = options.installScope ?? "project";
     this.reportPublishProgress(options, "prepare", `Preparing ${type}/${name}.`);
     const source = await this.loadSourceFromConfig();
+    if (await source.isArchived(type, name)) {
+      throw new HimanError(
+        errorCodes.RESOURCE_ARCHIVED,
+        `Resource is archived: ${type}/${name}. Restore it before publishing a new version.`,
+      );
+    }
     const sourceDir = await this.resolvePublishSourceDir(type, name, projectDir);
     const existingInstallInfo = await this.tryResolveInstalledResource(
       projectDir,
@@ -1019,6 +1114,7 @@ export class ServiceFactory {
         agents ?? item.agents,
         mode ?? this.resolveInstallMode(item.mode),
         "project",
+        { includeArchived: true },
       );
       results.push(result);
     }
@@ -1035,6 +1131,7 @@ export class ServiceFactory {
     agents: string[] | undefined,
     mode: InstallMode,
     scope: "project" | "global" = "project",
+    options: InstallOptions = {},
   ): Promise<{
     type: ResourceType;
     name: string;
@@ -1042,6 +1139,14 @@ export class ServiceFactory {
     linkPath: string;
     mode: InstallMode;
   }> {
+    const archived = await source.isArchived(type, name);
+    if (archived && !options.includeArchived) {
+      throw new HimanError(
+        errorCodes.RESOURCE_ARCHIVED,
+        `Resource is archived: ${type}/${name}. Use --include-archived to install an archived version explicitly.`,
+      );
+    }
+
     const history = await source.history(type, name);
     if (history.length === 0) {
       throw new HimanError(
@@ -1945,6 +2050,26 @@ export class ServiceFactory {
       throw new HimanError(
         errorCodes.TEMPLATE_NOT_FOUND,
         `Template not found: ${options.template}`,
+      );
+    }
+  }
+
+  private validateResourceIdentity(
+    type: ResourceType,
+    name: string,
+    action: string,
+  ): void {
+    if (!["rule", "command", "skill"].includes(type)) {
+      throw new HimanError(
+        errorCodes.UNSUPPORTED_RESOURCE_TYPE,
+        `Unsupported resource type for ${action}: ${type}`,
+      );
+    }
+
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_NAME,
+        `Invalid resource name: ${name}. Use kebab-case only.`,
       );
     }
   }
