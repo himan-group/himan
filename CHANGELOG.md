@@ -12,6 +12,7 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ### Changed
 
+- Changed `create` and `dev` to use current project agent target directories for resource authoring, while `publish` now logs stages and can install the published version either into the current project or globally.
 - Changed `himan init` to support quick-start setup with optional `--agent`, `--install type/name[@version],...`, `--mode`, and `--json`.
 
 ## [0.4.0] - 2026-05-13

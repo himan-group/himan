@@ -58,10 +58,10 @@ repo/
 
 可用 `himan source init-docs` 生成根目录文档模板。命令默认只创建缺失的 `README.md` / `CHANGELOG.md`；已有文件会保留，除非显式传 `--force`。`--force` 覆盖文档时会扫描当前 source 中已有的 `rule`、`command`、`skill`，写入 README 资源索引，并在 CHANGELOG 初始条目中记录已整理的资源。资源引用会优先使用 Git tag 中的最新 semver 版本，找不到 tag 时再回退到 `himan.yaml` 的 `version`。对于尚未补齐 `himan.yaml` 的资源，文档整理会按默认入口识别资源；其中 skill 会额外读取 `skills/<name>/SKILL.md` front matter 中的 `name` 和 `description`。`--dry-run` 只返回将执行的创建、覆盖或跳过动作，不写盘。有实际文件变更时，命令会提交并 push 到当前 Git source。
 
-`create` 和 `publish` 会自动维护根目录文档：
+`create` 默认只在当前项目 agent 目标目录生成可验证资源；`publish` 会把项目目录中的资源同步回 source 仓库，并自动维护根目录文档：
 
 - `README.md`：只维护 `<!-- himan:resources:start -->` / `<!-- himan:resources:end -->` 标记内的资源索引；如果旧 README 没有标记，则在文件末尾追加受控资源索引区
-- `CHANGELOG.md`：向 `[Unreleased]` 写入资源变更；新增资源写入 `Added`，发布版本写入 `Changed`
+- `CHANGELOG.md`：向 `[Unreleased]` 写入发布版本的 `Changed` 条目
 
 推荐的 `README.md` 基本结构：
 
@@ -110,15 +110,15 @@ himan install rule code-review
 
 ## 4. 资源目录与元数据
 
-`create` 生成资源目录，结构示例：
+`create` 生成当前项目 agent 目标目录，结构示例：
 
 ```text
-repo/
-  rules/<name>/
+project/
+  .cursor/rules/<name>/
     content.md
-  commands/<name>/
+  .cursor/commands/<name>/
     content.md
-  skills/<name>/
+  .agents/skills/<name>/
     SKILL.md
 ```
 
@@ -143,7 +143,7 @@ agents:
 
 1. 读取本地配置，确认已初始化源
 2. 校验类型与资源名格式
-3. 解析目标路径 `rules|commands|skills/<name>`
+3. 解析当前项目 agent 目标路径，例如 `.agents/skills/<name>`
 4. 目录已存在且无 `--force` → 报错
 5. 生成 `himan.yaml` 与入口模板（`--dry-run` 则不落盘）
 6. 终端或 `--json` 输出结果；下一步由用户编辑再 `publish`
@@ -178,17 +178,17 @@ agents:
 ## 9. 与资源工作流衔接
 
 ```text
-create → edit → publish
+create → edit in project agent folder → publish
 ```
 
-`create` 会在当前 Git source 缓存仓库中生成资源目录；用户编辑该目录后执行 `publish`。资源已有发布版本并安装到项目后，可再进入 `dev` 工作流：
+`create` 会在当前项目 agent 目标目录中生成资源目录；用户编辑并验证该目录后执行 `publish`。资源已有发布版本并安装到项目后，可再进入 `dev` 工作流，直接在项目 agent 目标目录原地修改：
 
 ```bash
 himan create rule code-review --description "enforce standards"
 himan publish rule code-review --patch
 himan install rule code-review
 himan dev rule code-review
-# 编辑 .himan/dev/rule/code-review/
+# 编辑 .cursor/rules/code-review/ 或当前默认 agent 对应目录
 himan publish rule code-review --patch
 ```
 

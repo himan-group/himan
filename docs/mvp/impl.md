@@ -14,7 +14,7 @@
 **原则：**
 
 - 本地 store 按版本存放，已存在的版本目录不被覆盖（安装时复用缓存）
-- 开发目录 `.himan/dev` 与运行态 agent 目录（`.cursor` / `.claude` / `.agents` / `.openclaw`）分离
+- 创建和开发默认直接使用运行态 agent 目录（`.cursor` / `.claude` / `.agents` / `.openclaw`），旧版 `.himan/dev` 目录仅作为兼容发布输入
 - 正式发布版本以 **Git Tag** 为唯一事实来源；`himan.yaml` 中的 version 在发布时会与 tag 对齐
 
 ---
@@ -49,21 +49,21 @@
 ### 2.5 `dev <type> <name>`
 
 - 命令层接受 `rule|command|skill`；依赖已安装（能解析当前安装目标）
-- 将当前安装内容复制到 `.himan/dev/<type>/<name>`（目录已存在则默认不覆盖）
-- 按安装模式将项目目标更新为 dev 目录的软链或副本
+- 当前项目已存在资源时直接返回项目 agent 目标目录，用户原地修改
+- 当前项目不存在但用户级全局目录存在时，将全局资源复制到当前项目对应 agent 目标目录
 
 ### 2.6 `publish <type> <name>`
 
-- 发布源：优先项目 `.himan/dev/<type>/<name>`，否则缓存仓库内该资源目录
+- 发布源：优先旧版项目 `.himan/dev/<type>/<name>`，其次当前项目 agent 目标目录，否则缓存仓库内该资源目录
 - 下一版本：基于历史最新 tag；无历史则从 `0.0.0` 按 patch/minor/major 递增
 - 将内容同步回缓存仓库中的规范路径，更新元数据中的版本字段，提交、打 tag、推送
 - 将新 tag 对应内容拉取到 store 新版本目录
-- 用新版本 store 以 copy 模式重新安装项目内对应类型目标，更新 lock，并删除对应 `.himan/dev/<type>/<name>` 开发目录
+- 发布过程展示阶段日志；用新版本 store 以 copy 模式重新安装。默认安装到项目内对应类型目标并更新 lock，`--global` 安装到用户级目标且不写项目 lock
 
 ### 2.7 `create <type> <name>`
 
 - 校验类型与资源命名规则
-- 在缓存仓库中创建 `rules|commands|skills/<name>` 及 `himan.yaml`、入口模板
+- 在当前项目 agent 目标目录创建 `rules|commands|skills/<name>` 及 `himan.yaml`、入口模板
 - 支持覆盖、试运行、JSON 输出；创建后不自动发布
 
 ### 2.8 `agent`
