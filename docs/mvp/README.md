@@ -57,11 +57,11 @@
 
 ### 2.6 `publish`
 
-- `himan publish <type> <name> --patch|--minor|--major [--global]`（默认 patch，三选一）
+- `himan publish <type> <name> --patch|--minor|--major [-g|--global]`（默认 patch，三选一）
 - 发布内容优先取旧版项目 `.himan/dev/<type>/<name>`，其次取当前项目 agent 目标目录，否则取源仓库内对应资源目录。
 - 新版本：基于已有 tag 最新 semver 递增；无任何历史时从 `0.0.0` 起算。
 - 写回源仓库、提交、打 tag、推送，并将该版本同步到本地 store。
-- 发布过程展示阶段日志。发布成功后，用新版本 store 以 copy 模式重新安装；默认安装到项目目标并更新 lock，`--global` 安装到用户级目录且不写项目 lock。
+- 发布过程展示阶段日志。发布成功后，用新版本 store 以 copy 模式重新安装；默认安装到项目目标并更新 lock，`-g` / `--global` 安装到用户级目录且不写项目 lock。
 
 ### 2.7 `create`
 
@@ -72,9 +72,9 @@
 ### 2.8 `agent`
 
 - `himan agent list` 查看支持的 agent。
-- `himan agent use <agent[,agent]>` 设置当前项目默认 agent；加 `--global` 设置全局默认 agent。
+- `himan agent use <agent[,agent]>` 设置当前项目默认 agent；加 `-g` / `--global` 设置全局默认 agent。
 - `himan agent current` 查看当前项目、全局和最终生效的默认 agent。
-- `himan agent clear` 清除默认 agent 配置；默认清除当前项目，加 `--global` 清除全局配置。
+- `himan agent clear` 清除默认 agent 配置；默认清除当前项目，加 `-g` / `--global` 清除全局配置。
 - 默认 agent 解析顺序：显式 `--agent` > 当前项目配置 > 全局配置 > 资源 metadata > `cursor`。
 
 ---

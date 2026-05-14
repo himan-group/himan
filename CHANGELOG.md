@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-05-14
+
+### Added
+
+- Added `-g` as a shorthand for `--global` on `install`, `publish`, `agent use`, and `agent clear`.
+
 ### Fixed
 
 - Fixed the `himan-resource-manage` skill to stop create/dev/publish workflows when the local Himan CLI is older than the project-directory resource flow.

@@ -316,7 +316,7 @@ describe("CLI commands with external git source", () => {
   });
 
   it("returns cli usage code for global install without a resource", () => {
-    const result = runCli(["install", "--global"], projectDir, homeDir);
+    const result = runCli(["install", "-g"], projectDir, homeDir);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("[E_CLI_USAGE]");
     expect(result.stderr).toContain("Global install requires a resource");
@@ -333,7 +333,7 @@ describe("CLI commands with external git source", () => {
     ]);
 
     const globalUse = runCli(
-      ["agent", "use", "codex", "--global", "--json"],
+      ["agent", "use", "codex", "-g", "--json"],
       projectDir,
       homeDir,
     );
@@ -374,7 +374,7 @@ describe("CLI commands with external git source", () => {
     expect(meta).toContain("- openclaw");
 
     expect(runCli(["agent", "clear", "--project"], projectDir, homeDir).status).toBe(0);
-    expect(runCli(["agent", "clear", "--global"], projectDir, homeDir).status).toBe(0);
+    expect(runCli(["agent", "clear", "-g"], projectDir, homeDir).status).toBe(0);
   });
 
   it("creates local index cache when listing resources", async () => {
@@ -900,7 +900,7 @@ describe("CLI commands with external git source", () => {
     expect(useResult.status).toBe(0);
 
     const result = runCli(
-      ["install", "rule", "code-review@1.0.0", "--global"],
+      ["install", "rule", "code-review@1.0.0", "-g"],
       globalInstallProjectDir,
       homeDir,
     );
@@ -1006,7 +1006,7 @@ describe("CLI commands with external git source", () => {
     );
 
     const publishGlobal = runCli(
-      ["publish", "rule", "global-edit", "--patch", "--global"],
+      ["publish", "rule", "global-edit", "--patch", "-g"],
       globalEditConsumerDir,
       homeDir,
     );
