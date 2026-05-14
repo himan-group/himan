@@ -1,8 +1,12 @@
 name: himan-skill-metadata
 type: skill
-version: 0.0.2
+version: 0.0.3
 entry: SKILL.md
-description: Create or update Himan skill metadata. Use when Codex creates, edits, migrates, or audits a skill folder with SKILL.md and should also generate or refresh a matching himan.yaml file containing static analysis metadata such as content token estimates, hashes, dependencies, scripts, MCP tools, and generation details.
+description: Create or update Himan skill metadata. Use when Codex creates,
+  edits, migrates, or audits a skill folder with SKILL.md and should also
+  generate or refresh a matching himan.yaml file containing static analysis
+  metadata such as content token estimates, hashes, dependencies, scripts, MCP
+  tools, and generation details.
 agents:
   - codex
 analysis:
