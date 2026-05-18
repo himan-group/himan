@@ -92,24 +92,41 @@ export function registerSourceCommands(
     .command("add")
     .argument("<name>", "source name (kebab-case)")
     .argument("<git_repo>", "Git repository URL")
+    .option("--alias <alias>", "source alias used by source use and --source")
     .description("Add a named git source")
-    .action(async (name: string, gitRepo: string) => {
+    .action(async (name: string, gitRepo: string, options: { alias?: string }) => {
       await runAction(async () => {
-        const result = await services.addSource(name, "git", gitRepo);
+        const result = await services.addSource(name, "git", gitRepo, options.alias);
         process.stdout.write(
-          `Added source ${result.name}: ${result.type}${result.repo ? ` ${result.repo}` : ""}\n`,
+          `Added source ${result.name} as ${result.alias}: ${result.type}${
+            result.repo ? ` ${result.repo}` : ""
+          }\n`,
         );
       });
     });
 
   command
     .command("use")
-    .argument("<name>", "source name")
-    .description("Switch default source")
-    .action(async (name: string) => {
+    .argument("<alias>", "source alias")
+    .description("Switch default source by alias")
+    .action(async (alias: string) => {
       await runAction(async () => {
-        const result = await services.useSource(name);
-        process.stdout.write(`Using source: ${result.name}\n`);
+        const result = await services.useSource(alias);
+        process.stdout.write(
+          `Using source: ${result.alias ?? result.name} (${result.name})\n`,
+        );
+      });
+    });
+
+  command
+    .command("alias")
+    .argument("<source>", "source name or current alias")
+    .argument("<alias>", "new source alias")
+    .description("Set or update a source alias")
+    .action(async (source: string, alias: string) => {
+      await runAction(async () => {
+        const result = await services.aliasSource(source, alias);
+        process.stdout.write(`Aliased source ${result.name} as ${result.alias}\n`);
       });
     });
 
@@ -246,8 +263,9 @@ export function registerSourceCommands(
           return;
         }
         for (const source of sources) {
+          const alias = source.alias ? ` [${source.alias}]` : "";
           process.stdout.write(
-            `- ${source.name}${source.isDefault ? " (default)" : ""}: ${source.type}${
+            `- ${source.name}${alias}${source.isDefault ? " (default)" : ""}: ${source.type}${
               source.repo ? ` ${source.repo}` : ""
             }\n`,
           );

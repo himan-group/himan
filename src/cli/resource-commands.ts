@@ -19,6 +19,7 @@ export function registerResourceCommands(command: Command, services: ServiceFact
     .argument("[type]", "resource type")
     .option("--agent <list>", "agent list filter, comma separated")
     .option("--brief", "hide resource descriptions")
+    .option("--source <alias>", "source alias for source resource list")
     .option("--installed", "list resources installed in current project")
     .option("--archived", "list archived resources only")
     .option("--include-archived", "include archived resources in source list")
@@ -31,6 +32,7 @@ export function registerResourceCommands(command: Command, services: ServiceFact
           json?: boolean;
           agent?: string;
           brief?: boolean;
+          source?: string;
           installed?: boolean;
           archived?: boolean;
           includeArchived?: boolean;
@@ -39,6 +41,12 @@ export function registerResourceCommands(command: Command, services: ServiceFact
         await runAction(async () => {
           const agents = parseAgents(options.agent);
           const showDescription = !options.brief;
+          if (options.installed && options.source) {
+            throw new HimanError(
+              errorCodes.CLI_USAGE,
+              "--source only applies to source resource lists.",
+            );
+          }
           if (options.installed && (options.archived || options.includeArchived)) {
             throw new HimanError(
               errorCodes.CLI_USAGE,
@@ -54,6 +62,7 @@ export function registerResourceCommands(command: Command, services: ServiceFact
           const listOptions = {
             archived: Boolean(options.archived),
             includeArchived: Boolean(options.includeArchived),
+            source: options.source,
           };
           if (options.installed) {
             await writeInstalledList(services, type, agents, Boolean(options.json));
@@ -90,17 +99,20 @@ export function registerResourceCommands(command: Command, services: ServiceFact
     .command("history")
     .argument("<type>", "resource type")
     .argument("<name>", "resource name")
+    .option("--source <alias>", "source alias")
     .option("--json", "output json format")
     .description("Show resource history")
     .action(
       async (
         type: string,
         name: string,
-        options: { json?: boolean },
+        options: { source?: string; json?: boolean },
       ) => {
         await runAction(async () => {
           const resourceType = ensureResourceType(type);
-          const versions = await services.history(resourceType, name);
+          const versions = await services.history(resourceType, name, {
+            source: options.source,
+          });
 
           if (options.json) {
             process.stdout.write(`${JSON.stringify(versions, null, 2)}\n`);

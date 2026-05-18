@@ -4,6 +4,7 @@ import { PathResolver } from "../utils/path-resolver.js";
 
 export interface SourceState {
   type: "git" | "registry";
+  alias?: string;
   repo?: string;
   repoId?: string;
   endpoint?: string;

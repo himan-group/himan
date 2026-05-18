@@ -162,9 +162,10 @@ analysis:
 | 命令                          | 说明                                             |
 | ----------------------------- | ------------------------------------------------ |
 | `init <git_url> [--agent a,b] [--install type/name[@version],...] [--mode link\|copy] [--json]` | 初始化默认源（当前为 Git）并写入 `~/.himan/config.json`；可同时写当前项目默认 agent 并安装选定资源 |
-| `source add <name> <git_url>` | 添加命名 Git 源                                    |
-| `source use <name>`           | 切换默认源                                          |
-| `source list [--json]`        | 查看已配置源（标记当前 default）                     |
+| `source add <name> <git_url> [--alias alias]` | 添加命名 Git 源；未传 `--alias` 时别名默认等于 `name` |
+| `source alias <source> <alias>` | 设置或修改 source 别名；`<source>` 可用配置名或当前别名 |
+| `source use <alias>`          | 按别名切换默认源；若当前 default 还没有别名，会先要求给当前 default 设置别名 |
+| `source list [--json]`        | 查看已配置源、别名和当前 default                     |
 | `source init-docs [--force] [--dry-run] [--json]` | 为当前 default source 生成仓库级 README/CHANGELOG |
 | `source clone <from> <to> [--branch b] [--target-branch b] [--add-source name] [--use] [--dry-run] [--json]` | 将 Git source 分支和 himan 管理的资源 tag 复制到空目标 Git 仓库 |
 | `source sync <from> <to> [--target-branch b] [--add-source name] [--use] [--dry-run] [--json]` | 将最新资源快照同步到目标 Git 仓库并创建对应最新 tag |
@@ -173,8 +174,9 @@ analysis:
 等价独立命令：
 
 - `himan-source init <git_url>`
-- `himan-source add <name> <git_url>`
-- `himan-source use <name>`
+- `himan-source add <name> <git_url> [--alias alias]`
+- `himan-source alias <source> <alias>`
+- `himan-source use <alias>`
 - `himan-source list [--json]`
 - `himan-source init-docs [--force] [--dry-run] [--json]`
 - `himan-source clone <from> <to> [...]`
@@ -184,8 +186,8 @@ analysis:
 
 | 命令                             | 说明                                                                                |
 | -------------------------------- | ----------------------------------------------------------------------------------- |
-| `list [type] [--agent a,b] [--brief] [--installed] [--archived] [--include-archived] [--json]` | 默认列出当前 default source 的 active 资源；未传 `type` 时按 `rule`/`command`/`skill` 分组展示全部资源；可按 agent 过滤；默认显示描述，`--brief` 可隐藏描述；`--installed` 改为查看当前项目 `himan.lock` 中的已安装资源；`--archived` 只看归档资源，`--include-archived` 同时展示 active 和归档资源 |
-| `history <type> <name> [--json]` | 按 tag 查看版本历史                                                                 |
+| `list [type] [--source alias] [--agent a,b] [--brief] [--installed] [--archived] [--include-archived] [--json]` | 默认列出当前 default source 的 active 资源；可用 `--source` 指定 source 别名；未传 `type` 时按 `rule`/`command`/`skill` 分组展示全部资源；可按 agent 过滤；默认显示描述，`--brief` 可隐藏描述；`--installed` 改为查看当前项目 `himan.lock` 中的已安装资源；`--archived` 只看归档资源，`--include-archived` 同时展示 active 和归档资源 |
+| `history <type> <name> [--source alias] [--json]` | 按 tag 查看版本历史                                                                 |
 | `create <type> <name>`           | 在当前项目 agent 目录创建脚手架；常用选项：`--description`、`--agent a,b`、`--dry-run`、`--force`、`--json` |
 | `archive <type> <name>`          | 将当前 default source 中的资源移动到 `archive/<plural>/<name>`；常用选项：`--reason`、`--dry-run`、`--json` |
 | `restore <type> <name>`          | 将归档资源恢复回 active 类型目录；常用选项：`--dry-run`、`--json` |
@@ -196,10 +198,10 @@ analysis:
 | 命令                              | 说明                                                      |
 | --------------------------------- | --------------------------------------------------------- |
 | `list [type] [--agent a,b] [--json]` | 查看当前项目 `himan.lock` 中记录的已安装资源；未传 `type` 时按 `rule`/`command`/`skill` 分组展示 |
-| `install [type] [name[@version]] [-g\|--global] [--agent a,b] [--mode link\|copy] [--include-archived]` | 有参数时从当前 default source 安装指定资源；**无参数**时按 `himan.lock` 记录的 source 批量安装；加 `-g` / `--global` 时安装到用户级 agent 目录且不写项目 lock；可覆盖安装目标 agent 或安装模式；归档资源必须显式传 `--include-archived` 才能按历史版本安装 |
+| `install [type] [name[@version]] [-g\|--global] [--source alias] [--agent a,b] [--mode link\|copy] [--include-archived]` | 有参数时从当前 default source 安装指定资源，也可用 `--source` 指定 source 别名；**无参数**时按 `himan.lock` 记录的 source 批量安装，不能搭配 `--source`；加 `-g` / `--global` 时安装到用户级 agent 目录且不写项目 lock；可覆盖安装目标 agent 或安装模式；归档资源必须显式传 `--include-archived` 才能按历史版本安装 |
 | `dev <type> <name>`               | 切换到开发态；项目资源原地编辑，全局资源先复制到当前项目目标目录 |
 | `uninstall <type> <name>`         | 从项目移除安装目标，并同步删除 `himan.lock` 条目           |
-| `publish <type> <name> [-g\|--global]` | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个）；发布后默认安装到当前项目并更新 lock，`-g` / `--global` 安装到用户级目录 |
+| `publish <type> <name> [--source alias] [-g\|--global]` | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个）；可用 `--source` 指定发布目标 source 别名；发布后默认安装到当前项目并更新 lock，`-g` / `--global` 安装到用户级目录 |
 
 ### 4) agent（默认 Agent）
 
@@ -236,7 +238,7 @@ analysis:
 
 `--json` 模式下，失败时会输出机器可读错误 JSON（`stderr`）。错误码定义见 [docs/error-codes.md](./docs/error-codes.md)。
 
-多源说明：当前是「**多来源可配置，单来源生效**」模型。显式资源命令（`list/install <type> .../history/dev/publish/rename`）作用于当前 default source；`himan install` 无参数恢复时使用 `himan.lock` 中记录的 source。
+多源说明：source 的配置名是本地内部 key，别名是日常命令使用的稳定引用。`source add` 会写入别名；旧的 default source 可能没有别名，首次 `source use <alias>` 前需要先执行 `himan source alias default <alias>`。显式资源命令默认作用于当前 default source，也可以在 `list`、`history`、`install <type> ...`、`publish` 中用 `--source <alias>` 指定 source；`himan install` 无参数恢复时仍使用 `himan.lock` 中记录的 source。
 
 ## 当前范围
 
@@ -250,11 +252,12 @@ A: `source add` 只是在本地新增一个可用来源，不会自动切换当�
 请执行：
 
 ```bash
-himan source use <name>
+himan source alias default <alias>
+himan source use <alias>
 himan source list
 ```
 
-确认目标来源已成为 `(default)` 后，再执行 `list/install/history/dev/publish`。
+确认目标来源已成为 `(default)` 后，再执行 `list/install/history/dev/publish`。也可以对单次资源命令使用 `--source <alias>` 指定来源。
 
 **Q: `list` 和 `source list` 有什么区别？**  
 A: `source list` 查看「我配置了哪些来源」；`list` 查看「当前 default source 里有哪些资源」。

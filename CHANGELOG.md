@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Added
+
+- Added source aliases with `himan source alias`, alias-based `source use`, and `--source <alias>` selection for source resource listing, history, install, and publish flows.
+
 ## [0.5.2] - 2026-05-14
 
 ### Added
