@@ -65,6 +65,7 @@ export function registerProjectCommands(
     .argument("[name[@version]]", "resource name with optional @version")
     .option("--agent <list>", "install target agents, comma separated")
     .option("--mode <mode>", "install mode: link or copy")
+    .option("--source <alias>", "source alias for single-resource install")
     .option("-g, --global", "install into user-level agent directories")
     .option("--include-archived", "allow installing an archived resource explicitly")
     .description("Install resource, or install from himan.lock")
@@ -75,6 +76,7 @@ export function registerProjectCommands(
         options: {
           agent?: string;
           mode?: string;
+          source?: string;
           global?: boolean;
           includeArchived?: boolean;
         },
@@ -83,6 +85,12 @@ export function registerProjectCommands(
           const agents = parseAgents(options.agent);
           const mode = parseInstallMode(options.mode);
           if (!type && !nameVersion) {
+            if (options.source) {
+              throw new HimanError(
+                errorCodes.CLI_USAGE,
+                "--source only applies to single-resource install.",
+              );
+            }
             if (options.includeArchived) {
               throw new HimanError(
                 errorCodes.CLI_USAGE,
@@ -93,7 +101,7 @@ export function registerProjectCommands(
               throw new HimanError(
                 errorCodes.CLI_USAGE,
                 "Global install requires a resource:\n"
-                  + "  - himan install <type> <name[@version]> -g [--mode link|copy]",
+                  + "  - himan install <type> <name[@version]> -g [--source alias] [--mode link|copy]",
               );
             }
             const results = await services.installFromLock(process.cwd(), agents, mode);
@@ -112,8 +120,8 @@ export function registerProjectCommands(
               errorCodes.CLI_USAGE,
               "Install usage:\n"
                 + "  - himan install  # install from himan.lock\n"
-                + "  - himan install <type> <name[@version]> [--mode link|copy]  # install single resource\n"
-                + "  - himan install <type> <name[@version]> -g [--mode link|copy]  # install single resource globally",
+                + "  - himan install <type> <name[@version]> [--source alias] [--mode link|copy]  # install single resource\n"
+                + "  - himan install <type> <name[@version]> -g [--source alias] [--mode link|copy]  # install single resource globally",
             );
           }
 
@@ -127,7 +135,7 @@ export function registerProjectCommands(
                 process.cwd(),
                 agents,
                 mode,
-                { includeArchived: options.includeArchived },
+                { includeArchived: options.includeArchived, source: options.source },
               )
             : await services.install(
                 resourceType,
@@ -136,7 +144,7 @@ export function registerProjectCommands(
                 process.cwd(),
                 agents,
                 mode,
-                { includeArchived: options.includeArchived },
+                { includeArchived: options.includeArchived, source: options.source },
               );
           process.stdout.write(
             `Installed ${options.global ? "global " : ""}${result.type}/${result.name}@${result.version}\n`,
@@ -186,13 +194,20 @@ export function registerProjectCommands(
     .option("--patch", "patch release")
     .option("--minor", "minor release")
     .option("--major", "major release")
+    .option("--source <alias>", "source alias to publish into")
     .option("-g, --global", "install the published version into user-level agent directories")
     .description("Publish resource (default: --patch)")
     .action(
       async (
         type: string,
         name: string,
-        options: { patch?: boolean; minor?: boolean; major?: boolean; global?: boolean },
+        options: {
+          patch?: boolean;
+          minor?: boolean;
+          major?: boolean;
+          source?: string;
+          global?: boolean;
+        },
       ) => {
         await runAction(async () => {
           const resourceType = ensureResourceType(type);
@@ -210,6 +225,7 @@ export function registerProjectCommands(
             process.cwd(),
             {
               installScope,
+              source: options.source,
               onProgress: (progress) => {
                 process.stdout.write(`[publish:${progress.stage}] ${progress.message}\n`);
               },

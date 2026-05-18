@@ -186,38 +186,203 @@ describe("CLI commands with external git source", () => {
   });
 
   it("manages multiple sources and switches default source", () => {
-    const addResult = runCli(["source", "add", "mirror", TEST_REPO], projectDir, homeDir);
+    const addResult = runCli(
+      ["source", "add", "mirror", TEST_REPO, "--alias", "himan"],
+      projectDir,
+      homeDir,
+    );
     expect(addResult.status).toBe(0);
-    expect(addResult.stdout).toContain("Added source mirror");
+    expect(addResult.stdout).toContain("Added source mirror as himan");
 
     const listResult = runCli(["source", "list", "--json"], projectDir, homeDir);
     expect(listResult.status).toBe(0);
     const sources = JSON.parse(listResult.stdout) as Array<{
       name: string;
+      alias?: string;
       repo?: string;
       isDefault: boolean;
     }>;
     expect(sources).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "default", isDefault: true }),
-        expect.objectContaining({ name: "mirror", repo: TEST_REPO }),
+        expect.objectContaining({ name: "mirror", alias: "himan", repo: TEST_REPO }),
       ]),
     );
 
-    const useResult = runCli(["source", "use", "mirror"], projectDir, homeDir);
+    const useWithoutDefaultAlias = runCli(
+      ["source", "use", "himan"],
+      projectDir,
+      homeDir,
+    );
+    expect(useWithoutDefaultAlias.status).toBe(1);
+    expect(useWithoutDefaultAlias.stderr).toContain("has no alias");
+
+    const aliasDefault = runCli(
+      ["source", "alias", "default", "primary"],
+      projectDir,
+      homeDir,
+    );
+    expect(aliasDefault.status).toBe(0);
+    expect(aliasDefault.stdout).toContain("Aliased source default as primary");
+
+    const useResult = runCli(["source", "use", "himan"], projectDir, homeDir);
     expect(useResult.status).toBe(0);
-    expect(useResult.stdout).toContain("Using source: mirror");
+    expect(useResult.stdout).toContain("Using source: himan (mirror)");
+
+    const useByNameResult = runCli(["source", "use", "mirror"], projectDir, homeDir);
+    expect(useByNameResult.status).toBe(0);
+    expect(useByNameResult.stdout).toContain("Using source: himan (mirror)");
+
+    const switchBack = runCli(
+      ["source", "use", "default", "--alias", "garena"],
+      projectDir,
+      homeDir,
+    );
+    expect(switchBack.status).toBe(0);
+    expect(switchBack.stdout).toContain("Using source: garena (default)");
+
+    const renameCurrent = runCli(
+      ["source", "rename", "default", "shopee", "--alias", "shopee"],
+      projectDir,
+      homeDir,
+    );
+    expect(renameCurrent.status).toBe(0);
+    expect(renameCurrent.stdout).toContain(
+      "Renamed source default to shopee as shopee (current)",
+    );
+
+    const useOldName = runCli(["source", "use", "default"], projectDir, homeDir);
+    expect(useOldName.status).toBe(1);
+    expect(useOldName.stderr).toContain("Source not found: default");
 
     const listAfterUse = runCli(["source", "list", "--json"], projectDir, homeDir);
     expect(listAfterUse.status).toBe(0);
     const sourcesAfterUse = JSON.parse(listAfterUse.stdout) as Array<{
       name: string;
+      alias?: string;
       isDefault: boolean;
     }>;
     expect(sourcesAfterUse).toEqual(
-      expect.arrayContaining([expect.objectContaining({ name: "mirror", isDefault: true })]),
+      expect.arrayContaining([
+        expect.objectContaining({ name: "shopee", alias: "shopee", isDefault: true }),
+        expect.objectContaining({ name: "mirror", alias: "himan", isDefault: false }),
+      ]),
     );
+    expect(sourcesAfterUse.some((source) => source.name === "default")).toBe(false);
+
+    const useRenamed = runCli(["source", "use", "shopee"], projectDir, homeDir);
+    expect(useRenamed.status).toBe(0);
+    expect(useRenamed.stdout).toContain("Using source: shopee (shopee)");
   });
+
+  it("uses source aliases for explicit resource commands", async () => {
+    const aliasHomeDir = path.join(tmpRoot, "alias-home");
+    const aliasProjectDir = path.join(tmpRoot, "alias-project");
+    const primaryRemote = await createSingleRuleRemote(
+      "alias-primary",
+      "primary-rule",
+      "1.0.0",
+      "primary source rule",
+      "from primary source",
+    );
+    const teamRemote = await createSingleRuleRemote(
+      "alias-team",
+      "team-rule",
+      "2.0.0",
+      "team source rule",
+      "from team source",
+    );
+    await fs.mkdir(aliasHomeDir, { recursive: true });
+    await fs.mkdir(aliasProjectDir, { recursive: true });
+
+    expect(runCli(["init", primaryRemote], aliasProjectDir, aliasHomeDir).status).toBe(0);
+    expect(
+      runCli(["source", "add", "team-source", teamRemote, "--alias", "team"], aliasProjectDir, aliasHomeDir)
+        .status,
+    ).toBe(0);
+    expect(
+      runCli(["source", "alias", "default", "primary"], aliasProjectDir, aliasHomeDir)
+        .status,
+    ).toBe(0);
+
+    const primaryList = runCli(
+      ["list", "rule", "--source", "primary", "--json"],
+      aliasProjectDir,
+      aliasHomeDir,
+    );
+    expect(primaryList.status).toBe(0);
+    expect(JSON.parse(primaryList.stdout)).toEqual([
+      expect.objectContaining({ name: "primary-rule" }),
+    ]);
+
+    const teamList = runCli(
+      ["list", "rule", "--source", "team", "--json"],
+      aliasProjectDir,
+      aliasHomeDir,
+    );
+    expect(teamList.status).toBe(0);
+    expect(JSON.parse(teamList.stdout)).toEqual([
+      expect.objectContaining({ name: "team-rule" }),
+    ]);
+
+    const installTeam = runCli(
+      ["install", "rule", "team-rule@2.0.0", "--source", "team"],
+      aliasProjectDir,
+      aliasHomeDir,
+    );
+    expect(installTeam.status).toBe(0);
+    await expect(
+      fs.readFile(
+        path.join(aliasProjectDir, ".cursor", "rules", "team-rule", "content.md"),
+        "utf8",
+      ),
+    ).resolves.toContain("from team source");
+
+    const lock = JSON.parse(
+      await fs.readFile(path.join(aliasProjectDir, "himan.lock"), "utf8"),
+    ) as { source: { name?: string; repo?: string } };
+    expect(lock.source).toEqual(
+      expect.objectContaining({ name: "team", repo: teamRemote }),
+    );
+
+    const createPublish = runCli(
+      ["create", "rule", "team-publish"],
+      aliasProjectDir,
+      aliasHomeDir,
+    );
+    expect(createPublish.status).toBe(0);
+    await fs.appendFile(
+      path.join(aliasProjectDir, ".cursor", "rules", "team-publish", "content.md"),
+      "published to team source by alias\n",
+      "utf8",
+    );
+
+    const publishTeam = runCli(
+      ["publish", "rule", "team-publish", "--source", "team", "--patch"],
+      aliasProjectDir,
+      aliasHomeDir,
+    );
+    expect(publishTeam.status).toBe(0);
+    expect(publishTeam.stdout).toContain("Published rule/team-publish@0.0.1");
+
+    const teamHistory = runCli(
+      ["history", "rule", "team-publish", "--source", "team", "--json"],
+      aliasProjectDir,
+      aliasHomeDir,
+    );
+    expect(teamHistory.status).toBe(0);
+    expect(JSON.parse(teamHistory.stdout)).toEqual([
+      { version: "0.0.1", raw: "rule/team-publish@0.0.1" },
+    ]);
+
+    const primaryHistory = runCli(
+      ["history", "rule", "team-publish", "--source", "primary", "--json"],
+      aliasProjectDir,
+      aliasHomeDir,
+    );
+    expect(primaryHistory.status).toBe(0);
+    expect(JSON.parse(primaryHistory.stdout)).toEqual([]);
+  }, 20000);
 
   it("returns empty list and history before resources are prepared", () => {
     const allListResult = runCli(["list", "--json"], projectDir, homeDir);

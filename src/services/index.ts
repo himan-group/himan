@@ -81,11 +81,17 @@ export interface PublishProgress {
 
 export interface PublishOptions {
   installScope?: PublishInstallScope;
+  source?: string;
   onProgress?: (progress: PublishProgress) => void;
 }
 
 interface InstallOptions {
   includeArchived?: boolean;
+  source?: string;
+}
+
+interface SourceSelectionOptions {
+  source?: string;
 }
 
 interface ExistingResourceTarget {
@@ -135,8 +141,16 @@ export class ServiceFactory {
     name: string,
     type: "git" | "registry",
     repo?: string,
-  ): Promise<{ name: string; type: "git" | "registry"; repo?: string; repoId?: string }> {
+    alias: string = name,
+  ): Promise<{
+    name: string;
+    alias: string;
+    type: "git" | "registry";
+    repo?: string;
+    repoId?: string;
+  }> {
     this.validateSourceName(name);
+    this.validateSourceAlias(alias);
     await this.stateStore.ensureBaseDirs();
     const sourceConfig = this.buildSourceConfig(type, repo);
     const source = this.createSource(type);
@@ -144,12 +158,14 @@ export class ServiceFactory {
 
     const stateSource: SourceState = {
       type,
+      alias,
       repo: sourceConfig.repo,
       repoId: sourceConfig.repoId,
     };
 
     const current = await this.stateStore.loadConfig();
     const items = { ...(current?.sources?.items ?? {}) };
+    this.ensureSourceAliasAvailable(items, alias, name);
     items[name] = stateSource;
     const defaultName = current?.sources?.default ?? name;
     const defaultSource = items[defaultName] ?? stateSource;
@@ -162,36 +178,169 @@ export class ServiceFactory {
       agents: current?.agents,
     });
 
-    return { name, type, repo: sourceConfig.repo, repoId: sourceConfig.repoId };
+    return { name, alias, type, repo: sourceConfig.repo, repoId: sourceConfig.repoId };
   }
 
-  async useSource(name: string): Promise<{ name: string }> {
+  async aliasSource(ref: string, alias: string): Promise<{ name: string; alias: string }> {
+    this.validateSourceAlias(alias);
     const config = await this.stateStore.loadConfig();
     if (!config?.sources) {
       throw new HimanError(errorCodes.CONFIG_NOT_FOUND, "No source configured.");
     }
-    const target = config.sources.items[name];
-    if (!target) {
-      throw new HimanError(errorCodes.RESOURCE_NOT_FOUND, `Source not found: ${name}`);
+    const resolved = this.resolveConfiguredSourceRef(config.sources.items, ref);
+    if (!resolved) {
+      throw new HimanError(errorCodes.RESOURCE_NOT_FOUND, `Source not found: ${ref}`);
     }
+    this.ensureSourceAliasAvailable(config.sources.items, alias, resolved.name);
+
+    const items = {
+      ...config.sources.items,
+      [resolved.name]: {
+        ...resolved.source,
+        alias,
+      },
+    };
+    const defaultSource = items[config.sources.default] ?? config.source;
     await this.stateStore.saveConfig({
-      source: target,
+      source: defaultSource,
       sources: {
-        default: name,
-        items: config.sources.items,
+        default: config.sources.default,
+        items,
       },
       agents: config.agents,
     });
-    return { name };
+    return { name: resolved.name, alias };
+  }
+
+  async renameSource(
+    ref: string,
+    newName: string,
+    options: { alias?: string } = {},
+  ): Promise<{ oldName: string; name: string; alias?: string; isDefault: boolean }> {
+    this.validateSourceName(newName);
+    const nextAlias = options.alias?.trim();
+    if (nextAlias) {
+      this.validateSourceAlias(nextAlias);
+    }
+
+    const config = await this.stateStore.loadConfig();
+    if (!config?.sources) {
+      throw new HimanError(errorCodes.CONFIG_NOT_FOUND, "No source configured.");
+    }
+    const resolved = this.resolveConfiguredSourceRef(config.sources.items, ref);
+    if (!resolved) {
+      throw new HimanError(errorCodes.RESOURCE_NOT_FOUND, `Source not found: ${ref}`);
+    }
+    if (newName !== resolved.name && config.sources.items[newName]) {
+      throw new HimanError(errorCodes.INVALID_INPUT, `Source already exists: ${newName}`);
+    }
+    if (nextAlias) {
+      this.ensureSourceAliasAvailable(config.sources.items, nextAlias, resolved.name);
+    }
+
+    const renamedSource = nextAlias
+      ? {
+          ...resolved.source,
+          alias: nextAlias,
+        }
+      : resolved.source;
+    const items = { ...config.sources.items };
+    delete items[resolved.name];
+    items[newName] = renamedSource;
+    const defaultName =
+      config.sources.default === resolved.name ? newName : config.sources.default;
+    const defaultSource = items[defaultName] ?? config.source;
+
+    await this.stateStore.saveConfig({
+      source: defaultSource,
+      sources: {
+        default: defaultName,
+        items,
+      },
+      agents: config.agents,
+    });
+
+    return {
+      oldName: resolved.name,
+      name: newName,
+      alias: renamedSource.alias,
+      isDefault: defaultName === newName,
+    };
+  }
+
+  async useSource(
+    ref: string,
+    options: { alias?: string } = {},
+  ): Promise<{ name: string; alias: string }> {
+    const nextAlias = options.alias?.trim();
+    if (nextAlias) {
+      this.validateSourceAlias(nextAlias);
+    }
+    const config = await this.stateStore.loadConfig();
+    if (!config?.sources) {
+      throw new HimanError(errorCodes.CONFIG_NOT_FOUND, "No source configured.");
+    }
+    const currentName = config.sources.default;
+    const current = config.sources.items[currentName] ?? config.source;
+    if (!current?.alias) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Current default source "${currentName}" has no alias. Run \`himan source alias ${currentName} <alias>\` before switching sources.`,
+      );
+    }
+    const resolved = this.resolveConfiguredSourceRef(config.sources.items, ref);
+    if (!resolved) {
+      throw new HimanError(errorCodes.RESOURCE_NOT_FOUND, `Source not found: ${ref}`);
+    }
+    if (!resolved.source.alias && !nextAlias) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Target source "${resolved.name}" has no alias. Run \`himan source alias ${resolved.name} <alias>\`, or \`himan source use ${resolved.name} --alias <alias>\`, before switching to it.`,
+      );
+    }
+    if (nextAlias) {
+      this.ensureSourceAliasAvailable(config.sources.items, nextAlias, resolved.name);
+    }
+    const alias = nextAlias ?? resolved.source.alias;
+    if (!alias) {
+      throw new Error("Source alias was expected after validation.");
+    }
+    const nextSource = nextAlias
+      ? {
+          ...resolved.source,
+          alias,
+        }
+      : resolved.source;
+    const items = {
+      ...config.sources.items,
+      [resolved.name]: nextSource,
+    };
+    await this.stateStore.saveConfig({
+      source: nextSource,
+      sources: {
+        default: resolved.name,
+        items,
+      },
+      agents: config.agents,
+    });
+    return { name: resolved.name, alias };
   }
 
   async listSources(): Promise<
-    Array<{ name: string; type: "git" | "registry"; repo?: string; repoId?: string; isDefault: boolean }>
+    Array<{
+      name: string;
+      alias?: string;
+      type: "git" | "registry";
+      repo?: string;
+      repoId?: string;
+      isDefault: boolean;
+    }>
   > {
     const config = await this.stateStore.loadConfig();
     if (!config?.sources) return [];
     return Object.entries(config.sources.items).map(([name, source]) => ({
       name,
+      alias: source.alias,
       type: source.type,
       repo: source.repo,
       repoId: source.repoId,
@@ -607,9 +756,9 @@ export class ServiceFactory {
   async list(
     type: ResourceType,
     agents?: string[],
-    options: ResourceListOptions = {},
+    options: ResourceListOptions & SourceSelectionOptions = {},
   ): Promise<ResourceMeta[]> {
-    const source = await this.loadSourceFromConfig();
+    const source = await this.loadSourceFromConfig(options.source);
     const resources = await source.list(type, options);
     if (!agents?.length) return resources;
     const selected = normalizeAgents(agents);
@@ -675,8 +824,12 @@ export class ServiceFactory {
       );
   }
 
-  async history(type: ResourceType, name: string): Promise<VersionInfo[]> {
-    const source = await this.loadSourceFromConfig();
+  async history(
+    type: ResourceType,
+    name: string,
+    options: SourceSelectionOptions = {},
+  ): Promise<VersionInfo[]> {
+    const source = await this.loadSourceFromConfig(options.source);
     return source.history(type, name);
   }
 
@@ -695,7 +848,7 @@ export class ServiceFactory {
     linkPath: string;
     mode: InstallMode;
   }> {
-    const { source, sourceInfo } = await this.loadSourceWithInfoFromConfig();
+    const { source, sourceInfo } = await this.loadSourceWithInfoFromConfig(options.source);
     return this.installWithSource(
       source,
       sourceInfo,
@@ -725,7 +878,7 @@ export class ServiceFactory {
     linkPath: string;
     mode: InstallMode;
   }> {
-    const source = await this.loadSourceFromConfig();
+    const source = await this.loadSourceFromConfig(options.source);
     return this.installWithSource(
       source,
       undefined,
@@ -836,14 +989,21 @@ export class ServiceFactory {
   }> {
     const installScope = options.installScope ?? "project";
     this.reportPublishProgress(options, "prepare", `Preparing ${type}/${name}.`);
-    const source = await this.loadSourceFromConfig();
+    const { source, sourceInfo } = await this.loadSourceWithInfoFromConfig(
+      options.source,
+    );
     if (await source.isArchived(type, name)) {
       throw new HimanError(
         errorCodes.RESOURCE_ARCHIVED,
         `Resource is archived: ${type}/${name}. Restore it before publishing a new version.`,
       );
     }
-    const sourceDir = await this.resolvePublishSourceDir(type, name, projectDir);
+    const sourceDir = await this.resolvePublishSourceDir(
+      type,
+      name,
+      projectDir,
+      sourceInfo,
+    );
     const existingInstallInfo = await this.tryResolveInstalledResource(
       projectDir,
       type,
@@ -915,7 +1075,6 @@ export class ServiceFactory {
     }
 
     if (installScope === "project") {
-      const sourceInfo = await this.getLockSourceInfo();
       await this.lockStore.upsertResource(projectDir, sourceInfo, {
         type,
         name,
@@ -1198,8 +1357,8 @@ export class ServiceFactory {
     return { type, name, version: resolvedVersion, linkPath: linkPaths[0], mode };
   }
 
-  private async loadSourceFromConfig(): Promise<ResourceSourceAdapter> {
-    return (await this.loadSourceWithInfoFromConfig()).source;
+  private async loadSourceFromConfig(sourceRef?: string): Promise<ResourceSourceAdapter> {
+    return (await this.loadSourceWithInfoFromConfig(sourceRef)).source;
   }
 
   private async resolveGitSourceEndpoint(ref: string): Promise<GitSourceEndpoint> {
@@ -1316,11 +1475,53 @@ export class ServiceFactory {
     }
   }
 
-  private async loadSourceWithInfoFromConfig(): Promise<{
+  private validateSourceAlias(alias: string): void {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(alias)) {
+      throw new HimanError(errorCodes.INVALID_INPUT, `Invalid source alias: ${alias}`);
+    }
+  }
+
+  private ensureSourceAliasAvailable(
+    items: Record<string, SourceState>,
+    alias: string,
+    exceptName?: string,
+  ): void {
+    const existing = Object.entries(items).find(
+      ([name, source]) => name !== exceptName && source.alias === alias,
+    );
+    if (existing) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Source alias already exists: ${alias}`,
+      );
+    }
+  }
+
+  private resolveConfiguredSourceAlias(
+    items: Record<string, SourceState>,
+    alias: string,
+  ): { name: string; source: SourceState } | undefined {
+    const found = Object.entries(items).find(
+      ([, source]) => source.alias === alias,
+    );
+    if (!found) return undefined;
+    return { name: found[0], source: found[1] };
+  }
+
+  private resolveConfiguredSourceRef(
+    items: Record<string, SourceState>,
+    ref: string,
+  ): { name: string; source: SourceState } | undefined {
+    const byName = items[ref];
+    if (byName) return { name: ref, source: byName };
+    return this.resolveConfiguredSourceAlias(items, ref);
+  }
+
+  private async loadSourceWithInfoFromConfig(sourceRef?: string): Promise<{
     source: ResourceSourceAdapter;
     sourceInfo: LockSourceInfo;
   }> {
-    const { name, source: stateSource } = await this.getCurrentSourceState();
+    const { name, source: stateSource } = await this.getCurrentSourceState(sourceRef);
     const sourceInfo = this.toLockSourceInfo(stateSource, name);
     const source = await this.loadSourceFromInfo(sourceInfo);
     return {
@@ -1345,7 +1546,7 @@ export class ServiceFactory {
     return source;
   }
 
-  private async getCurrentSourceState(): Promise<{
+  private async getCurrentSourceState(sourceRef?: string): Promise<{
     name?: string;
     source: SourceState;
   }> {
@@ -1358,6 +1559,19 @@ export class ServiceFactory {
     }
 
     const currentName = config.sources?.default ?? "default";
+    if (sourceRef && sourceRef !== "default") {
+      const resolved = config.sources
+        ? this.resolveConfiguredSourceAlias(config.sources.items, sourceRef)
+        : undefined;
+      if (!resolved) {
+        throw new HimanError(
+          errorCodes.RESOURCE_NOT_FOUND,
+          `Source alias not found: ${sourceRef}`,
+        );
+      }
+      return resolved;
+    }
+
     const currentSource = config.sources?.items[currentName] ?? config.source;
     return { name: currentName, source: currentSource };
   }
@@ -1380,7 +1594,7 @@ export class ServiceFactory {
 
   private toLockSourceInfo(source: SourceState, name?: string): LockSourceInfo {
     return this.normalizeLockSourceInfo({
-      name,
+      name: source.alias ?? name,
       type: source.type,
       repo: source.repo,
       repoId: source.repoId,
@@ -1958,6 +2172,7 @@ export class ServiceFactory {
     type: ResourceType,
     name: string,
     projectDir: string,
+    sourceInfo: LockSourceInfo,
   ): Promise<string> {
     const devPath = this.getProjectDevPath(projectDir, type, name);
     if (await this.exists(devPath)) {
@@ -1973,7 +2188,7 @@ export class ServiceFactory {
       return projectTarget.resourcePath;
     }
 
-    const repoResourceDir = await this.getRepoResourceDir(type, name);
+    const repoResourceDir = this.getRepoResourceDirFromInfo(sourceInfo, type, name);
     if (await this.exists(repoResourceDir)) {
       return repoResourceDir;
     }
@@ -1984,19 +2199,15 @@ export class ServiceFactory {
     );
   }
 
-  private async getRepoResourceDir(type: ResourceType, name: string): Promise<string> {
-    const config = await this.stateStore.loadConfig();
-    if (!config?.source) {
-      throw new HimanError(
-        errorCodes.CONFIG_NOT_FOUND,
-        "Source config not found. Please run `himan init <git_repo>` first.",
-      );
-    }
-
+  private getRepoResourceDirFromInfo(
+    sourceInfo: LockSourceInfo,
+    type: ResourceType,
+    name: string,
+  ): string {
     const sourceConfig = this.buildSourceConfig(
-      config.source.type,
-      config.source.repo,
-      config.source.repoId,
+      sourceInfo.type,
+      sourceInfo.repo,
+      sourceInfo.repoId,
     );
     if (!sourceConfig.repoDir) {
       throw new HimanError(

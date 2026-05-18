@@ -48,6 +48,7 @@ describe("ServiceFactory lock restore", () => {
     await services.initSource("git", lockedRemote);
     await services.addSource("other", "git", otherRemote);
     await services.install("rule", "code-review", "1.0.0", projectDir, ["cursor"], "link");
+    await services.aliasSource("default", "locked");
 
     const lockPath = path.join(projectDir, "himan.lock");
     const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
