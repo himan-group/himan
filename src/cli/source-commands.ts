@@ -107,14 +107,13 @@ export function registerSourceCommands(
 
   command
     .command("use")
-    .argument("<alias>", "source alias")
-    .description("Switch default source by alias")
-    .action(async (alias: string) => {
+    .argument("<source>", "source alias or name")
+    .option("--alias <alias>", "set or update the target source alias while switching")
+    .description("Switch default source by alias or name")
+    .action(async (source: string, options: { alias?: string }) => {
       await runAction(async () => {
-        const result = await services.useSource(alias);
-        process.stdout.write(
-          `Using source: ${result.alias ?? result.name} (${result.name})\n`,
-        );
+        const result = await services.useSource(source, { alias: options.alias });
+        process.stdout.write(`Using source: ${result.alias} (${result.name})\n`);
       });
     });
 
@@ -129,6 +128,27 @@ export function registerSourceCommands(
         process.stdout.write(`Aliased source ${result.name} as ${result.alias}\n`);
       });
     });
+
+  command
+    .command("rename")
+    .argument("<source>", "source name or current alias")
+    .argument("<new-name>", "new source name")
+    .option("--alias <alias>", "set or update the source alias while renaming")
+    .description("Rename a configured source")
+    .action(
+      async (source: string, newName: string, options: { alias?: string }) => {
+        await runAction(async () => {
+          const result = await services.renameSource(source, newName, {
+            alias: options.alias,
+          });
+          const alias = result.alias ? ` as ${result.alias}` : "";
+          const current = result.isDefault ? " (current)" : "";
+          process.stdout.write(
+            `Renamed source ${result.oldName} to ${result.name}${alias}${current}\n`,
+          );
+        });
+      },
+    );
 
   command
     .command("clone")
@@ -265,7 +285,7 @@ export function registerSourceCommands(
         for (const source of sources) {
           const alias = source.alias ? ` [${source.alias}]` : "";
           process.stdout.write(
-            `- ${source.name}${alias}${source.isDefault ? " (default)" : ""}: ${source.type}${
+            `- ${source.name}${alias}${source.isDefault ? " (current)" : ""}: ${source.type}${
               source.repo ? ` ${source.repo}` : ""
             }\n`,
           );

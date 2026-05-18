@@ -186,9 +186,13 @@ describe("CLI commands with external git source", () => {
   });
 
   it("manages multiple sources and switches default source", () => {
-    const addResult = runCli(["source", "add", "mirror", TEST_REPO], projectDir, homeDir);
+    const addResult = runCli(
+      ["source", "add", "mirror", TEST_REPO, "--alias", "himan"],
+      projectDir,
+      homeDir,
+    );
     expect(addResult.status).toBe(0);
-    expect(addResult.stdout).toContain("Added source mirror as mirror");
+    expect(addResult.stdout).toContain("Added source mirror as himan");
 
     const listResult = runCli(["source", "list", "--json"], projectDir, homeDir);
     expect(listResult.status).toBe(0);
@@ -201,12 +205,12 @@ describe("CLI commands with external git source", () => {
     expect(sources).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "default", isDefault: true }),
-        expect.objectContaining({ name: "mirror", alias: "mirror", repo: TEST_REPO }),
+        expect.objectContaining({ name: "mirror", alias: "himan", repo: TEST_REPO }),
       ]),
     );
 
     const useWithoutDefaultAlias = runCli(
-      ["source", "use", "mirror"],
+      ["source", "use", "himan"],
       projectDir,
       homeDir,
     );
@@ -221,19 +225,54 @@ describe("CLI commands with external git source", () => {
     expect(aliasDefault.status).toBe(0);
     expect(aliasDefault.stdout).toContain("Aliased source default as primary");
 
-    const useResult = runCli(["source", "use", "mirror"], projectDir, homeDir);
+    const useResult = runCli(["source", "use", "himan"], projectDir, homeDir);
     expect(useResult.status).toBe(0);
-    expect(useResult.stdout).toContain("Using source: mirror (mirror)");
+    expect(useResult.stdout).toContain("Using source: himan (mirror)");
+
+    const useByNameResult = runCli(["source", "use", "mirror"], projectDir, homeDir);
+    expect(useByNameResult.status).toBe(0);
+    expect(useByNameResult.stdout).toContain("Using source: himan (mirror)");
+
+    const switchBack = runCli(
+      ["source", "use", "default", "--alias", "garena"],
+      projectDir,
+      homeDir,
+    );
+    expect(switchBack.status).toBe(0);
+    expect(switchBack.stdout).toContain("Using source: garena (default)");
+
+    const renameCurrent = runCli(
+      ["source", "rename", "default", "shopee", "--alias", "shopee"],
+      projectDir,
+      homeDir,
+    );
+    expect(renameCurrent.status).toBe(0);
+    expect(renameCurrent.stdout).toContain(
+      "Renamed source default to shopee as shopee (current)",
+    );
+
+    const useOldName = runCli(["source", "use", "default"], projectDir, homeDir);
+    expect(useOldName.status).toBe(1);
+    expect(useOldName.stderr).toContain("Source not found: default");
 
     const listAfterUse = runCli(["source", "list", "--json"], projectDir, homeDir);
     expect(listAfterUse.status).toBe(0);
     const sourcesAfterUse = JSON.parse(listAfterUse.stdout) as Array<{
       name: string;
+      alias?: string;
       isDefault: boolean;
     }>;
     expect(sourcesAfterUse).toEqual(
-      expect.arrayContaining([expect.objectContaining({ name: "mirror", isDefault: true })]),
+      expect.arrayContaining([
+        expect.objectContaining({ name: "shopee", alias: "shopee", isDefault: true }),
+        expect.objectContaining({ name: "mirror", alias: "himan", isDefault: false }),
+      ]),
     );
+    expect(sourcesAfterUse.some((source) => source.name === "default")).toBe(false);
+
+    const useRenamed = runCli(["source", "use", "shopee"], projectDir, homeDir);
+    expect(useRenamed.status).toBe(0);
+    expect(useRenamed.stdout).toContain("Using source: shopee (shopee)");
   });
 
   it("uses source aliases for explicit resource commands", async () => {

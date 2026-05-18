@@ -6,9 +6,15 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-18
+
 ### Added
 
-- Added source aliases with `himan source alias`, alias-based `source use`, and `--source <alias>` selection for source resource listing, history, install, and publish flows.
+- Added source aliases with `himan source alias`, `himan source rename`, name-or-alias `source use`, `source use --alias` for one-step target aliasing, and `--source <alias>` selection for source resource listing, history, install, and publish flows.
+
+### Changed
+
+- Changed `source list` to mark the selected source as `(current)` instead of `(default)`.
 
 ## [0.5.2] - 2026-05-14
 

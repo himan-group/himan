@@ -164,8 +164,9 @@ analysis:
 | `init <git_url> [--agent a,b] [--install type/name[@version],...] [--mode link\|copy] [--json]` | 初始化默认源（当前为 Git）并写入 `~/.himan/config.json`；可同时写当前项目默认 agent 并安装选定资源 |
 | `source add <name> <git_url> [--alias alias]` | 添加命名 Git 源；未传 `--alias` 时别名默认等于 `name` |
 | `source alias <source> <alias>` | 设置或修改 source 别名；`<source>` 可用配置名或当前别名 |
-| `source use <alias>`          | 按别名切换默认源；若当前 default 还没有别名，会先要求给当前 default 设置别名 |
-| `source list [--json]`        | 查看已配置源、别名和当前 default                     |
+| `source rename <source> <new-name> [--alias alias]` | 重命名 source 配置名；可用 `--alias` 同时修改别名；允许重命名当前 source |
+| `source use <source> [--alias alias]` | 按配置名或别名切换默认源；可用 `--alias` 同时设置目标 source 别名；若当前 default 还没有别名，会先要求设置别名 |
+| `source list [--json]`        | 查看已配置源、别名和当前生效 source（标记为 current） |
 | `source init-docs [--force] [--dry-run] [--json]` | 为当前 default source 生成仓库级 README/CHANGELOG |
 | `source clone <from> <to> [--branch b] [--target-branch b] [--add-source name] [--use] [--dry-run] [--json]` | 将 Git source 分支和 himan 管理的资源 tag 复制到空目标 Git 仓库 |
 | `source sync <from> <to> [--target-branch b] [--add-source name] [--use] [--dry-run] [--json]` | 将最新资源快照同步到目标 Git 仓库并创建对应最新 tag |
@@ -176,7 +177,8 @@ analysis:
 - `himan-source init <git_url>`
 - `himan-source add <name> <git_url> [--alias alias]`
 - `himan-source alias <source> <alias>`
-- `himan-source use <alias>`
+- `himan-source rename <source> <new-name> [--alias alias]`
+- `himan-source use <source> [--alias alias]`
 - `himan-source list [--json]`
 - `himan-source init-docs [--force] [--dry-run] [--json]`
 - `himan-source clone <from> <to> [...]`
@@ -238,7 +240,7 @@ analysis:
 
 `--json` 模式下，失败时会输出机器可读错误 JSON（`stderr`）。错误码定义见 [docs/error-codes.md](./docs/error-codes.md)。
 
-多源说明：source 的配置名是本地内部 key，别名是日常命令使用的稳定引用。`source add` 会写入别名；旧的 default source 可能没有别名，首次 `source use <alias>` 前需要先执行 `himan source alias default <alias>`。显式资源命令默认作用于当前 default source，也可以在 `list`、`history`、`install <type> ...`、`publish` 中用 `--source <alias>` 指定 source；`himan install` 无参数恢复时仍使用 `himan.lock` 中记录的 source。
+多源说明：source 的配置名是本地内部 key，别名是日常命令使用的稳定引用。`source add` 会写入别名；旧的 default source 可能没有别名，首次 `source use <source>` 前需要先执行 `himan source alias default <alias>`。`source rename` 可修改配置名，重命名当前 source 时会同步更新 current 指针，也可用 `--alias` 同时修改别名。`source use` 同时接受配置名和别名；目标 source 没有别名时可用 `source use <source> --alias <alias>` 一步设置并切换。显式资源命令默认作用于当前 current source，也可以在 `list`、`history`、`install <type> ...`、`publish` 中用 `--source <alias>` 指定 source；`himan install` 无参数恢复时仍使用 `himan.lock` 中记录的 source。
 
 ## 当前范围
 
@@ -252,8 +254,7 @@ A: `source add` 只是在本地新增一个可用来源，不会自动切换当�
 请执行：
 
 ```bash
-himan source alias default <alias>
-himan source use <alias>
+himan source use <source> --alias <alias>
 himan source list
 ```
 

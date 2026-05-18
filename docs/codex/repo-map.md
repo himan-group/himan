@@ -53,7 +53,7 @@ Runtime agent configuration commands:
 
 - Top-level `init`, including optional `--agent`, `--install type/name[@version],...`, `--mode`, and `--json` quick-start setup
 - Top-level `doctor [--json]`
-- `source init|add|alias|use|list|init-docs|clone|sync`; `source use` switches by source alias, and old default sources without aliases must be aliased first
+- `source init|add|alias|rename|use|list|init-docs|clone|sync`; `source rename` changes the local config name and may also update alias with `--alias`, including for the current source; `source use` switches by source name or alias, and can set the target alias with `--alias`; old current sources without aliases must still be aliased before switching away; `source list` marks the selected source as `(current)`
 - `resource list|history|create|archive|restore|rename`; `rename` is currently marked not recommended; `resource list` without a type groups all active source resources, `--source` selects a source alias for source lists, `--brief` hides descriptions, `--archived` lists archived resources, `--include-archived` includes archived resources, and `--installed` lists current project installs instead of source resources
 - `project list|install|dev|uninstall|publish`; direct installs require `--include-archived` for archived resources and can use `--source <alias>` for explicit source selection, `publish` can use `--source <alias>`, while lock-file installs can restore archived resources already recorded in `himan.lock`
 - `agent list|use|current|clear`

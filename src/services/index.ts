@@ -212,7 +212,70 @@ export class ServiceFactory {
     return { name: resolved.name, alias };
   }
 
-  async useSource(alias: string): Promise<{ name: string; alias?: string }> {
+  async renameSource(
+    ref: string,
+    newName: string,
+    options: { alias?: string } = {},
+  ): Promise<{ oldName: string; name: string; alias?: string; isDefault: boolean }> {
+    this.validateSourceName(newName);
+    const nextAlias = options.alias?.trim();
+    if (nextAlias) {
+      this.validateSourceAlias(nextAlias);
+    }
+
+    const config = await this.stateStore.loadConfig();
+    if (!config?.sources) {
+      throw new HimanError(errorCodes.CONFIG_NOT_FOUND, "No source configured.");
+    }
+    const resolved = this.resolveConfiguredSourceRef(config.sources.items, ref);
+    if (!resolved) {
+      throw new HimanError(errorCodes.RESOURCE_NOT_FOUND, `Source not found: ${ref}`);
+    }
+    if (newName !== resolved.name && config.sources.items[newName]) {
+      throw new HimanError(errorCodes.INVALID_INPUT, `Source already exists: ${newName}`);
+    }
+    if (nextAlias) {
+      this.ensureSourceAliasAvailable(config.sources.items, nextAlias, resolved.name);
+    }
+
+    const renamedSource = nextAlias
+      ? {
+          ...resolved.source,
+          alias: nextAlias,
+        }
+      : resolved.source;
+    const items = { ...config.sources.items };
+    delete items[resolved.name];
+    items[newName] = renamedSource;
+    const defaultName =
+      config.sources.default === resolved.name ? newName : config.sources.default;
+    const defaultSource = items[defaultName] ?? config.source;
+
+    await this.stateStore.saveConfig({
+      source: defaultSource,
+      sources: {
+        default: defaultName,
+        items,
+      },
+      agents: config.agents,
+    });
+
+    return {
+      oldName: resolved.name,
+      name: newName,
+      alias: renamedSource.alias,
+      isDefault: defaultName === newName,
+    };
+  }
+
+  async useSource(
+    ref: string,
+    options: { alias?: string } = {},
+  ): Promise<{ name: string; alias: string }> {
+    const nextAlias = options.alias?.trim();
+    if (nextAlias) {
+      this.validateSourceAlias(nextAlias);
+    }
     const config = await this.stateStore.loadConfig();
     if (!config?.sources) {
       throw new HimanError(errorCodes.CONFIG_NOT_FOUND, "No source configured.");
@@ -225,19 +288,42 @@ export class ServiceFactory {
         `Current default source "${currentName}" has no alias. Run \`himan source alias ${currentName} <alias>\` before switching sources.`,
       );
     }
-    const resolved = this.resolveConfiguredSourceAlias(config.sources.items, alias);
+    const resolved = this.resolveConfiguredSourceRef(config.sources.items, ref);
     if (!resolved) {
-      throw new HimanError(errorCodes.RESOURCE_NOT_FOUND, `Source alias not found: ${alias}`);
+      throw new HimanError(errorCodes.RESOURCE_NOT_FOUND, `Source not found: ${ref}`);
     }
+    if (!resolved.source.alias && !nextAlias) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Target source "${resolved.name}" has no alias. Run \`himan source alias ${resolved.name} <alias>\`, or \`himan source use ${resolved.name} --alias <alias>\`, before switching to it.`,
+      );
+    }
+    if (nextAlias) {
+      this.ensureSourceAliasAvailable(config.sources.items, nextAlias, resolved.name);
+    }
+    const alias = nextAlias ?? resolved.source.alias;
+    if (!alias) {
+      throw new Error("Source alias was expected after validation.");
+    }
+    const nextSource = nextAlias
+      ? {
+          ...resolved.source,
+          alias,
+        }
+      : resolved.source;
+    const items = {
+      ...config.sources.items,
+      [resolved.name]: nextSource,
+    };
     await this.stateStore.saveConfig({
-      source: resolved.source,
+      source: nextSource,
       sources: {
         default: resolved.name,
-        items: config.sources.items,
+        items,
       },
       agents: config.agents,
     });
-    return { name: resolved.name, alias: resolved.source.alias };
+    return { name: resolved.name, alias };
   }
 
   async listSources(): Promise<
