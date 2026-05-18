@@ -815,6 +815,43 @@ describe("CLI commands with external git source", () => {
     ).rejects.toThrow();
   });
 
+  it("supports dev and publish from .codex skill directories", async () => {
+    const skillPath = path.join(projectDir, ".codex", "skills", "jira-issue-create");
+    await fs.mkdir(skillPath, { recursive: true });
+    await fs.writeFile(
+      path.join(skillPath, "himan.yaml"),
+      [
+        "name: jira-issue-create",
+        "type: skill",
+        "version: 0.1.0",
+        "entry: SKILL.md",
+        "description: create jira issue skill",
+        "agents:",
+        "  - codex",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(skillPath, "SKILL.md"),
+      "# jira-issue-create\n\nCreate jira issue skill.\n",
+      "utf8",
+    );
+
+    const devResult = runCli(["dev", "skill", "jira-issue-create"], projectDir, homeDir);
+    expect(devResult.status).toBe(0);
+    expect(devResult.stdout).toContain("Editing skill/jira-issue-create in place");
+
+    await fs.appendFile(path.join(skillPath, "SKILL.md"), "Published from .codex.\n", "utf8");
+    const publishResult = runCli(
+      ["publish", "skill", "jira-issue-create", "--patch"],
+      projectDir,
+      homeDir,
+    );
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("Published skill/jira-issue-create@0.0.1");
+  });
+
   it("supports multi-agent installs for claude-code/codex/openclaw", async () => {
     const createResult = runCli(
       [

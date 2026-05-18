@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-18
+
+### Fixed
+
+- Fixed Codex resource detection so `dev` and `publish` can find skills under `.codex/skills/<name>` (legacy-compatible with `.agents/skills/<name>`).
+
 ## [0.6.0] - 2026-05-18
 
 ### Added

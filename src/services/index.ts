@@ -43,6 +43,7 @@ import { HimanError, errorCodes } from "../utils/errors.js";
 import {
   getGlobalResourcePaths,
   getProjectResourcePaths,
+  getResourcePathCandidatesForAgent,
   getSupportedAgentNames,
   normalizeAgents,
 } from "../utils/agent-configs.js";
@@ -1883,14 +1884,14 @@ export class ServiceFactory {
     const rootDir = scope === "global" ? this.paths.getHomeDir() : projectDir;
     const candidates = getSupportedAgentNames().map((agent) => ({
       agent,
-      path:
-        scope === "global"
-          ? getGlobalResourcePaths(rootDir, type, name, [agent])[0]
-          : getProjectResourcePaths(rootDir, type, name, [agent])[0],
+      paths: getResourcePathCandidatesForAgent(rootDir, type, name, agent),
     }));
     const existingCandidates: Array<{ agent: string; path: string }> = [];
     for (const candidate of candidates) {
-      if (await this.exists(candidate.path)) existingCandidates.push(candidate);
+      const existingPath = await this.findFirstExistingPath(candidate.paths);
+      if (existingPath) {
+        existingCandidates.push({ agent: candidate.agent, path: existingPath });
+      }
     }
     return existingCandidates;
   }
@@ -1922,10 +1923,18 @@ export class ServiceFactory {
     const lockedTargets = locked?.agents?.length
       ? normalizeAgents(locked.agents)
       : configuredAgents ?? normalizeAgents();
-    const expectedFromLock = getProjectResourcePaths(projectDir, type, name, lockedTargets);
     const existingFromLock: string[] = [];
-    for (const candidate of expectedFromLock) {
-      if (await this.exists(candidate)) existingFromLock.push(candidate);
+    for (const agent of lockedTargets) {
+      const candidates = getResourcePathCandidatesForAgent(
+        projectDir,
+        type,
+        name,
+        agent,
+      );
+      const existingPath = await this.findFirstExistingPath(candidates);
+      if (existingPath) {
+        existingFromLock.push(existingPath);
+      }
     }
     if (existingFromLock.length > 0) {
       const installedPath = await fs.realpath(existingFromLock[0]);
@@ -1939,11 +1948,14 @@ export class ServiceFactory {
 
     const allCandidates = getSupportedAgentNames().map((agent) => ({
       agent,
-      path: getProjectResourcePaths(projectDir, type, name, [agent])[0],
+      paths: getResourcePathCandidatesForAgent(projectDir, type, name, agent),
     }));
     const existingCandidates: Array<{ agent: string; path: string }> = [];
     for (const candidate of allCandidates) {
-      if (await this.exists(candidate.path)) existingCandidates.push(candidate);
+      const existingPath = await this.findFirstExistingPath(candidate.paths);
+      if (existingPath) {
+        existingCandidates.push({ agent: candidate.agent, path: existingPath });
+      }
     }
     if (existingCandidates.length === 0) {
       throw new HimanError(

@@ -6,21 +6,25 @@ const AGENT_CONFIGS = [
     name: "cursor",
     aliases: ["cursor"],
     baseDir: ".cursor",
+    legacyBaseDirs: [],
   },
   {
     name: "claude-code",
     aliases: ["claude", "claude-code", "claude code", "claude_code"],
     baseDir: ".claude",
+    legacyBaseDirs: [],
   },
   {
     name: "codex",
     aliases: ["codex"],
     baseDir: ".agents",
+    legacyBaseDirs: [".codex"],
   },
   {
     name: "openclaw",
     aliases: ["openclaw", "open-claw", "open claw"],
     baseDir: ".openclaw",
+    legacyBaseDirs: [],
   },
 ] as const;
 
@@ -38,6 +42,12 @@ function getTypeDir(type: ResourceType): string {
 
 function getAgentBaseDir(agent: SupportedAgent): string {
   return getAgentConfig(agent).baseDir;
+}
+
+function getAgentBaseDirCandidates(agent: SupportedAgent): string[] {
+  const config = getAgentConfig(agent);
+  const candidates = [config.baseDir, ...(config.legacyBaseDirs ?? [])];
+  return [...new Set(candidates)];
 }
 
 export function normalizeAgents(agents?: string[]): SupportedAgent[] {
@@ -86,6 +96,20 @@ function getResourcePaths(
 
 export function getSupportedAgentNames(): string[] {
   return AGENT_CONFIGS.map((config) => config.name);
+}
+
+export function getResourcePathCandidatesForAgent(
+  rootDir: string,
+  type: ResourceType,
+  name: string,
+  agent: string,
+): string[] {
+  const normalized = normalizeAgent(agent);
+  if (!normalized) return [];
+  const typeDir = getTypeDir(type);
+  return getAgentBaseDirCandidates(normalized).map((baseDir) =>
+    path.join(rootDir, baseDir, typeDir, name),
+  );
 }
 
 function getAgentConfig(agent: SupportedAgent): AgentConfig {

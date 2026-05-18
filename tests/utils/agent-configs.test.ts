@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getGlobalResourcePaths,
   getProjectResourcePaths,
+  getResourcePathCandidatesForAgent,
   getSupportedAgentNames,
   normalizeAgent,
   normalizeAgents,
@@ -53,6 +54,16 @@ describe("agent configs", () => {
     ).toEqual([
       path.join(homeDir, ".cursor", "rules", "code-review"),
       path.join(homeDir, ".agents", "rules", "code-review"),
+    ]);
+  });
+
+  it("includes .codex as a compatible codex skill path candidate", () => {
+    const projectDir = path.join("tmp", "project");
+    expect(
+      getResourcePathCandidatesForAgent(projectDir, "skill", "risk-check", "codex"),
+    ).toEqual([
+      path.join(projectDir, ".agents", "skills", "risk-check"),
+      path.join(projectDir, ".codex", "skills", "risk-check"),
     ]);
   });
 
