@@ -42,6 +42,17 @@ export class RepoManager {
       .filter(Boolean);
   }
 
+  async readTagDate(repoDir: string, tag: string): Promise<string | undefined> {
+    const git = simpleGit(repoDir);
+    try {
+      const output = await git.raw(["log", "-1", "--format=%cs", tag]);
+      const trimmed = output.trim();
+      return trimmed ? trimmed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   async archiveResource(
     repoDir: string,
     tag: string,

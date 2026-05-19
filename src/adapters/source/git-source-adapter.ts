@@ -34,6 +34,7 @@ import { ResourceScanner } from "../resource/resource-scanner.js";
 import { buildResourceAnalysisMetadata } from "../resource/resource-analysis.js";
 import semver from "semver";
 import { HimanError, errorCodes } from "../../utils/errors.js";
+import { resolveResourceCategory } from "../../utils/resource-category.js";
 import { promises as fs } from "node:fs";
 import { createHash } from "node:crypto";
 import os from "node:os";
@@ -55,18 +56,39 @@ interface PublishMetadataResult {
 const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
 const README_RESOURCES_START = "<!-- himan:resources:start -->";
 const README_RESOURCES_END = "<!-- himan:resources:end -->";
+const RESOURCE_TABLE_WIDTH = "100%";
+const RESOURCE_COLUMN_ATTR_WIDTH = "288";
+const VERSION_COLUMN_ATTR_WIDTH = "112";
+const INITIAL_SOURCE_SCAFFOLD_LINE = "- Initial source README/CHANGELOG scaffold.";
+const PUBLISHED_CHANGELOG_LINE =
+  /^- Published `(rule|command|skill)\/([^`@]+)@([^`]+)`\.$/;
+const DOCUMENTED_RESOURCE_CHANGELOG_LINE =
+  /^- Documented existing resource `(rule|command|skill)\/([^`@]+)(?:@([^`]+))?`\.$/;
 
 type ChangelogSection = "Added" | "Changed" | "Deprecated" | "Removed";
 
 interface ChangelogEntry {
   section: ChangelogSection;
   line: string;
+  releaseDate?: string;
 }
 
 interface ResourceDocsItem {
   name: string;
   type: ResourceType;
+  category: string;
   description?: string;
+}
+
+interface ResourceDocsRef {
+  name: string;
+  version?: string;
+}
+
+interface ChangelogBucket {
+  rootLines: string[];
+  sections: Map<string, string[]>;
+  sectionOrder: string[];
 }
 
 export class GitSourceAdapter implements ResourceSourceAdapter {
@@ -105,6 +127,13 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     let active: ResourceMeta[];
     if (cached && cached.metadataHash === metadataHash) {
       active = cached.resources;
+      const needsRefresh = active.some(
+        (resource) => !Object.hasOwn(resource, "version"),
+      );
+      if (needsRefresh) {
+        active = await this.scanner.scanByType(repoDir, type);
+        await this.indexStore.upsert(repoId, type, metadataHash, active);
+      }
     } else {
       active = await this.scanner.scanByType(repoDir, type);
       await this.indexStore.upsert(repoId, type, metadataHash, active);
@@ -175,12 +204,14 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       const metadata = { ...metadataResult.metadata, version };
       await fs.writeFile(yamlPath, YAML.stringify(metadata), "utf8");
     }
+    const section = await this.resolvePublishChangelogSection(repoDir, type, name);
 
     const docsPaths = await this.maintainSourceDocs(
       repoDir,
       {
-        section: "Changed",
+        section,
         line: `- Published \`${type}/${name}@${version}\`.`,
+        releaseDate: this.formatLocalDate(new Date()),
       },
       new Map([[this.getResourceVersionOverrideKey(type, name), version]]),
     );
@@ -406,7 +437,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     await fs.rename(previousResourceDir, archiveDir);
 
     const docsPaths = await this.maintainSourceDocs(repoDir, {
-      section: "Deprecated",
+      section: "Removed",
       line: archiveReason
         ? `- Archived \`${type}/${name}\`: ${archiveReason}.`
         : `- Archived \`${type}/${name}\`.`,
@@ -499,29 +530,49 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
 
   async initDocs(options: SourceDocsOptions = {}): Promise<SourceDocsResult> {
     const repoDir = this.getRepoDir();
-    const files = [
-      {
-        path: path.join(repoDir, "README.md"),
-        content: await this.buildReadmeContent(repoDir),
-      },
-      {
-        path: path.join(repoDir, "CHANGELOG.md"),
-        content: await this.buildChangelogContent(repoDir),
-      },
-    ];
     const results: SourceDocsFileResult[] = [];
     const changedPaths: string[] = [];
+    const readmeFile = await this.resolveInitDocsFile({
+      repoDir,
+      path: path.join(repoDir, "README.md"),
+      force: options.force,
+      repairHistory: options.repairHistory,
+      dryRun: options.dryRun,
+      buildBaseContent: () => this.buildReadmeContent(repoDir),
+      buildForceContent: () => this.buildReadmeContent(repoDir),
+      buildRepairContent: async (current) =>
+        this.buildRepairedReadmeContent(repoDir, current),
+    });
+    results.push({
+      path: readmeFile.path,
+      action: readmeFile.action,
+      ...(readmeFile.reason ? { reason: readmeFile.reason } : {}),
+    });
+    if (readmeFile.wrote) {
+      changedPaths.push(path.relative(repoDir, readmeFile.path));
+    }
 
-    for (const file of files) {
-      const exists = await this.exists(file.path);
-      const action = exists ? (options.force ? "updated" : "skipped") : "created";
-      const reason = action === "skipped" ? "file already exists" : undefined;
-      results.push({ path: file.path, action, reason });
-
-      if (!options.dryRun && action !== "skipped") {
-        await fs.writeFile(file.path, file.content, "utf8");
-        changedPaths.push(path.relative(repoDir, file.path));
-      }
+    const changelogFile = await this.resolveInitDocsFile({
+      repoDir,
+      path: path.join(repoDir, "CHANGELOG.md"),
+      force: options.force,
+      repairHistory: options.repairHistory,
+      dryRun: options.dryRun,
+      buildBaseContent: () => this.buildChangelogContent(repoDir),
+      buildForceContent: async (current) =>
+        this.shouldNormalizeChangelogHistory(current)
+          ? this.normalizeSourceChangelogHistory(repoDir, current)
+          : this.buildChangelogContent(repoDir),
+      buildRepairContent: async (current) =>
+        this.repairSourceChangelogHistory(repoDir, current),
+    });
+    results.push({
+      path: changelogFile.path,
+      action: changelogFile.action,
+      ...(changelogFile.reason ? { reason: changelogFile.reason } : {}),
+    });
+    if (changelogFile.wrote) {
+      changedPaths.push(path.relative(repoDir, changelogFile.path));
     }
 
     const committed =
@@ -539,6 +590,80 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       files: results,
       dryRun: Boolean(options.dryRun),
       committed,
+    };
+  }
+
+  private async resolveInitDocsFile(args: {
+    repoDir: string;
+    path: string;
+    force?: boolean;
+    repairHistory?: boolean;
+    dryRun?: boolean;
+    buildBaseContent: () => Promise<string>;
+    buildForceContent?: (current: string) => Promise<string>;
+    buildRepairContent: (current: string) => Promise<string>;
+  }): Promise<{
+    path: string;
+    action: SourceDocsFileResult["action"];
+    reason?: string;
+    wrote: boolean;
+  }> {
+    const exists = await this.exists(args.path);
+    if (!exists) {
+      const content = await args.buildBaseContent();
+      if (!args.dryRun) {
+        await fs.writeFile(args.path, content, "utf8");
+      }
+      return {
+        path: args.path,
+        action: "created",
+        wrote: !args.dryRun,
+      };
+    }
+
+    const current = await fs.readFile(args.path, "utf8");
+    const shouldForce = Boolean(args.force);
+    const shouldRepair = Boolean(args.repairHistory);
+    if (!shouldForce && !shouldRepair) {
+      return {
+        path: args.path,
+        action: "skipped",
+        reason: "file already exists",
+        wrote: false,
+      };
+    }
+
+    if (shouldForce) {
+      const content = args.buildForceContent
+        ? await args.buildForceContent(current)
+        : await args.buildBaseContent();
+      if (!args.dryRun) {
+        await fs.writeFile(args.path, content, "utf8");
+      }
+      return {
+        path: args.path,
+        action: "updated",
+        wrote: !args.dryRun,
+      };
+    }
+
+    const repaired = await args.buildRepairContent(current);
+    if (repaired === current) {
+      return {
+        path: args.path,
+        action: "skipped",
+        reason: "no historical entries to repair",
+        wrote: false,
+      };
+    }
+
+    if (!args.dryRun) {
+      await fs.writeFile(args.path, repaired, "utf8");
+    }
+    return {
+      path: args.path,
+      action: "updated",
+      wrote: !args.dryRun,
     };
   }
 
@@ -1181,7 +1306,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
 
   private async buildChangelogContent(repoDir: string): Promise<string> {
     const resourceLines = await this.buildExistingResourceChangelogLines(repoDir);
-    return [
+    const content = [
       "# Changelog",
       "",
       "All notable source-level resource changes are documented in this file.",
@@ -1190,10 +1315,11 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       "",
       "### Added",
       "",
-      "- Initial source README/CHANGELOG scaffold.",
+      INITIAL_SOURCE_SCAFFOLD_LINE,
       ...resourceLines,
       "",
     ].join("\n");
+    return this.normalizeSourceChangelogHistory(repoDir, content);
   }
 
   private async buildResourceIndex(
@@ -1205,28 +1331,60 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       const resources = await this.collectResourceDocsItems(repoDir, type);
       sections.push(`### ${this.getTypeLabel(type)}`, "");
       if (resources.length === 0) {
-        sections.push(`- No ${type} resources yet.`, "");
+        sections.push(`No ${type} resources yet.`, "");
         continue;
       }
-      for (const resource of resources) {
-        const ref = await this.getResourceRef(
-          repoDir,
-          resource.type,
-          resource.name,
-          versionOverrides,
-        );
+      const groupedResources = this.groupResourcesByCategory(resources);
+      for (const [category, categoryResources] of groupedResources) {
+        sections.push(`#### ${category}`, "");
         sections.push(
-          `- \`${ref}\`${
-            resource.description ? `: ${resource.description}` : ""
-          }`,
+          `<table class="himan-resource-table" style="table-layout: fixed; width: ${RESOURCE_TABLE_WIDTH};" width="${RESOURCE_TABLE_WIDTH}">`,
+          "  <thead>",
+          "    <tr>",
+          `      <th width="${RESOURCE_COLUMN_ATTR_WIDTH}">Resource</th>`,
+          `      <th width="${VERSION_COLUMN_ATTR_WIDTH}">Version</th>`,
+          "      <th>Description</th>",
+          "    </tr>",
+          "  </thead>",
+          "  <tbody>",
         );
+        for (const resource of categoryResources) {
+          const ref = await this.getResourceDocsRef(
+            repoDir,
+            resource.type,
+            resource.name,
+            versionOverrides,
+          );
+          sections.push(
+            "    <tr>",
+            `      <td width="${RESOURCE_COLUMN_ATTR_WIDTH}"><code>${this.escapeHtml(ref.name)}</code></td>`,
+            `      <td width="${VERSION_COLUMN_ATTR_WIDTH}"><code>${this.escapeHtml(ref.version ?? "-")}</code></td>`,
+            `      <td>${this.escapeHtml(resource.description ?? "-")}</td>`,
+            "    </tr>",
+          );
+        }
+        sections.push("  </tbody>", "</table>", "");
       }
-      sections.push("");
     }
     while (sections.at(-1) === "") {
       sections.pop();
     }
     return sections;
+  }
+
+  private groupResourcesByCategory(
+    resources: ResourceDocsItem[],
+  ): Array<[string, ResourceDocsItem[]]> {
+    const grouped = new Map<string, ResourceDocsItem[]>();
+    for (const resource of resources) {
+      const current = grouped.get(resource.category);
+      if (current) {
+        current.push(resource);
+        continue;
+      }
+      grouped.set(resource.category, [resource]);
+    }
+    return [...grouped.entries()];
   }
 
   private async buildExistingResourceChangelogLines(repoDir: string): Promise<string[]> {
@@ -1246,16 +1404,26 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     type: ResourceType,
   ): Promise<ResourceDocsItem[]> {
     const resources = await this.scanner.scanByType(repoDir, type);
-    const items: ResourceDocsItem[] = resources.map((resource) => ({
-      name: resource.name,
-      type: resource.type,
-      description: resource.description,
-    }));
+    const items = await Promise.all(
+      resources.map(async (resource): Promise<ResourceDocsItem> => ({
+        name: resource.name,
+        type: resource.type,
+        category: resolveResourceCategory(
+          resource.name,
+          await this.readResourceCategory(repoDir, resource.type, resource.name),
+        ),
+        description: resource.description,
+      })),
+    );
 
     const managedNames = new Set(resources.map((resource) => resource.name));
     items.push(...(await this.scanEntryBasedDocsItems(repoDir, type, managedNames)));
 
-    return items.sort((a, b) => a.name.localeCompare(b.name));
+    return items.sort((a, b) => {
+      const categoryOrder = a.category.localeCompare(b.category);
+      if (categoryOrder !== 0) return categoryOrder;
+      return a.name.localeCompare(b.name);
+    });
   }
 
   private async scanEntryBasedDocsItems(
@@ -1282,10 +1450,51 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       items.push({
         name,
         type,
+        category: resolveResourceCategory(
+          name,
+          this.readStringMetadata(metadata, "category"),
+        ),
         description: this.readStringMetadata(metadata, "description"),
       });
     }
     return items;
+  }
+
+  private async readResourceCategory(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<string | undefined> {
+    const resourceDir = path.join(repoDir, this.getTypeDir(type), name);
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (await this.exists(yamlPath)) {
+      try {
+        const raw = await fs.readFile(yamlPath, "utf8");
+        const parsed = YAML.parse(raw) as unknown;
+        if (this.isRecord(parsed)) {
+          return this.readStringMetadata(parsed, "category");
+        }
+      } catch {
+        // Keep docs generation resilient when metadata has parsing issues.
+      }
+    }
+
+    if (type === "skill") {
+      const skillPath = path.join(resourceDir, this.getDefaultEntry(type));
+      if (await this.exists(skillPath)) {
+        const metadata = await this.readSkillFrontMatter(skillPath);
+        return this.readStringMetadata(metadata, "category");
+      }
+    }
+    return undefined;
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\r?\n+/g, "<br>");
   }
 
   private async readSkillFrontMatter(
@@ -1384,6 +1593,18 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     return `${base}\n\n## Resources\n\n${resourceSection}\n`;
   }
 
+  private async buildRepairedReadmeContent(
+    repoDir: string,
+    current: string,
+  ): Promise<string> {
+    const resourceSection = [
+      README_RESOURCES_START,
+      ...(await this.buildResourceIndex(repoDir)),
+      README_RESOURCES_END,
+    ].join("\n");
+    return this.replaceOrAppendReadmeResourceSection(current, resourceSection);
+  }
+
   private async updateChangelog(
     repoDir: string,
     entry: ChangelogEntry,
@@ -1397,6 +1618,318 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       await fs.writeFile(changelogPath, updated, "utf8");
     }
     return changelogPath;
+  }
+
+  private async repairSourceChangelogHistory(
+    repoDir: string,
+    content: string,
+  ): Promise<string> {
+    if (!this.shouldNormalizeChangelogHistory(content)) {
+      return this.buildChangelogContent(repoDir);
+    }
+    return this.normalizeSourceChangelogHistory(repoDir, content);
+  }
+
+  private shouldNormalizeChangelogHistory(content: string): boolean {
+    return content.split("\n").some((line) => {
+      const trimmed = line.trim();
+      return (
+        /^## \[(Unreleased|\d{4}-\d{2}-\d{2})\]$/.test(trimmed) ||
+        /^### (Added|Changed|Removed|Deprecated)$/.test(trimmed) ||
+        trimmed === INITIAL_SOURCE_SCAFFOLD_LINE ||
+        PUBLISHED_CHANGELOG_LINE.test(trimmed) ||
+        DOCUMENTED_RESOURCE_CHANGELOG_LINE.test(trimmed)
+      );
+    });
+  }
+
+  private async normalizeSourceChangelogHistory(
+    repoDir: string,
+    content: string,
+  ): Promise<string> {
+    const lines = content.replace(/\s*$/, "").split("\n");
+    const preamble: string[] = [];
+    const unreleasedBucket = this.createChangelogBucket();
+    const releaseBuckets = new Map<string, ChangelogBucket>();
+    const releaseHeadingDates = new Set<string>();
+    let currentReleaseDate: string | null = null;
+    let currentSection: string | null = null;
+    let sawReleaseHeading = false;
+    let sawInitialScaffold = false;
+    const normalizedEntries = new Set<string>();
+    let earliestResolvedReleaseDate: string | undefined;
+
+    const getBucket = (releaseDate: string | null): ChangelogBucket =>
+      releaseDate === null
+        ? unreleasedBucket
+        : this.getOrCreateChangelogBucket(releaseBuckets, releaseDate);
+
+    const addLine = (
+      releaseDate: string | null,
+      section: string | null,
+      line: string,
+    ): void => {
+      const bucket = getBucket(releaseDate);
+      this.addLineToChangelogBucket(bucket, section, line);
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const releaseMatch = /^## \[(Unreleased|\d{4}-\d{2}-\d{2})\]$/.exec(trimmed);
+      if (releaseMatch) {
+        sawReleaseHeading = true;
+        currentSection = null;
+        currentReleaseDate = releaseMatch[1] === "Unreleased" ? null : releaseMatch[1];
+        if (currentReleaseDate) {
+          releaseHeadingDates.add(currentReleaseDate);
+        }
+        continue;
+      }
+
+      const sectionMatch = /^### (.+)$/.exec(trimmed);
+      if (sectionMatch) {
+        currentSection = sectionMatch[1];
+        continue;
+      }
+
+      if (!sawReleaseHeading) {
+        preamble.push(line);
+        continue;
+      }
+
+      if (trimmed === "") {
+        continue;
+      }
+
+      const published = PUBLISHED_CHANGELOG_LINE.exec(trimmed);
+      if (published) {
+        const [, type, name, version] = published;
+        const tag = `${type}/${name}@${version}`;
+        const releaseDate = await this.repoManager.readTagDate(repoDir, tag);
+        if (!releaseDate) {
+          addLine(currentReleaseDate, currentSection, line);
+          continue;
+        }
+
+        const section: ChangelogSection = await this.isFirstPublishedVersion(
+          repoDir,
+          type as ResourceType,
+          name,
+          version,
+        )
+          ? "Added"
+          : "Changed";
+        const normalizedLine = `- Published \`${tag}\`.`;
+        const entryKey = `${releaseDate}\u0000${section}\u0000${normalizedLine}`;
+        if (!normalizedEntries.has(entryKey)) {
+          normalizedEntries.add(entryKey);
+          this.addLineToChangelogBucket(
+            this.getOrCreateChangelogBucket(releaseBuckets, releaseDate),
+            section,
+            normalizedLine,
+          );
+          if (!earliestResolvedReleaseDate || releaseDate < earliestResolvedReleaseDate) {
+            earliestResolvedReleaseDate = releaseDate;
+          }
+        }
+        continue;
+      }
+
+      const documented = DOCUMENTED_RESOURCE_CHANGELOG_LINE.exec(trimmed);
+      if (documented) {
+        const [, type, name, version] = documented;
+        const releaseDate = await this.resolveDocumentedResourceReleaseDate(
+          repoDir,
+          type as ResourceType,
+          name,
+          version,
+        );
+        if (!releaseDate) {
+          addLine(currentReleaseDate, currentSection, line);
+          continue;
+        }
+
+        const ref = version ? `${type}/${name}@${version}` : `${type}/${name}`;
+        const normalizedLine = `- Documented existing resource \`${ref}\`.`;
+        const entryKey = `${releaseDate}\u0000Added\u0000${normalizedLine}`;
+        if (!normalizedEntries.has(entryKey)) {
+          normalizedEntries.add(entryKey);
+          this.addLineToChangelogBucket(
+            this.getOrCreateChangelogBucket(releaseBuckets, releaseDate),
+            "Added",
+            normalizedLine,
+          );
+          if (!earliestResolvedReleaseDate || releaseDate < earliestResolvedReleaseDate) {
+            earliestResolvedReleaseDate = releaseDate;
+          }
+        }
+        continue;
+      }
+
+      if (trimmed === INITIAL_SOURCE_SCAFFOLD_LINE) {
+        sawInitialScaffold = true;
+        continue;
+      }
+
+      addLine(currentReleaseDate, currentSection, line);
+    }
+
+    const earliestReleaseDate =
+      earliestResolvedReleaseDate ?? [...releaseHeadingDates].sort()[0];
+    if (sawInitialScaffold) {
+      const scaffoldBucket = earliestReleaseDate
+        ? this.getOrCreateChangelogBucket(releaseBuckets, earliestReleaseDate)
+        : unreleasedBucket;
+      const scaffoldLines = this.getOrCreateChangelogSection(scaffoldBucket, "Added");
+      if (!scaffoldLines.includes(INITIAL_SOURCE_SCAFFOLD_LINE)) {
+        scaffoldLines.unshift(INITIAL_SOURCE_SCAFFOLD_LINE);
+      }
+    }
+
+    const renderedLines: string[] = [...preamble];
+    if (renderedLines.length > 0 && renderedLines.at(-1) !== "") {
+      renderedLines.push("");
+    }
+
+    const unreleasedLines = this.renderChangelogBucket(unreleasedBucket);
+    if (unreleasedLines.length > 0) {
+      renderedLines.push("## [Unreleased]", "", ...unreleasedLines, "");
+    }
+
+    const releaseDates = [...releaseBuckets.keys()].sort((a, b) => b.localeCompare(a));
+    for (const releaseDate of releaseDates) {
+      const bucket = releaseBuckets.get(releaseDate);
+      if (!bucket) continue;
+      const bucketLines = this.renderChangelogBucket(bucket);
+      if (bucketLines.length === 0) continue;
+      renderedLines.push(`## [${releaseDate}]`, "", ...bucketLines, "");
+    }
+
+    while (renderedLines.at(-1) === "") {
+      renderedLines.pop();
+    }
+    return `${renderedLines.join("\n")}\n`;
+  }
+
+  private createChangelogBucket(): ChangelogBucket {
+    return {
+      rootLines: [],
+      sections: new Map(),
+      sectionOrder: [],
+    };
+  }
+
+  private getOrCreateChangelogBucket(
+    buckets: Map<string, ChangelogBucket>,
+    releaseDate: string,
+  ): ChangelogBucket {
+    const existing = buckets.get(releaseDate);
+    if (existing) return existing;
+    const bucket = this.createChangelogBucket();
+    buckets.set(releaseDate, bucket);
+    return bucket;
+  }
+
+  private getOrCreateChangelogSection(
+    bucket: ChangelogBucket,
+    section: string | null,
+  ): string[] {
+    if (!section) return bucket.rootLines;
+    const existing = bucket.sections.get(section);
+    if (existing) return existing;
+    const lines: string[] = [];
+    bucket.sections.set(section, lines);
+    if (!bucket.sectionOrder.includes(section)) {
+      bucket.sectionOrder.push(section);
+    }
+    return lines;
+  }
+
+  private addLineToChangelogBucket(
+    bucket: ChangelogBucket,
+    section: string | null,
+    line: string,
+  ): void {
+    this.getOrCreateChangelogSection(bucket, section).push(line);
+  }
+
+  private renderChangelogBucket(bucket: ChangelogBucket): string[] {
+    const lines: string[] = [];
+    if (bucket.rootLines.length > 0) {
+      lines.push(...bucket.rootLines, "");
+    }
+
+    const canonicalSections: ChangelogSection[] = ["Added", "Changed", "Removed", "Deprecated"];
+    const extraSections = bucket.sectionOrder.filter(
+      (section) => !canonicalSections.includes(section as ChangelogSection),
+    );
+    const orderedSections = [
+      ...canonicalSections.filter((section) => bucket.sections.has(section)),
+      ...extraSections.filter((section) => bucket.sections.has(section)),
+    ];
+
+    for (const section of orderedSections) {
+      const sectionLines = bucket.sections.get(section);
+      if (!sectionLines || sectionLines.length === 0) continue;
+      lines.push(`### ${section}`, "", ...sectionLines, "");
+    }
+
+    while (lines.at(-1) === "") {
+      lines.pop();
+    }
+    return lines;
+  }
+
+  private async resolveDocumentedResourceReleaseDate(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+    version?: string,
+  ): Promise<string | undefined> {
+    if (version) {
+      return this.repoManager.readTagDate(repoDir, `${type}/${name}@${version}`);
+    }
+
+    const versions = (await this.repoManager.listTags(repoDir, `${type}/${name}@*`))
+      .map((tag) => tag.split("@").at(1) ?? "")
+      .filter((tagVersion) => semver.valid(tagVersion))
+      .sort(semver.compare);
+    const firstVersion = versions[0];
+    if (!firstVersion) return undefined;
+    return this.repoManager.readTagDate(repoDir, `${type}/${name}@${firstVersion}`);
+  }
+
+  private async isFirstPublishedVersion(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+    version: string,
+  ): Promise<boolean> {
+    if (!semver.valid(version)) return false;
+    const versions = (await this.repoManager.listTags(repoDir, `${type}/${name}@*`))
+      .map((tag) => tag.split("@").at(1) ?? "")
+      .filter((tagVersion) => semver.valid(tagVersion))
+      .sort(semver.compare);
+    if (versions.length === 0) return true;
+    return semver.eq(version, versions[0]);
+  }
+
+  private normalizeMarkdownBlockLines(lines: string[]): string[] {
+    const result: string[] = [];
+    let previousBlank = false;
+    for (const line of lines) {
+      const isBlank = line.trim() === "";
+      if (isBlank && previousBlank) continue;
+      result.push(line);
+      previousBlank = isBlank;
+    }
+    while (result[0]?.trim() === "") {
+      result.shift();
+    }
+    while (result.at(-1)?.trim() === "") {
+      result.pop();
+    }
+    return result;
   }
 
   private buildChangelogBaseContent(): string {
@@ -1423,16 +1956,19 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       unreleasedIndex = insertIndex;
     }
 
-    const blockEnd = this.findNextHeadingIndex(lines, unreleasedIndex + 1, "## ");
-    const unreleasedLines = lines.slice(unreleasedIndex, blockEnd);
-    if (unreleasedLines.includes(entry.line)) {
+    const blockStartIndex = entry.releaseDate
+      ? this.ensureReleaseHeading(lines, unreleasedIndex, entry.releaseDate)
+      : unreleasedIndex;
+    const blockEnd = this.findNextHeadingIndex(lines, blockStartIndex + 1, "## ");
+    const blockLines = lines.slice(blockStartIndex, blockEnd);
+    if (blockLines.includes(entry.line)) {
       return `${lines.join("\n")}\n`;
     }
 
     const sectionHeading = `### ${entry.section}`;
     const sectionIndex = lines.findIndex(
       (line, index) =>
-        index > unreleasedIndex && index < blockEnd && line.trim() === sectionHeading,
+        index > blockStartIndex && index < blockEnd && line.trim() === sectionHeading,
     );
     if (sectionIndex >= 0) {
       const insertIndex = lines[sectionIndex + 1] === "" ? sectionIndex + 2 : sectionIndex + 1;
@@ -1442,12 +1978,50 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
 
     const insertIndex = this.findChangelogSectionInsertIndex(
       lines,
-      unreleasedIndex,
+      blockStartIndex,
       blockEnd,
       entry.section,
     );
     lines.splice(insertIndex, 0, `### ${entry.section}`, "", entry.line, "");
     return `${lines.join("\n").replace(/\s*$/, "")}\n`;
+  }
+
+  private ensureReleaseHeading(
+    lines: string[],
+    unreleasedIndex: number,
+    releaseDate: string,
+  ): number {
+    const releaseHeading = `## [${releaseDate}]`;
+    const existingIndex = lines.findIndex((line) => line.trim() === releaseHeading);
+    if (existingIndex !== -1) {
+      return existingIndex;
+    }
+
+    const unreleasedEnd = this.findNextHeadingIndex(lines, unreleasedIndex + 1, "## ");
+    const insertAt = this.findReleaseHeadingInsertIndex(lines, unreleasedEnd, releaseDate);
+    const releaseBlock: string[] = [];
+    if (lines[insertAt - 1] !== "") {
+      releaseBlock.push("");
+    }
+    releaseBlock.push(releaseHeading, "");
+    lines.splice(insertAt, 0, ...releaseBlock);
+    return insertAt + releaseBlock.findIndex((line) => line === releaseHeading);
+  }
+
+  private findReleaseHeadingInsertIndex(
+    lines: string[],
+    releaseStartIndex: number,
+    releaseDate: string,
+  ): number {
+    for (let index = releaseStartIndex; index < lines.length; index += 1) {
+      const match = /^## \[(\d{4}-\d{2}-\d{2})\]$/.exec(lines[index].trim());
+      if (!match) continue;
+      const existingDate = match[1];
+      if (releaseDate > existingDate) {
+        return index;
+      }
+    }
+    return lines.length;
   }
 
   private findNextHeadingIndex(
@@ -1463,7 +2037,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
 
   private findChangelogSectionInsertIndex(
     lines: string[],
-    unreleasedIndex: number,
+    blockStartIndex: number,
     blockEnd: number,
     section: ChangelogSection,
   ): number {
@@ -1474,7 +2048,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       "Removed",
     ];
     const sectionRank = sectionOrder.indexOf(section);
-    for (let index = unreleasedIndex + 1; index < blockEnd; index += 1) {
+    for (let index = blockStartIndex + 1; index < blockEnd; index += 1) {
       const line = lines[index].trim();
       if (!line.startsWith("### ")) continue;
       const foundSection = line.slice(4) as ChangelogSection;
@@ -1484,6 +2058,13 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       }
     }
     return blockEnd;
+  }
+
+  private formatLocalDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
   private async readResourceVersion(
@@ -1576,12 +2157,40 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     return versions.at(0);
   }
 
+  private async resolvePublishChangelogSection(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<ChangelogSection> {
+    const tags = await this.repoManager.listTags(repoDir, `${type}/${name}@*`);
+    const hasPublishedHistory = tags.some((tag) => semver.valid(tag.split("@").at(1) ?? ""));
+    return hasPublishedHistory ? "Changed" : "Added";
+  }
+
   private formatResourceRef(
     type: ResourceType,
     name: string,
     version?: string,
   ): string {
     return version ? `${type}/${name}@${version}` : `${type}/${name}`;
+  }
+
+  private async getResourceDocsRef(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+    versionOverrides = new Map<string, string>(),
+  ): Promise<ResourceDocsRef> {
+    const ref = await this.getResourceRef(repoDir, type, name, versionOverrides);
+    const refWithoutType = ref.startsWith(`${type}/`) ? ref.slice(type.length + 1) : ref;
+    const versionSeparatorIndex = refWithoutType.lastIndexOf("@");
+    if (versionSeparatorIndex <= 0) {
+      return { name: refWithoutType };
+    }
+    return {
+      name: refWithoutType.slice(0, versionSeparatorIndex),
+      version: refWithoutType.slice(versionSeparatorIndex + 1),
+    };
   }
 
   private getSourceTitle(): string {

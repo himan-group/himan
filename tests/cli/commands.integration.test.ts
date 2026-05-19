@@ -183,6 +183,99 @@ describe("CLI commands with external git source", () => {
     await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toBe(
       "# himan-test\n",
     );
+
+    const repairHistoryDryRun = runCli(
+      ["source", "init-docs", "--repair-history", "--dry-run", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(repairHistoryDryRun.status).toBe(0);
+    const repairHistoryPayload = JSON.parse(repairHistoryDryRun.stdout) as {
+      dryRun: boolean;
+      committed: boolean;
+      files: Array<{ path: string; action: string; reason?: string }>;
+    };
+    expect(repairHistoryPayload.dryRun).toBe(true);
+    expect(repairHistoryPayload.committed).toBe(false);
+    expect(
+      repairHistoryPayload.files.find((file) => file.path.endsWith("README.md"))?.action,
+    ).toBe("updated");
+    expect(
+      repairHistoryPayload.files.find((file) => file.path.endsWith("CHANGELOG.md"))?.action,
+    ).toBe("skipped");
+    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toBe(
+      "# himan-test\n",
+    );
+  });
+
+  it("initializes docs for a specified source alias without switching default source", async () => {
+    const scopedHomeDir = path.join(tmpRoot, "init-docs-source-home");
+    const scopedProjectDir = path.join(tmpRoot, "init-docs-source-project");
+    const primaryRemote = await createSingleRuleRemote(
+      "init-docs-primary",
+      "primary-rule",
+      "1.0.0",
+      "primary source rule",
+      "from primary source",
+    );
+    const teamRemote = await createSingleRuleRemote(
+      "init-docs-team",
+      "team-rule",
+      "2.0.0",
+      "team source rule",
+      "from team source",
+    );
+    await fs.mkdir(scopedHomeDir, { recursive: true });
+    await fs.mkdir(scopedProjectDir, { recursive: true });
+
+    expect(runCli(["init", primaryRemote], scopedProjectDir, scopedHomeDir).status).toBe(0);
+    expect(
+      runCli(
+        ["source", "add", "team-source", teamRemote, "--alias", "team"],
+        scopedProjectDir,
+        scopedHomeDir,
+      ).status,
+    ).toBe(0);
+    expect(
+      runCli(["source", "alias", "default", "primary"], scopedProjectDir, scopedHomeDir).status,
+    ).toBe(0);
+
+    const initDocs = runCli(
+      ["source", "init-docs", "--source", "team", "--json"],
+      scopedProjectDir,
+      scopedHomeDir,
+    );
+    expect(initDocs.status).toBe(0);
+    const payload = JSON.parse(initDocs.stdout) as {
+      sourceDir: string;
+      files: Array<{ path: string; action: string }>;
+    };
+    const teamRepoDir = path.join(scopedHomeDir, ".himan", "repos", toRepoId(teamRemote));
+    const primaryRepoDir = path.join(scopedHomeDir, ".himan", "repos", toRepoId(primaryRemote));
+    expect(payload.sourceDir).toBe(teamRepoDir);
+    expect(payload.files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: path.join(teamRepoDir, "README.md") }),
+        expect.objectContaining({ path: path.join(teamRepoDir, "CHANGELOG.md") }),
+      ]),
+    );
+    await expect(fs.access(path.join(teamRepoDir, "README.md"))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(teamRepoDir, "CHANGELOG.md"))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(primaryRepoDir, "CHANGELOG.md"))).rejects.toThrow();
+
+    const sources = runCli(["source", "list", "--json"], scopedProjectDir, scopedHomeDir);
+    expect(sources.status).toBe(0);
+    const listed = JSON.parse(sources.stdout) as Array<{
+      name: string;
+      alias?: string;
+      isDefault: boolean;
+    }>;
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "default", alias: "primary", isDefault: true }),
+        expect.objectContaining({ name: "team-source", alias: "team", isDefault: false }),
+      ]),
+    );
   });
 
   it("manages multiple sources and switches default source", () => {
@@ -687,7 +780,16 @@ describe("CLI commands with external git source", () => {
     );
     expect(storeContent).toContain("Publish from create artifact.");
     await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
-      "`command/release-note@0.1.0`: release note command",
+      "#### General",
+    );
+    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
+      '<td width="288"><code>release-note</code></td>',
+    );
+    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
+      '<td width="112"><code>0.1.0</code></td>',
+    );
+    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
+      "<td>release note command</td>",
     );
     await expect(
       fs.readFile(path.join(repoDir, "CHANGELOG.md"), "utf8"),
@@ -920,13 +1022,13 @@ describe("CLI commands with external git source", () => {
     const listed = JSON.parse(listResult.stdout) as Array<Record<string, unknown>>;
     expect(listed).toEqual(
       expect.arrayContaining([
-        {
+        expect.objectContaining({
           name: "code-review",
           type: "rule",
           entry: "content.md",
           description: "enforce code review standards",
           agents: ["cursor"],
-        },
+        }),
       ]),
     );
 
@@ -955,13 +1057,15 @@ describe("CLI commands with external git source", () => {
     const groupedTextResult = runCli(["list"], projectDir, homeDir);
     expect(groupedTextResult.status).toBe(0);
     expect(groupedTextResult.stdout).toContain("Rules:\n");
+    expect(groupedTextResult.stdout).toContain("[General]\n");
     expect(groupedTextResult.stdout).toContain(
-      "- rule/code-review: enforce code review standards",
+      "- code-review | 1.0.0",
     );
+    expect(groupedTextResult.stdout).toContain("  enforce code review standards");
     expect(groupedTextResult.stdout).toContain("Commands:\n");
-    expect(groupedTextResult.stdout).toContain("- command/release-note");
+    expect(groupedTextResult.stdout).toContain("- release-note | 0.1.0");
     expect(groupedTextResult.stdout).toContain("Skills:\n");
-    expect(groupedTextResult.stdout).toContain("- skill/risk-check");
+    expect(groupedTextResult.stdout).toContain("- risk-check | 0.0.1");
 
     const historyResult = runCli(
       ["history", "rule", "code-review", "--json"],
@@ -1088,7 +1192,7 @@ describe("CLI commands with external git source", () => {
       homeDir,
     );
     expect(groupedTextWithoutDescriptionResult.status).toBe(0);
-    expect(groupedTextWithoutDescriptionResult.stdout).toContain("- rule/code-review\n");
+    expect(groupedTextWithoutDescriptionResult.stdout).toContain("- code-review | 1.0.0");
     expect(groupedTextWithoutDescriptionResult.stdout).not.toContain(
       "enforce code review standards",
     );

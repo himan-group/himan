@@ -3,6 +3,7 @@ import type { ResourceMeta, ResourceType } from "../domain/resource.js";
 import type { ServiceFactory } from "../services/index.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
 import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-configs.js";
+import { resolveResourceCategory } from "../utils/resource-category.js";
 import {
   listInstalledResourceGroups,
   writeInstalledResourceGroups,
@@ -12,6 +13,13 @@ import { runAction } from "./shared.js";
 
 const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
 type ResourceGroups = Record<ResourceType, ResourceMeta[]>;
+type TerminalColorToken =
+  | "groupTitle"
+  | "category"
+  | "resource"
+  | "version"
+  | "description"
+  | "muted";
 
 export function registerResourceCommands(command: Command, services: ServiceFactory): void {
   command
@@ -370,7 +378,7 @@ function writeGroupedResources(groups: ResourceGroups, showDescription: boolean)
   for (const type of RESOURCE_TYPES) {
     const resources = groups[type];
     if (resources.length === 0) continue;
-    process.stdout.write(`${formatGroupTitle(type)}:\n`);
+    process.stdout.write(`${styleTerminal(formatGroupTitle(type), "groupTitle")}:\n`);
     writeResourceList(resources, showDescription);
   }
 }
@@ -381,20 +389,70 @@ function writeResourceList(resources: ResourceMeta[], showDescription: boolean):
     return;
   }
 
-  for (const resource of resources) {
-    const archived = resource.archived ? " [archived]" : "";
-    process.stdout.write(
-      `- ${resource.type}/${resource.name}${archived}${
-        showDescription && resource.description ? `: ${resource.description}` : ""
-      }\n`,
-    );
+  const grouped = groupResourcesByCategory(resources);
+  for (const [category, categoryResources] of grouped) {
+    process.stdout.write(`${styleTerminal(`[${category}]`, "category")}\n`);
+    for (const resource of categoryResources) {
+      process.stdout.write(
+        `${styleTerminal("-", "muted")} ${styleTerminal(resource.name, "resource")} ${styleTerminal("|", "muted")} ${styleTerminal(resource.version ?? "-", "version")}\n`,
+      );
+      if (showDescription && resource.description) {
+        process.stdout.write(
+          `  ${styleTerminal(
+            `${resource.description}${resource.archived ? " [archived]" : ""}`,
+            "description",
+          )}\n`,
+        );
+      } else if (showDescription && resource.archived) {
+        process.stdout.write(`  ${styleTerminal("[archived]", "description")}\n`);
+      }
+    }
+    process.stdout.write("\n");
   }
+}
+
+function groupResourcesByCategory(
+  resources: ResourceMeta[],
+): Array<[string, ResourceMeta[]]> {
+  const grouped = new Map<string, ResourceMeta[]>();
+  for (const resource of resources) {
+    const category = resolveResourceCategory(resource.name, resource.category);
+    const current = grouped.get(category);
+    if (current) {
+      current.push(resource);
+      continue;
+    }
+    grouped.set(category, [resource]);
+  }
+  return [...grouped.entries()];
 }
 
 function formatGroupTitle(type: ResourceType): string {
   if (type === "rule") return "Rules";
   if (type === "command") return "Commands";
   return "Skills";
+}
+
+function styleTerminal(text: string, token: TerminalColorToken): string {
+  if (!shouldUseColor()) return text;
+  const codeMap: Record<TerminalColorToken, string> = {
+    groupTitle: "1;36",
+    category: "1;33",
+    resource: "1;37",
+    version: "1;34",
+    description: "90",
+    muted: "90",
+  };
+  return `\u001b[${codeMap[token]}m${text}\u001b[0m`;
+}
+
+function shouldUseColor(): boolean {
+  if (process.env.VITEST !== undefined) return false;
+  if (process.env.NO_COLOR !== undefined) return false;
+  const forceColor = process.env.FORCE_COLOR;
+  if (forceColor === "0") return false;
+  if (forceColor !== undefined && forceColor !== "") return true;
+  return Boolean(process.stdout.isTTY);
 }
 
 function parseAgents(input?: string): string[] | undefined {
