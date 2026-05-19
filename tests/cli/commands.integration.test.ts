@@ -783,7 +783,13 @@ describe("CLI commands with external git source", () => {
       "#### General",
     );
     await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
-      "| `release-note` | 0.1.0 | release note command |",
+      '<td width="288"><code>release-note</code></td>',
+    );
+    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
+      '<td width="112"><code>0.1.0</code></td>',
+    );
+    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
+      "<td>release note command</td>",
     );
     await expect(
       fs.readFile(path.join(repoDir, "CHANGELOG.md"), "utf8"),
