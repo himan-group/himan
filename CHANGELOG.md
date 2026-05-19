@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Changed
+
+- Changed source-repo changelog updates during `himan publish` so publish entries are written under date release headings like `## [2026-05-19]` instead of accumulating under `## [Unreleased]`.
+- Changed source-repo README resource index rendering to category-based Markdown tables (`Category`, `Resource`, `Description`) instead of long bullet lists.
+- Added `himan source init-docs --repair-history` to repair existing source docs by rebuilding README managed resource indexes and migrating historical `Published` changelog lines from `[Unreleased]` into date release sections.
+
 ## [0.6.1] - 2026-05-18
 
 ### Fixed

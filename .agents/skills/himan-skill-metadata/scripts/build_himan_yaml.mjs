@@ -21,6 +21,7 @@ const TOKENIZER = "approx-char-v1";
 const TOKEN_ESTIMATOR = "ceil(chars/4)";
 const DEFAULT_VERSION = "0.0.1";
 const RESOURCE_TYPE = "skill";
+const DEFAULT_CATEGORY = "General";
 const execFileAsync = promisify(execFile);
 
 async function main() {
@@ -33,6 +34,11 @@ async function main() {
   const name = options.name ?? frontMatter.name ?? path.basename(root);
   const description = options.description ?? frontMatter.description;
   const version = options.version ?? (await resolveVersion(root, name)) ?? DEFAULT_VERSION;
+  const category =
+    options.category ??
+    frontMatter.category ??
+    (await readYamlStringField(path.join(root, "himan.yaml"), "category")) ??
+    inferCategory(name);
 
   if (!description) {
     throw new Error("Skill description not found. Set SKILL.md front matter or --description.");
@@ -52,6 +58,7 @@ async function main() {
     version,
     entry,
     description,
+    category,
     agents: options.agents,
     analysis: {
       content: {
@@ -117,6 +124,7 @@ function parseArgs(args) {
     else if (arg === "--entry") options.entry = next();
     else if (arg === "--name") options.name = next();
     else if (arg === "--description") options.description = next();
+    else if (arg === "--category") options.category = next();
     else if (arg === "--agent") options.agents.push(...splitList(next()));
     else if (arg === "--generated-by") options.generatedBy = next();
     else if (arg === "--measured-by") options.measuredBy = next();
@@ -134,6 +142,27 @@ function parseArgs(args) {
   options.scripts = [...new Set(options.scripts)].sort((a, b) => a.localeCompare(b));
   options.mcpTools = [...new Set(options.mcpTools)].sort((a, b) => a.localeCompare(b));
   return { skillDir, options };
+}
+
+function inferCategory(name) {
+  const prefix = String(name ?? "")
+    .split(/[-_]/)[0]
+    ?.toLowerCase();
+  const prefixCategoryMap = {
+    ai: "AI",
+    common: "Common",
+    codex: "Codex",
+    fe: "Frontend",
+    flowops: "FlowOps",
+    github: "GitHub",
+    himan: "Himan",
+    infra: "Infra",
+    jira: "Jira",
+    openai: "OpenAI",
+    qa: "QA",
+    space: "Space",
+  };
+  return prefixCategoryMap[prefix] ?? DEFAULT_CATEGORY;
 }
 
 async function resolveVersion(root, name) {

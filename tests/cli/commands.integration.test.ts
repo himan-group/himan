@@ -183,6 +183,29 @@ describe("CLI commands with external git source", () => {
     await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toBe(
       "# himan-test\n",
     );
+
+    const repairHistoryDryRun = runCli(
+      ["source", "init-docs", "--repair-history", "--dry-run", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(repairHistoryDryRun.status).toBe(0);
+    const repairHistoryPayload = JSON.parse(repairHistoryDryRun.stdout) as {
+      dryRun: boolean;
+      committed: boolean;
+      files: Array<{ path: string; action: string; reason?: string }>;
+    };
+    expect(repairHistoryPayload.dryRun).toBe(true);
+    expect(repairHistoryPayload.committed).toBe(false);
+    expect(
+      repairHistoryPayload.files.find((file) => file.path.endsWith("README.md"))?.action,
+    ).toBe("updated");
+    expect(
+      repairHistoryPayload.files.find((file) => file.path.endsWith("CHANGELOG.md"))?.action,
+    ).toBe("skipped");
+    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toBe(
+      "# himan-test\n",
+    );
   });
 
   it("manages multiple sources and switches default source", () => {
@@ -687,7 +710,7 @@ describe("CLI commands with external git source", () => {
     );
     expect(storeContent).toContain("Publish from create artifact.");
     await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
-      "`command/release-note@0.1.0`: release note command",
+      "| General | `command/release-note@0.1.0` | release note command |",
     );
     await expect(
       fs.readFile(path.join(repoDir, "CHANGELOG.md"), "utf8"),

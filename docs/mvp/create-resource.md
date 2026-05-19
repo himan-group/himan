@@ -56,12 +56,12 @@ repo/
 - `CHANGELOG.md`：记录 source 级别的新增资源、资源变更、废弃、移除和重要发布说明
 - `rules/`、`commands/`、`skills/`：资源类型根目录，由 himan 扫描
 
-可用 `himan source init-docs` 生成根目录文档模板。命令默认只创建缺失的 `README.md` / `CHANGELOG.md`；已有文件会保留，除非显式传 `--force`。`--force` 覆盖文档时会扫描当前 source 中已有的 `rule`、`command`、`skill`，写入 README 资源索引，并在 CHANGELOG 初始条目中记录已整理的资源。资源引用会优先使用 Git tag 中的最新 semver 版本，找不到 tag 时再回退到 `himan.yaml` 的 `version`。对于尚未补齐 `himan.yaml` 的资源，文档整理会按默认入口识别资源；其中 skill 会额外读取 `skills/<name>/SKILL.md` front matter 中的 `name` 和 `description`。`--dry-run` 只返回将执行的创建、覆盖或跳过动作，不写盘。有实际文件变更时，命令会提交并 push 到当前 Git source。
+可用 `himan source init-docs` 生成根目录文档模板。命令默认只创建缺失的 `README.md` / `CHANGELOG.md`；已有文件会保留，除非显式传 `--force`。`--force` 覆盖文档时会扫描当前 source 中已有的 `rule`、`command`、`skill`，写入 README 资源索引，并在 CHANGELOG 初始条目中记录已整理的资源。资源引用会优先使用 Git tag 中的最新 semver 版本，找不到 tag 时再回退到 `himan.yaml` 的 `version`。对于尚未补齐 `himan.yaml` 的资源，文档整理会按默认入口识别资源；其中 skill 会额外读取 `skills/<name>/SKILL.md` front matter 中的 `name` 和 `description`。`--repair-history` 会在不覆盖整文件的前提下修复历史托管数据（README 资源索引区与 CHANGELOG 历史发布条目迁移）。`--dry-run` 只返回将执行的创建、覆盖、修复或跳过动作，不写盘。有实际文件变更时，命令会提交并 push 到当前 Git source。
 
 `create` 默认只在当前项目 agent 目标目录生成可验证资源；`publish` 会把项目目录中的资源同步回 source 仓库，并自动维护根目录文档：
 
 - `README.md`：只维护 `<!-- himan:resources:start -->` / `<!-- himan:resources:end -->` 标记内的资源索引；如果旧 README 没有标记，则在文件末尾追加受控资源索引区
-- `CHANGELOG.md`：向 `[Unreleased]` 写入发布版本的 `Changed` 条目
+- `CHANGELOG.md`：发布条目写入按日期分组的发布段（如 `## [2026-05-19]`），未发布的 source 变更保留在 `[Unreleased]`
 
 推荐的 `README.md` 基本结构：
 
@@ -72,9 +72,23 @@ repo/
 
 <!-- himan:resources:start -->
 
-- rule/code-review: Code review behavior for backend changes.
-- command/create-mr: MR creation workflow.
-- skill/api-debugging: API debugging workflow.
+### Rules
+
+| Category | Resource | Description |
+| --- | --- | --- |
+| Quality | `rule/code-review@1.2.0` | Code review behavior for backend changes. |
+
+### Commands
+
+| Category | Resource | Description |
+| --- | --- | --- |
+| Workflow | `command/create-mr@1.0.0` | MR creation workflow. |
+
+### Skills
+
+| Category | Resource | Description |
+| --- | --- | --- |
+| API | `skill/api-debugging@2.1.0` | API debugging workflow. |
 
 <!-- himan:resources:end -->
 

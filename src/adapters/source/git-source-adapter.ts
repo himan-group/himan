@@ -55,17 +55,21 @@ interface PublishMetadataResult {
 const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
 const README_RESOURCES_START = "<!-- himan:resources:start -->";
 const README_RESOURCES_END = "<!-- himan:resources:end -->";
+const PUBLISHED_CHANGELOG_LINE =
+  /^- Published `(rule|command|skill)\/([^`@]+)@([^`]+)`\.$/;
 
 type ChangelogSection = "Added" | "Changed" | "Deprecated" | "Removed";
 
 interface ChangelogEntry {
   section: ChangelogSection;
   line: string;
+  releaseDate?: string;
 }
 
 interface ResourceDocsItem {
   name: string;
   type: ResourceType;
+  category: string;
   description?: string;
 }
 
@@ -181,6 +185,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       {
         section: "Changed",
         line: `- Published \`${type}/${name}@${version}\`.`,
+        releaseDate: this.formatLocalDate(new Date()),
       },
       new Map([[this.getResourceVersionOverrideKey(type, name), version]]),
     );
@@ -499,29 +504,44 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
 
   async initDocs(options: SourceDocsOptions = {}): Promise<SourceDocsResult> {
     const repoDir = this.getRepoDir();
-    const files = [
-      {
-        path: path.join(repoDir, "README.md"),
-        content: await this.buildReadmeContent(repoDir),
-      },
-      {
-        path: path.join(repoDir, "CHANGELOG.md"),
-        content: await this.buildChangelogContent(repoDir),
-      },
-    ];
     const results: SourceDocsFileResult[] = [];
     const changedPaths: string[] = [];
+    const readmeFile = await this.resolveInitDocsFile({
+      repoDir,
+      path: path.join(repoDir, "README.md"),
+      force: options.force,
+      repairHistory: options.repairHistory,
+      dryRun: options.dryRun,
+      buildBaseContent: () => this.buildReadmeContent(repoDir),
+      buildRepairContent: async (current) =>
+        this.buildRepairedReadmeContent(repoDir, current),
+    });
+    results.push({
+      path: readmeFile.path,
+      action: readmeFile.action,
+      ...(readmeFile.reason ? { reason: readmeFile.reason } : {}),
+    });
+    if (readmeFile.wrote) {
+      changedPaths.push(path.relative(repoDir, readmeFile.path));
+    }
 
-    for (const file of files) {
-      const exists = await this.exists(file.path);
-      const action = exists ? (options.force ? "updated" : "skipped") : "created";
-      const reason = action === "skipped" ? "file already exists" : undefined;
-      results.push({ path: file.path, action, reason });
-
-      if (!options.dryRun && action !== "skipped") {
-        await fs.writeFile(file.path, file.content, "utf8");
-        changedPaths.push(path.relative(repoDir, file.path));
-      }
+    const changelogFile = await this.resolveInitDocsFile({
+      repoDir,
+      path: path.join(repoDir, "CHANGELOG.md"),
+      force: options.force,
+      repairHistory: options.repairHistory,
+      dryRun: options.dryRun,
+      buildBaseContent: () => this.buildChangelogContent(repoDir),
+      buildRepairContent: async (current) =>
+        this.repairSourceChangelogHistory(repoDir, current),
+    });
+    results.push({
+      path: changelogFile.path,
+      action: changelogFile.action,
+      ...(changelogFile.reason ? { reason: changelogFile.reason } : {}),
+    });
+    if (changelogFile.wrote) {
+      changedPaths.push(path.relative(repoDir, changelogFile.path));
     }
 
     const committed =
@@ -539,6 +559,76 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       files: results,
       dryRun: Boolean(options.dryRun),
       committed,
+    };
+  }
+
+  private async resolveInitDocsFile(args: {
+    repoDir: string;
+    path: string;
+    force?: boolean;
+    repairHistory?: boolean;
+    dryRun?: boolean;
+    buildBaseContent: () => Promise<string>;
+    buildRepairContent: (current: string) => Promise<string>;
+  }): Promise<{
+    path: string;
+    action: SourceDocsFileResult["action"];
+    reason?: string;
+    wrote: boolean;
+  }> {
+    const exists = await this.exists(args.path);
+    if (!exists) {
+      const content = await args.buildBaseContent();
+      if (!args.dryRun) {
+        await fs.writeFile(args.path, content, "utf8");
+      }
+      return {
+        path: args.path,
+        action: "created",
+        wrote: !args.dryRun,
+      };
+    }
+
+    const current = await fs.readFile(args.path, "utf8");
+    const shouldForce = Boolean(args.force);
+    const shouldRepair = Boolean(args.repairHistory);
+    if (!shouldForce && !shouldRepair) {
+      return {
+        path: args.path,
+        action: "skipped",
+        reason: "file already exists",
+        wrote: false,
+      };
+    }
+
+    if (shouldForce) {
+      if (!args.dryRun) {
+        await fs.writeFile(args.path, await args.buildBaseContent(), "utf8");
+      }
+      return {
+        path: args.path,
+        action: "updated",
+        wrote: !args.dryRun,
+      };
+    }
+
+    const repaired = await args.buildRepairContent(current);
+    if (repaired === current) {
+      return {
+        path: args.path,
+        action: "skipped",
+        reason: "no historical entries to repair",
+        wrote: false,
+      };
+    }
+
+    if (!args.dryRun) {
+      await fs.writeFile(args.path, repaired, "utf8");
+    }
+    return {
+      path: args.path,
+      action: "updated",
+      wrote: !args.dryRun,
     };
   }
 
@@ -1205,9 +1295,13 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       const resources = await this.collectResourceDocsItems(repoDir, type);
       sections.push(`### ${this.getTypeLabel(type)}`, "");
       if (resources.length === 0) {
-        sections.push(`- No ${type} resources yet.`, "");
+        sections.push(`No ${type} resources yet.`, "");
         continue;
       }
+      sections.push(
+        "| Category | Resource | Description |",
+        "| --- | --- | --- |",
+      );
       for (const resource of resources) {
         const ref = await this.getResourceRef(
           repoDir,
@@ -1216,9 +1310,9 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
           versionOverrides,
         );
         sections.push(
-          `- \`${ref}\`${
-            resource.description ? `: ${resource.description}` : ""
-          }`,
+          `| ${this.escapeTableCell(resource.category)} | \`${ref}\` | ${this.escapeTableCell(
+            resource.description ?? "-",
+          )} |`,
         );
       }
       sections.push("");
@@ -1246,16 +1340,26 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     type: ResourceType,
   ): Promise<ResourceDocsItem[]> {
     const resources = await this.scanner.scanByType(repoDir, type);
-    const items: ResourceDocsItem[] = resources.map((resource) => ({
-      name: resource.name,
-      type: resource.type,
-      description: resource.description,
-    }));
+    const items = await Promise.all(
+      resources.map(async (resource): Promise<ResourceDocsItem> => ({
+        name: resource.name,
+        type: resource.type,
+        category: this.resolveResourceCategory(
+          resource.name,
+          await this.readResourceCategory(repoDir, resource.type, resource.name),
+        ),
+        description: resource.description,
+      })),
+    );
 
     const managedNames = new Set(resources.map((resource) => resource.name));
     items.push(...(await this.scanEntryBasedDocsItems(repoDir, type, managedNames)));
 
-    return items.sort((a, b) => a.name.localeCompare(b.name));
+    return items.sort((a, b) => {
+      const categoryOrder = a.category.localeCompare(b.category);
+      if (categoryOrder !== 0) return categoryOrder;
+      return a.name.localeCompare(b.name);
+    });
   }
 
   private async scanEntryBasedDocsItems(
@@ -1282,10 +1386,70 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       items.push({
         name,
         type,
+        category: this.resolveResourceCategory(
+          name,
+          this.readStringMetadata(metadata, "category"),
+        ),
         description: this.readStringMetadata(metadata, "description"),
       });
     }
     return items;
+  }
+
+  private async readResourceCategory(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<string | undefined> {
+    const resourceDir = path.join(repoDir, this.getTypeDir(type), name);
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (await this.exists(yamlPath)) {
+      try {
+        const raw = await fs.readFile(yamlPath, "utf8");
+        const parsed = YAML.parse(raw) as unknown;
+        if (this.isRecord(parsed)) {
+          return this.readStringMetadata(parsed, "category");
+        }
+      } catch {
+        // Keep docs generation resilient when metadata has parsing issues.
+      }
+    }
+
+    if (type === "skill") {
+      const skillPath = path.join(resourceDir, this.getDefaultEntry(type));
+      if (await this.exists(skillPath)) {
+        const metadata = await this.readSkillFrontMatter(skillPath);
+        return this.readStringMetadata(metadata, "category");
+      }
+    }
+    return undefined;
+  }
+
+  private resolveResourceCategory(name: string, explicitCategory?: string): string {
+    const normalized = explicitCategory?.trim();
+    if (normalized) return normalized;
+
+    const prefix = name.split(/[-_]/)[0]?.toLowerCase() ?? "";
+    const prefixCategoryMap: Record<string, string> = {
+      ai: "AI",
+      common: "Common",
+      codex: "Codex",
+      fe: "Frontend",
+      flowops: "FlowOps",
+      github: "GitHub",
+      infra: "Infra",
+      jira: "Jira",
+      openai: "OpenAI",
+      qa: "QA",
+      space: "Space",
+    };
+    return prefixCategoryMap[prefix] ?? "General";
+  }
+
+  private escapeTableCell(value: string): string {
+    return value
+      .replace(/\|/g, "\\|")
+      .replace(/\r?\n+/g, "<br>");
   }
 
   private async readSkillFrontMatter(
@@ -1384,6 +1548,18 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     return `${base}\n\n## Resources\n\n${resourceSection}\n`;
   }
 
+  private async buildRepairedReadmeContent(
+    repoDir: string,
+    current: string,
+  ): Promise<string> {
+    const resourceSection = [
+      README_RESOURCES_START,
+      ...(await this.buildResourceIndex(repoDir)),
+      README_RESOURCES_END,
+    ].join("\n");
+    return this.replaceOrAppendReadmeResourceSection(current, resourceSection);
+  }
+
   private async updateChangelog(
     repoDir: string,
     entry: ChangelogEntry,
@@ -1397,6 +1573,99 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       await fs.writeFile(changelogPath, updated, "utf8");
     }
     return changelogPath;
+  }
+
+  private async repairSourceChangelogHistory(
+    repoDir: string,
+    content: string,
+  ): Promise<string> {
+    const lines = content.replace(/\s*$/, "").split("\n");
+    let unreleasedIndex = lines.findIndex((line) => line.trim() === "## [Unreleased]");
+    if (unreleasedIndex === -1) {
+      const firstVersionIndex = lines.findIndex((line) => line.startsWith("## "));
+      const insertIndex = firstVersionIndex === -1 ? lines.length : firstVersionIndex;
+      lines.splice(insertIndex, 0, "## [Unreleased]", "");
+      unreleasedIndex = insertIndex;
+    }
+
+    const unreleasedEnd = this.findNextHeadingIndex(lines, unreleasedIndex + 1, "## ");
+    const unreleasedBody = lines.slice(unreleasedIndex + 1, unreleasedEnd);
+    const migrated: Array<{ releaseDate: string; line: string }> = [];
+    const repairedBody: string[] = [];
+
+    for (const line of unreleasedBody) {
+      const match = PUBLISHED_CHANGELOG_LINE.exec(line.trim());
+      if (!match) {
+        repairedBody.push(line);
+        continue;
+      }
+      const [, type, name, version] = match;
+      const tag = `${type}/${name}@${version}`;
+      const releaseDate = await this.repoManager.readTagDate(repoDir, tag);
+      if (!releaseDate) {
+        repairedBody.push(line);
+        continue;
+      }
+      migrated.push({ releaseDate, line: `- Published \`${tag}\`.` });
+    }
+
+    if (migrated.length === 0) {
+      return `${lines.join("\n")}\n`;
+    }
+
+    const normalizedBody = this.normalizeMarkdownBlockLines(repairedBody);
+    const rebuiltLines = [
+      ...lines.slice(0, unreleasedIndex + 1),
+      ...(normalizedBody.length > 0 ? ["", ...normalizedBody, ""] : [""]),
+      ...lines.slice(unreleasedEnd),
+    ];
+
+    let rebuilt = `${rebuiltLines.join("\n").replace(/\s*$/, "")}\n`;
+    const deduped = this.deduplicateMigratedEntries(migrated);
+    for (const item of deduped) {
+      rebuilt = this.insertChangelogEntry(rebuilt, {
+        section: "Changed",
+        line: item.line,
+        releaseDate: item.releaseDate,
+      });
+    }
+    return rebuilt;
+  }
+
+  private deduplicateMigratedEntries(
+    entries: Array<{ releaseDate: string; line: string }>,
+  ): Array<{ releaseDate: string; line: string }> {
+    const seen = new Set<string>();
+    const result: Array<{ releaseDate: string; line: string }> = [];
+    for (const entry of entries) {
+      const key = `${entry.releaseDate}\u0000${entry.line}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(entry);
+    }
+    return result.sort((a, b) => {
+      const dateOrder = b.releaseDate.localeCompare(a.releaseDate);
+      if (dateOrder !== 0) return dateOrder;
+      return a.line.localeCompare(b.line);
+    });
+  }
+
+  private normalizeMarkdownBlockLines(lines: string[]): string[] {
+    const result: string[] = [];
+    let previousBlank = false;
+    for (const line of lines) {
+      const isBlank = line.trim() === "";
+      if (isBlank && previousBlank) continue;
+      result.push(line);
+      previousBlank = isBlank;
+    }
+    while (result[0]?.trim() === "") {
+      result.shift();
+    }
+    while (result.at(-1)?.trim() === "") {
+      result.pop();
+    }
+    return result;
   }
 
   private buildChangelogBaseContent(): string {
@@ -1423,16 +1692,19 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       unreleasedIndex = insertIndex;
     }
 
-    const blockEnd = this.findNextHeadingIndex(lines, unreleasedIndex + 1, "## ");
-    const unreleasedLines = lines.slice(unreleasedIndex, blockEnd);
-    if (unreleasedLines.includes(entry.line)) {
+    const blockStartIndex = entry.releaseDate
+      ? this.ensureReleaseHeading(lines, unreleasedIndex, entry.releaseDate)
+      : unreleasedIndex;
+    const blockEnd = this.findNextHeadingIndex(lines, blockStartIndex + 1, "## ");
+    const blockLines = lines.slice(blockStartIndex, blockEnd);
+    if (blockLines.includes(entry.line)) {
       return `${lines.join("\n")}\n`;
     }
 
     const sectionHeading = `### ${entry.section}`;
     const sectionIndex = lines.findIndex(
       (line, index) =>
-        index > unreleasedIndex && index < blockEnd && line.trim() === sectionHeading,
+        index > blockStartIndex && index < blockEnd && line.trim() === sectionHeading,
     );
     if (sectionIndex >= 0) {
       const insertIndex = lines[sectionIndex + 1] === "" ? sectionIndex + 2 : sectionIndex + 1;
@@ -1442,12 +1714,33 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
 
     const insertIndex = this.findChangelogSectionInsertIndex(
       lines,
-      unreleasedIndex,
+      blockStartIndex,
       blockEnd,
       entry.section,
     );
     lines.splice(insertIndex, 0, `### ${entry.section}`, "", entry.line, "");
     return `${lines.join("\n").replace(/\s*$/, "")}\n`;
+  }
+
+  private ensureReleaseHeading(
+    lines: string[],
+    unreleasedIndex: number,
+    releaseDate: string,
+  ): number {
+    const releaseHeading = `## [${releaseDate}]`;
+    const existingIndex = lines.findIndex((line) => line.trim() === releaseHeading);
+    if (existingIndex !== -1) {
+      return existingIndex;
+    }
+
+    const unreleasedEnd = this.findNextHeadingIndex(lines, unreleasedIndex + 1, "## ");
+    const releaseBlock: string[] = [];
+    if (lines[unreleasedEnd - 1] !== "") {
+      releaseBlock.push("");
+    }
+    releaseBlock.push(releaseHeading, "");
+    lines.splice(unreleasedEnd, 0, ...releaseBlock);
+    return unreleasedEnd + releaseBlock.findIndex((line) => line === releaseHeading);
   }
 
   private findNextHeadingIndex(
@@ -1463,7 +1756,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
 
   private findChangelogSectionInsertIndex(
     lines: string[],
-    unreleasedIndex: number,
+    blockStartIndex: number,
     blockEnd: number,
     section: ChangelogSection,
   ): number {
@@ -1474,7 +1767,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       "Removed",
     ];
     const sectionRank = sectionOrder.indexOf(section);
-    for (let index = unreleasedIndex + 1; index < blockEnd; index += 1) {
+    for (let index = blockStartIndex + 1; index < blockEnd; index += 1) {
       const line = lines[index].trim();
       if (!line.startsWith("### ")) continue;
       const foundSection = line.slice(4) as ChangelogSection;
@@ -1484,6 +1777,13 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       }
     }
     return blockEnd;
+  }
+
+  private formatLocalDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
   private async readResourceVersion(

@@ -1,6 +1,7 @@
 export interface SourceDocsOptions {
   force?: boolean;
   dryRun?: boolean;
+  repairHistory?: boolean;
 }
 
 export type SourceDocsAction = "created" | "updated" | "skipped";
