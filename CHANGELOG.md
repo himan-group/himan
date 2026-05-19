@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-05-19
+
 ### Changed
 
 - Changed source-repo changelog updates during `himan publish` so publish entries are written under date release headings like `## [2026-05-19]` instead of accumulating under `## [Unreleased]`.
