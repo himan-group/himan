@@ -11,6 +11,8 @@ export interface ResourceMeta {
   name: string;
   type: ResourceType;
   entry: string;
+  version?: string;
+  category?: string;
   description?: string;
   agents?: string[];
   archived?: boolean;

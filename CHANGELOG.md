@@ -9,8 +9,13 @@ The format is based on Keep a Changelog, and this project follows semver for the
 ### Changed
 
 - Changed source-repo changelog updates during `himan publish` so publish entries are written under date release headings like `## [2026-05-19]` instead of accumulating under `## [Unreleased]`.
-- Changed source-repo README resource index rendering to category-based Markdown tables (`Category`, `Resource`, `Description`) instead of long bullet lists.
-- Added `himan source init-docs --repair-history` to repair existing source docs by rebuilding README managed resource indexes and migrating historical `Published` changelog lines from `[Unreleased]` into date release sections.
+- Changed source-repo README resource index rendering to category-grouped Markdown sections, where each category has its own `Resource` / `Version` / `Description` table and resource names no longer repeat the type prefix.
+- Added `himan source init-docs --repair-history` to repair existing source docs by rebuilding README managed resource indexes and migrating historical changelog entries from `[Unreleased]` into dated release sections.
+- Changed source changelog section mapping so first-time `Published type/name@version` entries are recorded under `Added`, subsequent publishes under `Changed`, and archive events under `Removed`.
+- Added `himan source init-docs --source <alias>` so source docs can be initialized for a specific configured source without switching the current default source.
+- Changed `himan resource list` text output to grouped category tables with separate `Version` column and resource names without repeating `type/` prefixes.
+- Fixed source index cache compatibility so resource list can repopulate `version` metadata from `himan.yaml` after upgrading.
+- Changed `himan resource list` terminal text output to add subtle color highlighting for type headers, category labels, resource names, and versions (TTY only, respects `NO_COLOR`).
 
 ## [0.6.1] - 2026-05-18
 

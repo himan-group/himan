@@ -296,6 +296,7 @@ export function registerSourceCommands(
   command
     .command("init-docs")
     .option("--force", "overwrite existing README.md and CHANGELOG.md")
+    .option("--source <alias>", "source alias for docs initialization target")
     .option(
       "--repair-history",
       "repair existing source README/CHANGELOG managed sections and historical publish entries",
@@ -306,6 +307,7 @@ export function registerSourceCommands(
     .action(
       async (options: {
         force?: boolean;
+        source?: string;
         repairHistory?: boolean;
         dryRun?: boolean;
         json?: boolean;
@@ -313,6 +315,7 @@ export function registerSourceCommands(
         await runAction(async () => {
           const result = await services.initSourceDocs({
             force: options.force,
+            source: options.source,
             repairHistory: options.repairHistory,
             dryRun: options.dryRun,
           });

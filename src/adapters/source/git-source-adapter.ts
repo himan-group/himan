@@ -34,6 +34,7 @@ import { ResourceScanner } from "../resource/resource-scanner.js";
 import { buildResourceAnalysisMetadata } from "../resource/resource-analysis.js";
 import semver from "semver";
 import { HimanError, errorCodes } from "../../utils/errors.js";
+import { resolveResourceCategory } from "../../utils/resource-category.js";
 import { promises as fs } from "node:fs";
 import { createHash } from "node:crypto";
 import os from "node:os";
@@ -55,8 +56,11 @@ interface PublishMetadataResult {
 const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
 const README_RESOURCES_START = "<!-- himan:resources:start -->";
 const README_RESOURCES_END = "<!-- himan:resources:end -->";
+const INITIAL_SOURCE_SCAFFOLD_LINE = "- Initial source README/CHANGELOG scaffold.";
 const PUBLISHED_CHANGELOG_LINE =
   /^- Published `(rule|command|skill)\/([^`@]+)@([^`]+)`\.$/;
+const DOCUMENTED_RESOURCE_CHANGELOG_LINE =
+  /^- Documented existing resource `(rule|command|skill)\/([^`@]+)(?:@([^`]+))?`\.$/;
 
 type ChangelogSection = "Added" | "Changed" | "Deprecated" | "Removed";
 
@@ -71,6 +75,11 @@ interface ResourceDocsItem {
   type: ResourceType;
   category: string;
   description?: string;
+}
+
+interface ResourceDocsRef {
+  name: string;
+  version?: string;
 }
 
 export class GitSourceAdapter implements ResourceSourceAdapter {
@@ -109,6 +118,13 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     let active: ResourceMeta[];
     if (cached && cached.metadataHash === metadataHash) {
       active = cached.resources;
+      const needsRefresh = active.some(
+        (resource) => !Object.hasOwn(resource, "version"),
+      );
+      if (needsRefresh) {
+        active = await this.scanner.scanByType(repoDir, type);
+        await this.indexStore.upsert(repoId, type, metadataHash, active);
+      }
     } else {
       active = await this.scanner.scanByType(repoDir, type);
       await this.indexStore.upsert(repoId, type, metadataHash, active);
@@ -179,11 +195,12 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       const metadata = { ...metadataResult.metadata, version };
       await fs.writeFile(yamlPath, YAML.stringify(metadata), "utf8");
     }
+    const section = await this.resolvePublishChangelogSection(repoDir, type, name);
 
     const docsPaths = await this.maintainSourceDocs(
       repoDir,
       {
-        section: "Changed",
+        section,
         line: `- Published \`${type}/${name}@${version}\`.`,
         releaseDate: this.formatLocalDate(new Date()),
       },
@@ -411,7 +428,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     await fs.rename(previousResourceDir, archiveDir);
 
     const docsPaths = await this.maintainSourceDocs(repoDir, {
-      section: "Deprecated",
+      section: "Removed",
       line: archiveReason
         ? `- Archived \`${type}/${name}\`: ${archiveReason}.`
         : `- Archived \`${type}/${name}\`.`,
@@ -1280,7 +1297,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       "",
       "### Added",
       "",
-      "- Initial source README/CHANGELOG scaffold.",
+      INITIAL_SOURCE_SCAFFOLD_LINE,
       ...resourceLines,
       "",
     ].join("\n");
@@ -1298,29 +1315,45 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
         sections.push(`No ${type} resources yet.`, "");
         continue;
       }
-      sections.push(
-        "| Category | Resource | Description |",
-        "| --- | --- | --- |",
-      );
-      for (const resource of resources) {
-        const ref = await this.getResourceRef(
-          repoDir,
-          resource.type,
-          resource.name,
-          versionOverrides,
-        );
-        sections.push(
-          `| ${this.escapeTableCell(resource.category)} | \`${ref}\` | ${this.escapeTableCell(
-            resource.description ?? "-",
-          )} |`,
-        );
+      const groupedResources = this.groupResourcesByCategory(resources);
+      for (const [category, categoryResources] of groupedResources) {
+        sections.push(`#### ${category}`, "");
+        sections.push("| Resource | Version | Description |", "| --- | --- | --- |");
+        for (const resource of categoryResources) {
+          const ref = await this.getResourceDocsRef(
+            repoDir,
+            resource.type,
+            resource.name,
+            versionOverrides,
+          );
+          sections.push(
+            `| \`${this.escapeTableCell(ref.name)}\` | ${this.escapeTableCell(
+              ref.version ?? "-",
+            )} | ${this.escapeTableCell(resource.description ?? "-")} |`,
+          );
+        }
+        sections.push("");
       }
-      sections.push("");
     }
     while (sections.at(-1) === "") {
       sections.pop();
     }
     return sections;
+  }
+
+  private groupResourcesByCategory(
+    resources: ResourceDocsItem[],
+  ): Array<[string, ResourceDocsItem[]]> {
+    const grouped = new Map<string, ResourceDocsItem[]>();
+    for (const resource of resources) {
+      const current = grouped.get(resource.category);
+      if (current) {
+        current.push(resource);
+        continue;
+      }
+      grouped.set(resource.category, [resource]);
+    }
+    return [...grouped.entries()];
   }
 
   private async buildExistingResourceChangelogLines(repoDir: string): Promise<string[]> {
@@ -1344,7 +1377,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       resources.map(async (resource): Promise<ResourceDocsItem> => ({
         name: resource.name,
         type: resource.type,
-        category: this.resolveResourceCategory(
+        category: resolveResourceCategory(
           resource.name,
           await this.readResourceCategory(repoDir, resource.type, resource.name),
         ),
@@ -1386,7 +1419,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       items.push({
         name,
         type,
-        category: this.resolveResourceCategory(
+        category: resolveResourceCategory(
           name,
           this.readStringMetadata(metadata, "category"),
         ),
@@ -1423,27 +1456,6 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       }
     }
     return undefined;
-  }
-
-  private resolveResourceCategory(name: string, explicitCategory?: string): string {
-    const normalized = explicitCategory?.trim();
-    if (normalized) return normalized;
-
-    const prefix = name.split(/[-_]/)[0]?.toLowerCase() ?? "";
-    const prefixCategoryMap: Record<string, string> = {
-      ai: "AI",
-      common: "Common",
-      codex: "Codex",
-      fe: "Frontend",
-      flowops: "FlowOps",
-      github: "GitHub",
-      infra: "Infra",
-      jira: "Jira",
-      openai: "OpenAI",
-      qa: "QA",
-      space: "Space",
-    };
-    return prefixCategoryMap[prefix] ?? "General";
   }
 
   private escapeTableCell(value: string): string {
@@ -1590,23 +1602,77 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
 
     const unreleasedEnd = this.findNextHeadingIndex(lines, unreleasedIndex + 1, "## ");
     const unreleasedBody = lines.slice(unreleasedIndex + 1, unreleasedEnd);
-    const migrated: Array<{ releaseDate: string; line: string }> = [];
+    const migrated: Array<{
+      releaseDate: string;
+      line: string;
+      section: ChangelogSection;
+    }> = [];
     const repairedBody: string[] = [];
+    let pendingInitialScaffold = false;
 
     for (const line of unreleasedBody) {
+      const trimmed = line.trim();
+      if (trimmed === INITIAL_SOURCE_SCAFFOLD_LINE) {
+        pendingInitialScaffold = true;
+        continue;
+      }
+
       const match = PUBLISHED_CHANGELOG_LINE.exec(line.trim());
-      if (!match) {
-        repairedBody.push(line);
+      if (match) {
+        const [, type, name, version] = match;
+        const tag = `${type}/${name}@${version}`;
+        const releaseDate = await this.repoManager.readTagDate(repoDir, tag);
+        if (!releaseDate) {
+          repairedBody.push(line);
+          continue;
+        }
+        migrated.push({
+          releaseDate,
+          line: `- Published \`${tag}\`.`,
+          section: await this.isFirstPublishedVersion(repoDir, type as ResourceType, name, version)
+            ? "Added"
+            : "Changed",
+        });
         continue;
       }
-      const [, type, name, version] = match;
-      const tag = `${type}/${name}@${version}`;
-      const releaseDate = await this.repoManager.readTagDate(repoDir, tag);
-      if (!releaseDate) {
-        repairedBody.push(line);
+
+      const documented = DOCUMENTED_RESOURCE_CHANGELOG_LINE.exec(trimmed);
+      if (documented) {
+        const [, type, name, version] = documented;
+        const releaseDate = await this.resolveDocumentedResourceReleaseDate(
+          repoDir,
+          type as ResourceType,
+          name,
+          version,
+        );
+        if (!releaseDate) {
+          repairedBody.push(line);
+          continue;
+        }
+        const ref = version ? `${type}/${name}@${version}` : `${type}/${name}`;
+        migrated.push({
+          releaseDate,
+          line: `- Documented existing resource \`${ref}\`.`,
+          section: "Added",
+        });
         continue;
       }
-      migrated.push({ releaseDate, line: `- Published \`${tag}\`.` });
+
+      repairedBody.push(line);
+    }
+
+    if (pendingInitialScaffold) {
+      const earliestReleaseDate =
+        this.findEarliestReleaseDate(migrated) ?? this.findEarliestReleaseDateInContent(lines);
+      if (earliestReleaseDate) {
+        migrated.push({
+          releaseDate: earliestReleaseDate,
+          line: INITIAL_SOURCE_SCAFFOLD_LINE,
+          section: "Added",
+        });
+      } else {
+        repairedBody.push(INITIAL_SOURCE_SCAFFOLD_LINE);
+      }
     }
 
     if (migrated.length === 0) {
@@ -1624,7 +1690,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     const deduped = this.deduplicateMigratedEntries(migrated);
     for (const item of deduped) {
       rebuilt = this.insertChangelogEntry(rebuilt, {
-        section: "Changed",
+        section: item.section,
         line: item.line,
         releaseDate: item.releaseDate,
       });
@@ -1633,12 +1699,12 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
   }
 
   private deduplicateMigratedEntries(
-    entries: Array<{ releaseDate: string; line: string }>,
-  ): Array<{ releaseDate: string; line: string }> {
+    entries: Array<{ releaseDate: string; line: string; section: ChangelogSection }>,
+  ): Array<{ releaseDate: string; line: string; section: ChangelogSection }> {
     const seen = new Set<string>();
-    const result: Array<{ releaseDate: string; line: string }> = [];
+    const result: Array<{ releaseDate: string; line: string; section: ChangelogSection }> = [];
     for (const entry of entries) {
-      const key = `${entry.releaseDate}\u0000${entry.line}`;
+      const key = `${entry.releaseDate}\u0000${entry.section}\u0000${entry.line}`;
       if (seen.has(key)) continue;
       seen.add(key);
       result.push(entry);
@@ -1648,6 +1714,64 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       if (dateOrder !== 0) return dateOrder;
       return a.line.localeCompare(b.line);
     });
+  }
+
+  private findEarliestReleaseDate(
+    entries: Array<{ releaseDate: string }>,
+  ): string | undefined {
+    let earliest: string | undefined;
+    for (const entry of entries) {
+      if (!earliest || entry.releaseDate < earliest) {
+        earliest = entry.releaseDate;
+      }
+    }
+    return earliest;
+  }
+
+  private findEarliestReleaseDateInContent(lines: string[]): string | undefined {
+    let earliest: string | undefined;
+    for (const line of lines) {
+      const match = /^## \[(\d{4}-\d{2}-\d{2})\]$/.exec(line.trim());
+      if (!match) continue;
+      if (!earliest || match[1] < earliest) {
+        earliest = match[1];
+      }
+    }
+    return earliest;
+  }
+
+  private async resolveDocumentedResourceReleaseDate(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+    version?: string,
+  ): Promise<string | undefined> {
+    if (version) {
+      return this.repoManager.readTagDate(repoDir, `${type}/${name}@${version}`);
+    }
+
+    const versions = (await this.repoManager.listTags(repoDir, `${type}/${name}@*`))
+      .map((tag) => tag.split("@").at(1) ?? "")
+      .filter((tagVersion) => semver.valid(tagVersion))
+      .sort(semver.compare);
+    const firstVersion = versions[0];
+    if (!firstVersion) return undefined;
+    return this.repoManager.readTagDate(repoDir, `${type}/${name}@${firstVersion}`);
+  }
+
+  private async isFirstPublishedVersion(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+    version: string,
+  ): Promise<boolean> {
+    if (!semver.valid(version)) return false;
+    const versions = (await this.repoManager.listTags(repoDir, `${type}/${name}@*`))
+      .map((tag) => tag.split("@").at(1) ?? "")
+      .filter((tagVersion) => semver.valid(tagVersion))
+      .sort(semver.compare);
+    if (versions.length === 0) return true;
+    return semver.eq(version, versions[0]);
   }
 
   private normalizeMarkdownBlockLines(lines: string[]): string[] {
@@ -1876,12 +2000,40 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     return versions.at(0);
   }
 
+  private async resolvePublishChangelogSection(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+  ): Promise<ChangelogSection> {
+    const tags = await this.repoManager.listTags(repoDir, `${type}/${name}@*`);
+    const hasPublishedHistory = tags.some((tag) => semver.valid(tag.split("@").at(1) ?? ""));
+    return hasPublishedHistory ? "Changed" : "Added";
+  }
+
   private formatResourceRef(
     type: ResourceType,
     name: string,
     version?: string,
   ): string {
     return version ? `${type}/${name}@${version}` : `${type}/${name}`;
+  }
+
+  private async getResourceDocsRef(
+    repoDir: string,
+    type: ResourceType,
+    name: string,
+    versionOverrides = new Map<string, string>(),
+  ): Promise<ResourceDocsRef> {
+    const ref = await this.getResourceRef(repoDir, type, name, versionOverrides);
+    const refWithoutType = ref.startsWith(`${type}/`) ? ref.slice(type.length + 1) : ref;
+    const versionSeparatorIndex = refWithoutType.lastIndexOf("@");
+    if (versionSeparatorIndex <= 0) {
+      return { name: refWithoutType };
+    }
+    return {
+      name: refWithoutType.slice(0, versionSeparatorIndex),
+      version: refWithoutType.slice(versionSeparatorIndex + 1),
+    };
   }
 
   private getSourceTitle(): string {

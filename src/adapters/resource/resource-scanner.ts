@@ -40,6 +40,8 @@ export class ResourceScanner {
           name: parsed.name,
           type,
           entry: parsed.entry,
+          version: this.readStringMetadata(parsed, "version"),
+          category: this.readStringMetadata(parsed, "category"),
           description: parsed.description,
           agents: Array.isArray((parsed as { agents?: unknown }).agents)
             ? ((parsed as { agents?: string[] }).agents ?? [])
@@ -83,6 +85,8 @@ export class ResourceScanner {
       name: this.readStringMetadata(metadata, "name") ?? dirName,
       type,
       entry,
+      version: this.readStringMetadata(metadata, "version"),
+      category: this.readStringMetadata(metadata, "category"),
       description: this.readStringMetadata(metadata, "description"),
       agents:
         this.readStringArrayMetadata(metadata, "agents") ??

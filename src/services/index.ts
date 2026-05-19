@@ -349,9 +349,15 @@ export class ServiceFactory {
     }));
   }
 
-  async initSourceDocs(options: SourceDocsOptions): Promise<SourceDocsResult> {
-    const source = await this.loadSourceFromConfig();
-    return source.initDocs(options);
+  async initSourceDocs(
+    options: SourceDocsOptions & SourceSelectionOptions,
+  ): Promise<SourceDocsResult> {
+    const source = await this.loadSourceFromConfig(options.source);
+    return source.initDocs({
+      force: options.force,
+      repairHistory: options.repairHistory,
+      dryRun: options.dryRun,
+    });
   }
 
   async cloneSource(

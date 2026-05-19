@@ -107,6 +107,9 @@ describe("GitSourceAdapter", () => {
     await expect(
       fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
     ).resolves.toContain("- Archived `rule/code-review`: replaced by stricter rule.");
+    await expect(
+      fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
+    ).resolves.toContain("### Removed");
 
     const restored = await adapter.restore("rule", "code-review");
 
@@ -135,7 +138,13 @@ describe("GitSourceAdapter", () => {
     ]);
     expect(await adapter.list("rule", { archived: true })).toEqual([]);
     await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "| General | `rule/code-review` | original description |",
+      "#### General",
+    );
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "| Resource | Version | Description |",
+    );
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "| `code-review` | - | original description |",
     );
     await expect(
       fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
@@ -170,11 +179,15 @@ describe("GitSourceAdapter", () => {
       fs.readFile(path.join(targetDir, "rules", "published-rule", "himan.yaml"), "utf8"),
     ).resolves.toContain("version: 0.1.0");
     await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "| General | `rule/published-rule@0.1.0` | valid publish |",
+      "#### General",
+    );
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "| `published-rule` | 0.1.0 | valid publish |",
     );
     const changelog = await fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8");
     const today = formatLocalDate(new Date());
     expect(changelog).toContain(`## [${today}]`);
+    expect(changelog).toContain(`## [${today}]\n\n### Added`);
     expect(changelog).toContain("- Published `rule/published-rule@0.1.0`.");
     expect(extractUnreleasedBlock(changelog)).not.toContain(
       "- Published `rule/published-rule@0.1.0`.",
@@ -273,6 +286,37 @@ describe("GitSourceAdapter", () => {
     expect(runGitOutput(["tag", "--list", "rule/published-rule@0.1.1"], targetDir)).toBe("");
   });
 
+  it("records first publish as Added and subsequent publish as Changed", async () => {
+    const { remoteDir, targetDir } = await createRemoteFixture();
+    const adapter = new GitSourceAdapter();
+    const sourceDir = path.join(tmpRoot, "publish-sections");
+
+    await adapter.init({
+      type: "git",
+      repo: remoteDir,
+      repoDir: targetDir,
+      repoId: "test-source",
+    });
+    configureGitUser(targetDir);
+    await writeNamedRule(sourceDir, {
+      name: "publish-sections",
+      description: "first release",
+      content: "# publish-sections\nv1\n",
+    });
+
+    await adapter.publish("rule", "publish-sections", "0.1.0", sourceDir);
+    await fs.writeFile(path.join(sourceDir, "content.md"), "# publish-sections\nv2\n", "utf8");
+    await adapter.publish("rule", "publish-sections", "0.1.1", sourceDir);
+
+    const changelog = await fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8");
+    const today = formatLocalDate(new Date());
+    expect(changelog).toContain(`## [${today}]`);
+    expect(changelog).toContain("### Added");
+    expect(changelog).toContain("- Published `rule/publish-sections@0.1.0`.");
+    expect(changelog).toContain("### Changed");
+    expect(changelog).toContain("- Published `rule/publish-sections@0.1.1`.");
+  });
+
   it("force-initializes source docs with existing resources", async () => {
     const { remoteDir, targetDir } = await createRemoteFixture({ legacySkill: true });
     const adapter = new GitSourceAdapter();
@@ -295,10 +339,16 @@ describe("GitSourceAdapter", () => {
       expect.objectContaining({ action: "updated", path: path.join(targetDir, "CHANGELOG.md") }),
     ]);
     await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "| General | `rule/code-review` | original description |",
+      "#### General",
     );
     await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "| Common | `skill/common-dev-pattern@0.1.0` | Follow existing repository patterns. |",
+      "| `code-review` | - | original description |",
+    );
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "#### Common",
+    );
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "| `common-dev-pattern` | 0.1.0 | Follow existing repository patterns. |",
     );
     await expect(
       fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
@@ -307,10 +357,16 @@ describe("GitSourceAdapter", () => {
       fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
     ).resolves.toContain("- Documented existing resource `skill/common-dev-pattern@0.1.0`.");
     expect(runGitOutput(["show", "origin/main:README.md"], targetDir)).toContain(
-      "| General | `rule/code-review` | original description |",
+      "#### General",
     );
     expect(runGitOutput(["show", "origin/main:README.md"], targetDir)).toContain(
-      "| Common | `skill/common-dev-pattern@0.1.0` | Follow existing repository patterns. |",
+      "#### Common",
+    );
+    expect(runGitOutput(["show", "origin/main:README.md"], targetDir)).toContain(
+      "| `code-review` | - | original description |",
+    );
+    expect(runGitOutput(["show", "origin/main:README.md"], targetDir)).toContain(
+      "| `common-dev-pattern` | 0.1.0 | Follow existing repository patterns. |",
     );
   });
 
@@ -327,6 +383,7 @@ describe("GitSourceAdapter", () => {
     });
     configureGitUser(targetDir);
     runGit(["tag", "rule/code-review@1.0.0"], targetDir);
+    runGit(["tag", "rule/code-review@1.1.0"], targetDir);
     await fs.writeFile(
       path.join(targetDir, "README.md"),
       [
@@ -354,9 +411,15 @@ describe("GitSourceAdapter", () => {
         "",
         "## [Unreleased]",
         "",
+        "### Added",
+        "",
+        "- Initial source README/CHANGELOG scaffold.",
+        "- Documented existing resource `rule/code-review@1.0.0`.",
+        "",
         "### Changed",
         "",
         "- Published `rule/code-review@1.0.0`.",
+        "- Published `rule/code-review@1.1.0`.",
         "- Updated setup note.",
         "",
       ].join("\n"),
@@ -370,15 +433,24 @@ describe("GitSourceAdapter", () => {
       expect.objectContaining({ action: "updated", path: path.join(targetDir, "CHANGELOG.md") }),
     ]);
     const readme = await fs.readFile(path.join(targetDir, "README.md"), "utf8");
-    expect(readme).toContain("| Category | Resource | Description |");
-    expect(readme).toContain("| General | `rule/code-review@1.0.0` | original description |");
+    expect(readme).toContain("#### General");
+    expect(readme).toContain("| Resource | Version | Description |");
+    expect(readme).toContain("| `code-review` | 1.1.0 | original description |");
     expect(readme).toContain("## Notes");
     expect(readme).toContain("keep this section");
     const changelog = await fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8");
     expect(extractUnreleasedBlock(changelog)).toContain("- Updated setup note.");
     expect(extractUnreleasedBlock(changelog)).not.toContain("- Published `rule/code-review@1.0.0`.");
+    expect(extractUnreleasedBlock(changelog)).not.toContain(
+      "- Initial source README/CHANGELOG scaffold.",
+    );
     expect(changelog).toContain(`## [${today}]`);
+    expect(changelog).toContain("### Added");
+    expect(changelog).toContain("### Changed");
+    expect(changelog).toContain("- Initial source README/CHANGELOG scaffold.");
+    expect(changelog).toContain("- Documented existing resource `rule/code-review@1.0.0`.");
     expect(changelog).toContain("- Published `rule/code-review@1.0.0`.");
+    expect(changelog).toContain("- Published `rule/code-review@1.1.0`.");
   });
 
   it("publishes a resource with inferred metadata when himan.yaml is missing", async () => {
@@ -409,7 +481,7 @@ describe("GitSourceAdapter", () => {
       fs.access(path.join(targetDir, "rules", "missing-metadata", "himan.yaml")),
     ).rejects.toThrow();
     await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "`rule/missing-metadata@0.1.0`",
+      "| `missing-metadata` | 0.1.0 |",
     );
     expect(runGitOutput(["tag", "--list", "rule/missing-metadata@0.1.0"], targetDir)).toBe(
       "rule/missing-metadata@0.1.0",
@@ -480,7 +552,10 @@ describe("GitSourceAdapter", () => {
       fs.readFile(path.join(targetDir, "rules", "review-rules", "himan.yaml"), "utf8"),
     ).resolves.toContain("name: review-rules");
     await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "| General | `rule/review-rules@1.0.0` | original description |",
+      "#### General",
+    );
+    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+      "| `review-rules` | 1.0.0 | original description |",
     );
     await expect(
       fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
