@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Added
+
+- Added `himan install skill <name[@version]> -r --depth <n>` for recursive skill dependency installs declared in `himan.yaml`, defaulting to one dependency layer when `-r/--recursive` is present, with shared-dependency de-duplication and circular dependency detection.
+
 ## [0.6.2] - 2026-05-19
 
 ### Changed

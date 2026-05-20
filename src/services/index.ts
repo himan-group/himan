@@ -86,9 +86,33 @@ export interface PublishOptions {
   onProgress?: (progress: PublishProgress) => void;
 }
 
+interface InstallResult {
+  type: ResourceType;
+  name: string;
+  version: string;
+  linkPath: string;
+  mode: InstallMode;
+}
+
 interface InstallOptions {
   includeArchived?: boolean;
   source?: string;
+}
+
+interface SkillDependencyRef {
+  name: string;
+  optional: boolean;
+}
+
+interface PreparedInstall {
+  type: ResourceType;
+  name: string;
+  version: string;
+  storePath: string;
+  effectiveTargets: string[];
+  linkPaths: string[];
+  mode: InstallMode;
+  scope: "project" | "global";
 }
 
 interface SourceSelectionOptions {
@@ -848,13 +872,7 @@ export class ServiceFactory {
     agents?: string[],
     mode: InstallMode = "copy",
     options: InstallOptions = {},
-  ): Promise<{
-    type: ResourceType;
-    name: string;
-    version: string;
-    linkPath: string;
-    mode: InstallMode;
-  }> {
+  ): Promise<InstallResult> {
     const { source, sourceInfo } = await this.loadSourceWithInfoFromConfig(options.source);
     return this.installWithSource(
       source,
@@ -878,13 +896,7 @@ export class ServiceFactory {
     agents?: string[],
     mode: InstallMode = "copy",
     options: InstallOptions = {},
-  ): Promise<{
-    type: ResourceType;
-    name: string;
-    version: string;
-    linkPath: string;
-    mode: InstallMode;
-  }> {
+  ): Promise<InstallResult> {
     const source = await this.loadSourceFromConfig(options.source);
     return this.installWithSource(
       source,
@@ -895,6 +907,54 @@ export class ServiceFactory {
       projectDir,
       agents,
       mode,
+      "global",
+      options,
+    );
+  }
+
+  async installWithDependencies(
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents?: string[],
+    mode: InstallMode = "copy",
+    dependencyDepth = 1,
+    options: InstallOptions = {},
+  ): Promise<InstallResult[]> {
+    const { source, sourceInfo } = await this.loadSourceWithInfoFromConfig(options.source);
+    return this.installSkillDependencyClosure(
+      source,
+      sourceInfo,
+      name,
+      version,
+      projectDir,
+      agents,
+      mode,
+      dependencyDepth,
+      "project",
+      options,
+    );
+  }
+
+  async installGlobalWithDependencies(
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents?: string[],
+    mode: InstallMode = "copy",
+    dependencyDepth = 1,
+    options: InstallOptions = {},
+  ): Promise<InstallResult[]> {
+    const source = await this.loadSourceFromConfig(options.source);
+    return this.installSkillDependencyClosure(
+      source,
+      undefined,
+      name,
+      version,
+      projectDir,
+      agents,
+      mode,
+      dependencyDepth,
       "global",
       options,
     );
@@ -1298,13 +1358,146 @@ export class ServiceFactory {
     mode: InstallMode,
     scope: "project" | "global" = "project",
     options: InstallOptions = {},
-  ): Promise<{
-    type: ResourceType;
-    name: string;
-    version: string;
-    linkPath: string;
-    mode: InstallMode;
-  }> {
+  ): Promise<InstallResult> {
+    const prepared = await this.prepareInstall(
+      source,
+      type,
+      name,
+      version,
+      projectDir,
+      agents,
+      mode,
+      scope,
+      options,
+    );
+    return this.materializePreparedInstall(prepared, projectDir, sourceInfo);
+  }
+
+  private async installSkillDependencyClosure(
+    source: ResourceSourceAdapter,
+    sourceInfo: LockSourceInfo | undefined,
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents: string[] | undefined,
+    mode: InstallMode,
+    dependencyDepth: number,
+    scope: "project" | "global",
+    options: InstallOptions,
+  ): Promise<InstallResult[]> {
+    const installed = new Map<string, InstallResult>();
+    const results: InstallResult[] = [];
+    await this.installSkillDependencyNode(
+      source,
+      sourceInfo,
+      name,
+      version,
+      projectDir,
+      agents,
+      mode,
+      dependencyDepth,
+      scope,
+      options,
+      [],
+      installed,
+      results,
+    );
+    return results;
+  }
+
+  private async installSkillDependencyNode(
+    source: ResourceSourceAdapter,
+    sourceInfo: LockSourceInfo | undefined,
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents: string[] | undefined,
+    mode: InstallMode,
+    remainingDepth: number,
+    scope: "project" | "global",
+    options: InstallOptions,
+    visiting: string[],
+    installed: Map<string, InstallResult>,
+    results: InstallResult[],
+  ): Promise<InstallResult> {
+    const key = `skill/${name}`;
+    const cached = installed.get(key);
+    if (cached) return cached;
+
+    const cycleStartIndex = visiting.indexOf(key);
+    if (cycleStartIndex >= 0) {
+      const cycle = [...visiting.slice(cycleStartIndex), key];
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_METADATA,
+        `Circular skill dependency detected: ${cycle.join(" -> ")}.`,
+        { cycle },
+      );
+    }
+
+    const prepared = await this.prepareInstall(
+      source,
+      "skill",
+      name,
+      version,
+      projectDir,
+      agents,
+      mode,
+      scope,
+      options,
+    );
+
+    visiting.push(key);
+    try {
+      if (remainingDepth > 0) {
+        const dependencies = await this.readSkillDependenciesFromDir(prepared.storePath);
+        for (const dependency of dependencies) {
+          try {
+            await this.installSkillDependencyNode(
+              source,
+              sourceInfo,
+              dependency.name,
+              undefined,
+              projectDir,
+              prepared.effectiveTargets,
+              mode,
+              remainingDepth - 1,
+              scope,
+              options,
+              visiting,
+              installed,
+              results,
+            );
+          } catch (error) {
+            if (dependency.optional && this.isSkippableOptionalDependencyError(error)) {
+              continue;
+            }
+            throw error;
+          }
+        }
+      }
+
+      const result = await this.materializePreparedInstall(prepared, projectDir, sourceInfo);
+      installed.set(key, result);
+      results.push(result);
+      return result;
+    } finally {
+      if (visiting[visiting.length - 1] === key) {
+        visiting.pop();
+      }
+    }
+  }
+
+  private async prepareInstall(
+    source: ResourceSourceAdapter,
+    type: ResourceType,
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents: string[] | undefined,
+    mode: InstallMode,
+    scope: "project" | "global",
+    options: InstallOptions,
+  ): Promise<PreparedInstall> {
     const archived = await source.isArchived(type, name);
     if (archived && !options.includeArchived) {
       throw new HimanError(
@@ -1336,32 +1529,52 @@ export class ServiceFactory {
             agents,
             resourceMeta?.agents,
           )
-        : await this.resolveEffectiveAgents(
-            projectDir,
-            agents,
-            resourceMeta?.agents,
-          );
+        : await this.resolveEffectiveAgents(projectDir, agents, resourceMeta?.agents);
     const linkPaths =
       scope === "global"
         ? getGlobalResourcePaths(this.paths.getHomeDir(), type, name, effectiveTargets)
         : getProjectResourcePaths(projectDir, type, name, effectiveTargets);
-    for (const linkPath of linkPaths) {
-      await this.materializeResource(storePath, linkPath, mode);
+
+    return {
+      type,
+      name,
+      version: resolvedVersion,
+      storePath,
+      effectiveTargets,
+      linkPaths,
+      mode,
+      scope,
+    };
+  }
+
+  private async materializePreparedInstall(
+    prepared: PreparedInstall,
+    projectDir: string,
+    sourceInfo?: LockSourceInfo,
+  ): Promise<InstallResult> {
+    for (const linkPath of prepared.linkPaths) {
+      await this.materializeResource(prepared.storePath, linkPath, prepared.mode);
     }
-    if (scope === "project") {
+    if (prepared.scope === "project") {
       if (!sourceInfo) {
         throw new Error("Project install requires source lock information.");
       }
       await this.lockStore.upsertResource(projectDir, sourceInfo, {
-        type,
-        name,
-        version: resolvedVersion,
-        agents: effectiveTargets,
-        mode,
+        type: prepared.type,
+        name: prepared.name,
+        version: prepared.version,
+        agents: prepared.effectiveTargets,
+        mode: prepared.mode,
       });
     }
 
-    return { type, name, version: resolvedVersion, linkPath: linkPaths[0], mode };
+    return {
+      type: prepared.type,
+      name: prepared.name,
+      version: prepared.version,
+      linkPath: prepared.linkPaths[0],
+      mode: prepared.mode,
+    };
   }
 
   private async loadSourceFromConfig(sourceRef?: string): Promise<ResourceSourceAdapter> {
@@ -2080,6 +2293,106 @@ export class ServiceFactory {
         this.readStringArrayMetadata(metadata, "agents") ??
         this.readStringArrayMetadata(metadata, "targets"),
     };
+  }
+
+  private async readSkillDependenciesFromDir(
+    resourceDir: string,
+  ): Promise<SkillDependencyRef[]> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (!(await this.exists(yamlPath))) {
+      return [];
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = YAML.parse(await fs.readFile(yamlPath, "utf8"));
+    } catch {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_METADATA,
+        "himan.yaml is not valid YAML.",
+        { yamlPath },
+      );
+    }
+
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_METADATA,
+        "himan.yaml must be an object.",
+        { yamlPath },
+      );
+    }
+
+    const dependencies = (
+      parsed as {
+        analysis?: {
+          dependencies?: {
+            skills?: unknown;
+          };
+        };
+      }
+    ).analysis?.dependencies?.skills;
+    if (dependencies === undefined) {
+      return [];
+    }
+    if (!Array.isArray(dependencies)) {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_METADATA,
+        "analysis.dependencies.skills must be an array when present.",
+        { yamlPath },
+      );
+    }
+
+    const seen = new Set<string>();
+    const refs: SkillDependencyRef[] = [];
+    for (const entry of dependencies) {
+      const dependency = this.parseSkillDependencyEntry(entry, yamlPath);
+      if (seen.has(dependency.name)) {
+        continue;
+      }
+      seen.add(dependency.name);
+      refs.push(dependency);
+    }
+    return refs;
+  }
+
+  private parseSkillDependencyEntry(
+    entry: unknown,
+    yamlPath: string,
+  ): SkillDependencyRef {
+    if (typeof entry === "string") {
+      const name = entry.trim();
+      if (name) {
+        return { name, optional: false };
+      }
+    } else if (typeof entry === "object" && entry !== null && !Array.isArray(entry)) {
+      const { name, optional } = entry as { name?: unknown; optional?: unknown };
+      if (typeof name === "string" && name.trim()) {
+        if (optional !== undefined && typeof optional !== "boolean") {
+          throw new HimanError(
+            errorCodes.INVALID_RESOURCE_METADATA,
+            "Skill dependency optional flag must be boolean when present.",
+            { yamlPath, dependency: entry },
+          );
+        }
+        return { name: name.trim(), optional: optional === true };
+      }
+    }
+
+    throw new HimanError(
+      errorCodes.INVALID_RESOURCE_METADATA,
+      "Skill dependency entries must be a non-empty string or an object with a name field.",
+      { yamlPath, dependency: entry },
+    );
+  }
+
+  private isSkippableOptionalDependencyError(error: unknown): boolean {
+    const skippableCodes = new Set<string>([
+      errorCodes.RESOURCE_NOT_FOUND,
+      errorCodes.VERSION_NOT_FOUND,
+      errorCodes.RESOURCE_ARCHIVED,
+    ]);
+    return error instanceof HimanError
+      && skippableCodes.has(error.code);
   }
 
   private async updateRenamedResourceMetadata(

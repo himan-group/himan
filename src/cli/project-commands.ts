@@ -68,6 +68,8 @@ export function registerProjectCommands(
     .option("--source <alias>", "source alias for single-resource install")
     .option("-g, --global", "install into user-level agent directories")
     .option("--include-archived", "allow installing an archived resource explicitly")
+    .option("-r, --recursive", "install skill dependencies declared in himan.yaml")
+    .option("--depth <n>", "dependency install depth for recursive skill install (default: 1)")
     .description("Install resource, or install from himan.lock")
     .action(
       async (
@@ -79,11 +81,16 @@ export function registerProjectCommands(
           source?: string;
           global?: boolean;
           includeArchived?: boolean;
+          recursive?: boolean;
+          depth?: string;
         },
       ) => {
         await runAction(async () => {
           const agents = parseAgents(options.agent);
           const mode = parseInstallMode(options.mode);
+          const dependencyDepth = options.recursive
+            ? parseDependencyDepthOption(options.depth) ?? 1
+            : undefined;
           if (!type && !nameVersion) {
             if (options.source) {
               throw new HimanError(
@@ -94,7 +101,19 @@ export function registerProjectCommands(
             if (options.includeArchived) {
               throw new HimanError(
                 errorCodes.CLI_USAGE,
-                "--include-archived only applies to single-resource install.",
+                  "--include-archived only applies to single-resource install.",
+              );
+            }
+            if (options.recursive) {
+              throw new HimanError(
+                errorCodes.CLI_USAGE,
+                "--recursive only applies to single-resource skill install.",
+              );
+            }
+            if (options.depth !== undefined) {
+              throw new HimanError(
+                errorCodes.CLI_USAGE,
+                "--depth only applies to single-resource recursive skill install.",
               );
             }
             if (options.global) {
@@ -127,28 +146,70 @@ export function registerProjectCommands(
 
           const resourceType = ensureResourceType(type);
           const { name, version } = parseNameVersion(nameVersion);
-          const result = options.global
-            ? await services.installGlobal(
-                resourceType,
-                name,
-                version,
-                process.cwd(),
-                agents,
-                mode,
-                { includeArchived: options.includeArchived, source: options.source },
-              )
-            : await services.install(
-                resourceType,
-                name,
-                version,
-                process.cwd(),
-                agents,
-                mode,
-                { includeArchived: options.includeArchived, source: options.source },
-              );
-          process.stdout.write(
-            `Installed ${options.global ? "global " : ""}${result.type}/${result.name}@${result.version}\n`,
-          );
+          if (options.recursive && resourceType !== "skill") {
+            throw new HimanError(
+              errorCodes.CLI_USAGE,
+              "--recursive only applies to single-resource skill install.",
+            );
+          }
+          if (!options.recursive && options.depth !== undefined) {
+            throw new HimanError(
+              errorCodes.CLI_USAGE,
+              "--depth requires --recursive.",
+            );
+          }
+
+          const installOptions = {
+            includeArchived: options.includeArchived,
+            source: options.source,
+          };
+          const results = options.recursive
+            ? options.global
+              ? await services.installGlobalWithDependencies(
+                  name,
+                  version,
+                  process.cwd(),
+                  agents,
+                  mode,
+                  dependencyDepth,
+                  installOptions,
+                )
+              : await services.installWithDependencies(
+                  name,
+                  version,
+                  process.cwd(),
+                  agents,
+                  mode,
+                  dependencyDepth,
+                  installOptions,
+                )
+            : [
+                options.global
+                  ? await services.installGlobal(
+                      resourceType,
+                      name,
+                      version,
+                      process.cwd(),
+                      agents,
+                      mode,
+                      installOptions,
+                    )
+                  : await services.install(
+                      resourceType,
+                      name,
+                      version,
+                      process.cwd(),
+                      agents,
+                      mode,
+                      installOptions,
+                    ),
+              ];
+
+          for (const result of results) {
+            process.stdout.write(
+              `Installed ${options.global ? "global " : ""}${result.type}/${result.name}@${result.version}\n`,
+            );
+          }
         });
       },
     );
@@ -287,6 +348,19 @@ function parseInstallMode(input?: string): InstallMode | undefined {
     errorCodes.INVALID_INPUT,
     `Unsupported install mode: ${input}. Supported modes: link, copy`,
   );
+}
+
+function parseDependencyDepthOption(input?: string): number | undefined {
+  if (input === undefined) return undefined;
+  const normalized = input.trim();
+  if (!/^\d+$/.test(normalized)) {
+    throw new HimanError(
+      errorCodes.INVALID_INPUT,
+      `Unsupported dependency depth: ${input}. Use a non-negative integer.`,
+    );
+  }
+
+  return Number.parseInt(normalized, 10);
 }
 
 function parseAgents(input?: string): string[] | undefined {

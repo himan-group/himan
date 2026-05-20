@@ -115,9 +115,9 @@
 
 ### `E_INVALID_RESOURCE_METADATA`
 
-- **含义**：资源元数据不合法，无法发布或读取为有效资源。
-- **常见触发**：`himan.yaml` 存在但 `name/type/entry` 不匹配，`entry` 指向的入口文件不存在，或缺少 `himan.yaml` 且默认入口文件也不存在。
-- **建议处理**：如果使用 `himan.yaml`，确认 `name`、`type`、`entry` 与命令参数和文件结构一致；如果暂不使用 `himan.yaml`，确认默认入口文件存在：`rule` / `command` 为 `content.md`，`skill` 为 `SKILL.md`。
+- **含义**：资源元数据不合法，无法发布、读取为有效资源，或无法解析为可安装的依赖信息。
+- **常见触发**：`himan.yaml` 存在但 `name/type/entry` 不匹配，`entry` 指向的入口文件不存在，缺少 `himan.yaml` 且默认入口文件也不存在，或 `analysis.dependencies.skills` 结构非法/存在循环依赖。
+- **建议处理**：如果使用 `himan.yaml`，确认 `name`、`type`、`entry` 与命令参数和文件结构一致；若使用 `install skill ... -r [--depth <n>]`，再额外确认 `analysis.dependencies.skills` 为合法数组，且在实际递归深度范围内不存在环；如果暂不使用 `himan.yaml`，确认默认入口文件存在：`rule` / `command` 为 `content.md`，`skill` 为 `SKILL.md`。
 
 ### `E_PUBLISH_NO_CHANGES`
 

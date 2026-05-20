@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import YAML from "yaml";
 import { toRepoId } from "../../src/utils/repo-id.js";
 
 const TEST_REPO = "https://github.com/himan-group/himan-test.git";
@@ -880,6 +881,173 @@ describe("CLI commands with external git source", () => {
     await expect(
       fs.access(path.join(projectDir, ".himan", "dev", "skill", "risk-check")),
     ).rejects.toThrow();
+  });
+
+  it("installs one dependency layer by default when requested", async () => {
+    const dependencyHomeDir = path.join(tmpRoot, "skill-dependency-home");
+    const dependencyProjectDir = path.join(tmpRoot, "skill-dependency-project");
+    const dependencyRemote = await createSkillRemote("skill-dependency", [
+      {
+        name: "skill-root",
+        version: "1.0.0",
+        description: "root skill",
+        dependencies: ["skill-mid", "skill-shared"],
+      },
+      {
+        name: "skill-mid",
+        version: "1.0.0",
+        description: "mid skill",
+        dependencies: ["skill-leaf", "skill-shared"],
+      },
+      {
+        name: "skill-leaf",
+        version: "1.0.0",
+        description: "leaf skill",
+      },
+      {
+        name: "skill-shared",
+        version: "1.0.0",
+        description: "shared skill",
+      },
+    ]);
+
+    await fs.mkdir(dependencyHomeDir, { recursive: true });
+    await fs.mkdir(dependencyProjectDir, { recursive: true });
+
+    const initResult = runCli(["init", dependencyRemote], dependencyProjectDir, dependencyHomeDir);
+    expect(initResult.status).toBe(0);
+
+    const installResult = runCli(
+      ["install", "skill", "skill-root@1.0.0", "-r", "--agent", "codex"],
+      dependencyProjectDir,
+      dependencyHomeDir,
+    );
+    expect(installResult.status).toBe(0);
+    expect(installResult.stdout).toContain("Installed skill/skill-mid@1.0.0");
+    expect(installResult.stdout).toContain("Installed skill/skill-root@1.0.0");
+    expect(installResult.stdout).toContain("Installed skill/skill-shared@1.0.0");
+    expect(installResult.stdout.match(/Installed skill\/skill-shared@1.0.0/g)?.length ?? 0).toBe(1);
+    expect(installResult.stdout).not.toContain("Installed skill/skill-leaf@1.0.0");
+
+    for (const name of ["skill-root", "skill-mid", "skill-shared"]) {
+      await expect(
+        fs.readFile(
+          path.join(dependencyProjectDir, ".agents", "skills", name, "SKILL.md"),
+          "utf8",
+        ),
+      ).resolves.toContain(`# ${name}`);
+    }
+    await expect(
+      fs.access(path.join(dependencyProjectDir, ".agents", "skills", "skill-leaf")),
+    ).rejects.toThrow();
+
+    const lockRaw = await fs.readFile(path.join(dependencyProjectDir, "himan.lock"), "utf8");
+    const lock = JSON.parse(lockRaw) as {
+      resources: Array<{ type: string; name: string; agents?: string[] }>;
+    };
+    expect(lock.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "skill", name: "skill-root", agents: ["codex"] }),
+        expect.objectContaining({ type: "skill", name: "skill-mid", agents: ["codex"] }),
+        expect.objectContaining({ type: "skill", name: "skill-shared", agents: ["codex"] }),
+      ]),
+    );
+    expect(lock.resources.some((item) => item.type === "skill" && item.name === "skill-leaf")).toBe(
+      false,
+    );
+  });
+
+  it("installs deeper skill dependencies when an explicit depth is provided", async () => {
+    const dependencyHomeDir = path.join(tmpRoot, "skill-dependency-depth-home");
+    const dependencyProjectDir = path.join(tmpRoot, "skill-dependency-depth-project");
+    const dependencyRemote = await createSkillRemote("skill-dependency-depth", [
+      {
+        name: "skill-root",
+        version: "1.0.0",
+        description: "root skill",
+        dependencies: ["skill-mid"],
+      },
+      {
+        name: "skill-mid",
+        version: "1.0.0",
+        description: "mid skill",
+        dependencies: ["skill-leaf"],
+      },
+      {
+        name: "skill-leaf",
+        version: "1.0.0",
+        description: "leaf skill",
+      },
+    ]);
+
+    await fs.mkdir(dependencyHomeDir, { recursive: true });
+    await fs.mkdir(dependencyProjectDir, { recursive: true });
+
+    const initResult = runCli(["init", dependencyRemote], dependencyProjectDir, dependencyHomeDir);
+    expect(initResult.status).toBe(0);
+
+    const installResult = runCli(
+      ["install", "skill", "skill-root@1.0.0", "-r", "--depth", "2", "--agent", "codex"],
+      dependencyProjectDir,
+      dependencyHomeDir,
+    );
+    expect(installResult.status).toBe(0);
+    expect(installResult.stdout).toContain("Installed skill/skill-root@1.0.0");
+    expect(installResult.stdout).toContain("Installed skill/skill-mid@1.0.0");
+    expect(installResult.stdout).toContain("Installed skill/skill-leaf@1.0.0");
+
+    await expect(
+      fs.readFile(
+        path.join(dependencyProjectDir, ".agents", "skills", "skill-leaf", "SKILL.md"),
+        "utf8",
+      ),
+    ).resolves.toContain("# skill-leaf");
+  });
+
+  it("rejects circular skill dependencies during recursive install", async () => {
+    const cycleHomeDir = path.join(tmpRoot, "skill-cycle-home");
+    const cycleProjectDir = path.join(tmpRoot, "skill-cycle-project");
+    const cycleRemote = await createSkillRemote("skill-cycle", [
+      {
+        name: "cycle-a",
+        version: "1.0.0",
+        description: "cycle a",
+        dependencies: ["cycle-b"],
+      },
+      {
+        name: "cycle-b",
+        version: "1.0.0",
+        description: "cycle b",
+        dependencies: ["cycle-c"],
+      },
+      {
+        name: "cycle-c",
+        version: "1.0.0",
+        description: "cycle c",
+        dependencies: ["cycle-a"],
+      },
+    ]);
+
+    await fs.mkdir(cycleHomeDir, { recursive: true });
+    await fs.mkdir(cycleProjectDir, { recursive: true });
+
+    const initResult = runCli(["init", cycleRemote], cycleProjectDir, cycleHomeDir);
+    expect(initResult.status).toBe(0);
+
+    const installResult = runCli(
+      ["install", "skill", "cycle-a@1.0.0", "-r", "--depth", "3", "--agent", "codex"],
+      cycleProjectDir,
+      cycleHomeDir,
+    );
+    expect(installResult.status).toBe(1);
+    expect(installResult.stderr).toContain("E_INVALID_RESOURCE_METADATA");
+    expect(installResult.stderr).toContain(
+      "Circular skill dependency detected: skill/cycle-a -> skill/cycle-b -> skill/cycle-c -> skill/cycle-a.",
+    );
+    await expect(
+      fs.access(path.join(cycleProjectDir, ".agents", "skills", "cycle-a")),
+    ).rejects.toThrow();
+    await expect(fs.access(path.join(cycleProjectDir, "himan.lock"))).rejects.toThrow();
   });
 
   it("switches an existing Codex skill directory to dev mode", async () => {
@@ -2222,6 +2390,85 @@ async function createSingleRuleRemote(
     seedDir,
   );
   runGit(["tag", `rule/${name}@${version}`], seedDir);
+  runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
+  runGit(["remote", "add", "origin", remoteDir], seedDir);
+  runGit(["push", "-u", "origin", "main"], seedDir);
+  runGit(["push", "--tags"], seedDir);
+
+  return remoteDir;
+}
+
+async function createSkillRemote(
+  label: string,
+  skills: Array<{
+    name: string;
+    version: string;
+    description: string;
+    dependencies?: Array<string | { name: string; optional?: boolean }>;
+  }>,
+): Promise<string> {
+  const seedDir = path.join(tmpRoot, `${label}-seed`);
+  const remoteDir = path.join(tmpRoot, `${label}.git`);
+
+  await fs.mkdir(seedDir, { recursive: true });
+  await fs.mkdir(remoteDir, { recursive: true });
+
+  for (const skill of skills) {
+    const skillDir = path.join(seedDir, "skills", skill.name);
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(skillDir, "himan.yaml"),
+      YAML.stringify({
+        name: skill.name,
+        type: "skill",
+        version: skill.version,
+        entry: "SKILL.md",
+        description: skill.description,
+        agents: ["cursor"],
+        analysis: {
+          dependencies: {
+            skills: skill.dependencies ?? [],
+            scripts: [],
+            mcpTools: [],
+          },
+        },
+      }),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(skillDir, "SKILL.md"),
+      `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n# ${skill.name}\n`,
+      "utf8",
+    );
+  }
+
+  runGit(["init", "--initial-branch=main"], seedDir);
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "add",
+      ".",
+    ],
+    seedDir,
+  );
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "commit",
+      "-m",
+      `Add ${label} skill fixtures`,
+    ],
+    seedDir,
+  );
+  for (const skill of skills) {
+    runGit(["tag", `skill/${skill.name}@${skill.version}`], seedDir);
+  }
   runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
   runGit(["remote", "add", "origin", remoteDir], seedDir);
   runGit(["push", "-u", "origin", "main"], seedDir);
