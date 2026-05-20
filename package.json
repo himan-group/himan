@@ -1,6 +1,6 @@
 {
   "name": "@hi-man/himan",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Prompt and agent asset management CLI",
   "keywords": [
     "ai",
@@ -42,10 +42,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "bin": {
-    "himan": "dist/bin/himan.js",
-    "himan-source": "dist/bin/himan-source.js",
-    "himan-resource": "dist/bin/himan-resource.js",
-    "himan-project": "dist/bin/himan-project.js"
+    "himan": "dist/bin/himan.js"
   },
   "scripts": {
     "clean": "rm -rf dist",

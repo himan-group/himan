@@ -27,14 +27,11 @@ pnpm dlx @hi-man/himan --help
 
 ### 命令入口
 
-包内提供四个 CLI 入口：
+包内只提供一个 CLI 入口：
 
-- `himan <子命令>`（主入口）
-- `himan-source <子命令>`（source 相关）
-- `himan-resource <子命令>`（resource/project 相关）
-- `himan-project <子命令>`（project 相关）
+- `himan <命令组> <子命令>`
 
-下文默认使用 `himan` 主入口；三个专用入口在对应章节单独列出。
+命令按 `source`、`resource`、`project`、`agent`、`doctor` 分组。
 
 ## 一分钟上手
 
@@ -187,18 +184,6 @@ analysis:
 | `source sync <from> <to> [--target-branch b] [--add-source name] [--use] [--dry-run] [--json]` | 将最新资源快照同步到目标 Git 仓库并创建对应最新 tag |
 | `source init <git_url>`       | 与 `init` 等价，便于统一走 `himan source ...` 入口     |
 
-等价独立命令：
-
-- `himan-source init <git_url>`
-- `himan-source add <name> <git_url> [--alias alias]`
-- `himan-source alias <source> <alias>`
-- `himan-source rename <source> <new-name> [--alias alias]`
-- `himan-source use <source> [--alias alias]`
-- `himan-source list [--json]`
-- `himan-source init-docs [--force] [--dry-run] [--json]`
-- `himan-source clone <from> <to> [...]`
-- `himan-source sync <from> <to> [...]`
-
 ### 2) resource（资源）
 
 | 命令                             | 说明                                                                                |
@@ -235,12 +220,10 @@ analysis:
 |------|------|
 | `doctor [--json]` | 检查 Node/Git、Himan home、当前 source、资源扫描、默认 agent、项目 lock、归档资源引用和已安装目标；存在 error 时以非零状态退出 |
 
-也可使用分组命令（与上面等价）：
+常用分组命令：
 
 - `himan resource list|history|create|archive|restore|rename ...`
-- `himan-resource list|history|create|archive|restore|rename ...`（兼容保留：也可执行 install/dev/uninstall/publish）
 - `himan project list|install|dev|uninstall|publish ...`
-- `himan-project list|install|dev|uninstall|publish ...`
 - `himan agent list|use|current|clear ...`
 - `himan doctor ...`
 
