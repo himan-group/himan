@@ -87,6 +87,13 @@ describe("CLI commands with external git source", () => {
     expect(helpResult.stdout).not.toContain("-V, --version");
   });
 
+  it("documents publish multi-name examples in help", () => {
+    const helpResult = runCli(["publish", "--help"], projectDir, homeDir);
+    expect(helpResult.status).toBe(0);
+    expect(helpResult.stdout).toContain("resource name, or comma-separated names in one argument");
+    expect(helpResult.stdout).toContain("himan publish skill skill-a,skill-c");
+  });
+
   it("reports doctor errors before init", async () => {
     const doctorHomeDir = path.join(tmpRoot, "doctor-home");
     const doctorProjectDir = path.join(tmpRoot, "doctor-project");

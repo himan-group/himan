@@ -258,7 +258,7 @@ export function registerProjectCommands(
   command
     .command("publish")
     .argument("[type]", "resource type")
-    .argument("[name]", "resource name or comma separated names")
+    .argument("[name]", "resource name, or comma-separated names in one argument")
     .option("--patch", "patch release")
     .option("--minor", "minor release")
     .option("--major", "major release")
@@ -266,6 +266,16 @@ export function registerProjectCommands(
     .option("-g, --global", "install the published version into user-level agent directories")
     .option("--all", "publish all current-project resources, or all resources of the given type")
     .description("Publish resource (default: --patch)")
+    .addHelpText(
+      "after",
+      `
+Examples:
+  $ himan publish skill risk-check
+  $ himan publish skill skill-a,skill-c
+  $ himan publish --all
+  $ himan publish skill --all
+`,
+    )
     .action(
       async (
         type: string | undefined,
@@ -299,7 +309,10 @@ export function registerProjectCommands(
                   + "  - himan publish <type> <name> [--patch|--minor|--major] [--source alias]\n"
                   + "  - himan publish --all [--patch|--minor|--major] [--source alias]\n"
                   + "  - himan publish <type> --all [--patch|--minor|--major] [--source alias]\n"
-                  + "  - himan publish <type> <name1,name2,...> [--patch|--minor|--major] [--source alias]",
+                  + "  - himan publish <type> <name1,name2,...> [--patch|--minor|--major] [--source alias]\n"
+                  + "Examples:\n"
+                  + "  - himan publish skill risk-check\n"
+                  + "  - himan publish skill skill-a,skill-c",
               );
             }
             const result = await services.publish(
