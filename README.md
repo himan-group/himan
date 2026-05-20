@@ -218,7 +218,7 @@ analysis:
 | `install [type] [name[@version]] [-g\|--global] [--source alias] [--agent a,b] [--mode link\|copy] [--include-archived]` | 有参数时从当前 default source 安装指定资源，也可用 `--source` 指定 source 别名；**无参数**时按 `himan.lock` 记录的 source 批量安装，不能搭配 `--source`；加 `-g` / `--global` 时安装到用户级 agent 目录且不写项目 lock；可覆盖安装目标 agent 或安装模式；归档资源必须显式传 `--include-archived` 才能按历史版本安装 |
 | `dev <type> <name>`               | 切换到开发态；项目资源原地编辑，全局资源先复制到当前项目目标目录 |
 | `uninstall <type> <name>`         | 从项目移除安装目标，并同步删除 `himan.lock` 条目           |
-| `publish <type> <name> [--source alias] [-g\|--global]` | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个）；可用 `--source` 指定发布目标 source 别名；发布后默认安装到当前项目并更新 lock，`-g` / `--global` 安装到用户级目录 |
+| `publish [type] [name[,name...]] [--all] [--source alias] [-g\|--global]` | 默认 `--patch`；可选 `--minor` / `--major`（勿同时使用多个）；支持单资源发布、`publish --all` 发布当前项目全部资源、`publish <type> --all` 发布某一类型全部资源、`publish <type> a,b` 发布多个指定资源；可用 `--source` 指定发布目标 source 别名；发布后默认安装到当前项目并更新 lock，`-g` / `--global` 安装到用户级目录 |
 
 ### 4) agent（默认 Agent）
 
@@ -247,7 +247,7 @@ analysis:
 说明：资源与项目相关命令统一使用 `--agent` 指定目标 Agent。
 若未显式传 `--agent`，`create` / `install` 会使用当前项目默认 agent、全局默认 agent、资源 metadata 或内置默认 `cursor` 中最合适的一项；`dev` 会优先使用当前项目已有安装位置，找不到时再从用户级全局安装位置复制到当前项目。`install -g` / `install --global` 会优先复用当前项目 lock 里该资源的 agent，未命中时再使用默认 install 解析顺序，但目标根目录是用户 home 下对应 agent 目录。
 
-`publish` 会展示 prepare、resolve-version、publish-source、sync-store、install、cleanup、done 等阶段日志。发布源优先使用旧版 `.himan/dev` 目录，其次使用当前项目 agent 目标目录，最后回退到 source 仓库对应资源目录。若资源目录包含 `himan.yaml`，发布前会校验元数据与入口文件；若没有 `himan.yaml`，则按默认入口推断最小元数据并发布，不会强制创建 `himan.yaml`。若待发布资源内容与最新已发布版本一致，则以 `E_PUBLISH_NO_CHANGES` 终止发布。发布需要可推送的 Git 权限。发布 commit 会包含资源目录以及自动维护的 source 根目录 `README.md` / `CHANGELOG.md`。发布成功后会从新版本 store 以 `copy` 模式重新安装；默认安装到当前项目并更新 `himan.lock`，传 `-g` / `--global` 时安装到用户级目录且不写当前项目 lock。
+`publish` 会展示 prepare、resolve-version、publish-source、sync-store、install、cleanup、done 等阶段日志；批量发布还会额外显示 batch 扫描、选中资源数、当前进度 `(n/total)` 和最终 summary。发布源优先使用旧版 `.himan/dev` 目录，其次使用当前项目 agent 目标目录，最后回退到 source 仓库对应资源目录。若资源目录包含 `himan.yaml`，发布前会校验元数据与入口文件；若没有 `himan.yaml`，则按默认入口推断最小元数据并发布，不会强制创建 `himan.yaml`。单资源发布在待发布资源内容与最新已发布版本一致时会以 `E_PUBLISH_NO_CHANGES` 终止；批量发布会把这类资源记为 skipped 后继续后续资源。发布需要可推送的 Git 权限。发布 commit 会包含资源目录以及自动维护的 source 根目录 `README.md` / `CHANGELOG.md`。发布成功后会从新版本 store 以 `copy` 模式重新安装；默认安装到当前项目并更新 `himan.lock`，传 `-g` / `--global` 时安装到用户级目录且不写当前项目 lock。
 
 `rename` 暂不推荐使用。该命令会移动 source 仓库里的资源目录并更新资源 metadata 名称、README 资源索引和 CHANGELOG。已有发布 tag 不会被改写；若旧资源已有历史版本，rename 会为新名字创建一个指向当前最新版本的 tag。默认会迁移当前项目中对应的安装目标、`.himan/dev` 副本和 lock 条目；传 `--no-project` 时只改 source。对于 skill，命令只自动更新 metadata / front matter 中的精确 `name` 字段，不会自动替换 `SKILL.md` 正文中的旧名称引用。
 

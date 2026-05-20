@@ -952,6 +952,107 @@ describe("CLI commands with external git source", () => {
     expect(storedSkillContent).toContain("Skill published from create artifact.");
   });
 
+  it("publishes all current-project resources with batch progress logs", async () => {
+    const batchHomeDir = path.join(tmpRoot, "batch-all-home");
+    const batchProjectDir = path.join(tmpRoot, "batch-all-project");
+    const batchRemote = await createEmptyRemote("batch-all");
+    await fs.mkdir(batchHomeDir, { recursive: true });
+    await fs.mkdir(batchProjectDir, { recursive: true });
+
+    expect(runCli(["init", batchRemote], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "rule", "batch-rule"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "command", "batch-command"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "batch-skill"], batchProjectDir, batchHomeDir).status).toBe(0);
+
+    const publishResult = runCli(["publish", "--all", "--patch"], batchProjectDir, batchHomeDir);
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("[publish:batch] Scanning current project resources.");
+    expect(publishResult.stdout).toContain("[publish:batch] Selected 3 resource(s).");
+    expect(publishResult.stdout).toContain("(1/3)");
+    expect(publishResult.stdout).toContain("Published rule/batch-rule@0.0.1.");
+    expect(publishResult.stdout).toContain("Published command/batch-command@0.0.1.");
+    expect(publishResult.stdout).toContain("Published skill/batch-skill@0.0.1.");
+    expect(publishResult.stdout).toContain("[publish:batch] Summary: 3 published, 0 skipped, 0 failed.");
+
+    expect(
+      JSON.parse(runCli(["history", "rule", "batch-rule", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "rule/batch-rule@0.0.1" }]);
+    expect(
+      JSON.parse(runCli(["history", "command", "batch-command", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "command/batch-command@0.0.1" }]);
+    expect(
+      JSON.parse(runCli(["history", "skill", "batch-skill", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "skill/batch-skill@0.0.1" }]);
+  }, 20000);
+
+  it("publishes all current-project skills only", async () => {
+    const batchHomeDir = path.join(tmpRoot, "batch-skill-all-home");
+    const batchProjectDir = path.join(tmpRoot, "batch-skill-all-project");
+    const batchRemote = await createEmptyRemote("batch-skill-all");
+    await fs.mkdir(batchHomeDir, { recursive: true });
+    await fs.mkdir(batchProjectDir, { recursive: true });
+
+    expect(runCli(["init", batchRemote], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "skill-one"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "skill-two"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "rule", "rule-one"], batchProjectDir, batchHomeDir).status).toBe(0);
+
+    const publishResult = runCli(
+      ["publish", "skill", "--all", "--patch"],
+      batchProjectDir,
+      batchHomeDir,
+    );
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("[publish:batch] Selected 2 resource(s).");
+    expect(publishResult.stdout).toContain("Published skill/skill-one@0.0.1.");
+    expect(publishResult.stdout).toContain("Published skill/skill-two@0.0.1.");
+    expect(publishResult.stdout).not.toContain("Published rule/rule-one@0.0.1.");
+
+    expect(
+      JSON.parse(runCli(["history", "skill", "skill-one", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "skill/skill-one@0.0.1" }]);
+    expect(
+      JSON.parse(runCli(["history", "skill", "skill-two", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "skill/skill-two@0.0.1" }]);
+    expect(
+      JSON.parse(runCli(["history", "rule", "rule-one", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([]);
+  }, 20000);
+
+  it("publishes multiple named skills from the current project", async () => {
+    const batchHomeDir = path.join(tmpRoot, "batch-skill-names-home");
+    const batchProjectDir = path.join(tmpRoot, "batch-skill-names-project");
+    const batchRemote = await createEmptyRemote("batch-skill-names");
+    await fs.mkdir(batchHomeDir, { recursive: true });
+    await fs.mkdir(batchProjectDir, { recursive: true });
+
+    expect(runCli(["init", batchRemote], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "skill-a"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "skill-b"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "skill-c"], batchProjectDir, batchHomeDir).status).toBe(0);
+
+    const publishResult = runCli(
+      ["publish", "skill", "skill-a,skill-c", "--patch"],
+      batchProjectDir,
+      batchHomeDir,
+    );
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("[publish:batch] Selected 2 resource(s).");
+    expect(publishResult.stdout).toContain("Published skill/skill-a@0.0.1.");
+    expect(publishResult.stdout).toContain("Published skill/skill-c@0.0.1.");
+    expect(publishResult.stdout).not.toContain("Published skill/skill-b@0.0.1.");
+
+    expect(
+      JSON.parse(runCli(["history", "skill", "skill-a", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "skill/skill-a@0.0.1" }]);
+    expect(
+      JSON.parse(runCli(["history", "skill", "skill-b", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([]);
+    expect(
+      JSON.parse(runCli(["history", "skill", "skill-c", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "skill/skill-c@0.0.1" }]);
+  }, 20000);
+
   it("supports install and dev for command and skill", async () => {
     const installCommand = runCli(
       ["install", "command", "release-note@0.1.0"],

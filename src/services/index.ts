@@ -80,16 +80,45 @@ export interface PublishProgress {
   message: string;
 }
 
+export interface PublishBatchProgress {
+  stage: "start" | "success" | "skip" | "failed";
+  current: number;
+  total: number;
+  item: PublishRequest;
+  message: string;
+}
+
 export interface PublishOptions {
   installScope?: PublishInstallScope;
   source?: string;
   onProgress?: (progress: PublishProgress) => void;
+  onBatchProgress?: (progress: PublishBatchProgress) => void;
 }
 
 export interface PublishFollowUp {
   canonicalPath: string;
   legacyPath: string;
   message: string;
+}
+
+export interface PublishRequest {
+  type: ResourceType;
+  name: string;
+}
+
+export interface PublishBatchItem {
+  type: ResourceType;
+  name: string;
+  status: "published" | "skipped" | "failed";
+  version?: string;
+  tag?: string;
+  installScope?: PublishInstallScope;
+  linkPath?: string;
+  followUp?: PublishFollowUp;
+  error?: {
+    code: string;
+    message: string;
+  };
 }
 
 interface InstallResult {
@@ -1190,6 +1219,127 @@ export class ServiceFactory {
       linkPath: linkPaths[0],
       followUp,
     };
+  }
+
+  async listProjectPublishResources(
+    projectDir: string,
+    type?: ResourceType,
+  ): Promise<PublishRequest[]> {
+    const types = type ? [type] : RESOURCE_TYPES;
+    const discovered: PublishRequest[] = [];
+
+    for (const currentType of types) {
+      const roots = this.getProjectPublishRootCandidates(projectDir, currentType);
+      const names = new Set<string>();
+
+      for (const root of roots) {
+        if (!(await this.exists(root))) continue;
+        const entries = await fs.readdir(root, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          names.add(entry.name);
+        }
+      }
+
+      for (const name of [...names].sort((left, right) => left.localeCompare(right))) {
+        const sourceDir = await this.tryResolvePublishSourceDir(currentType, name, projectDir);
+        if (!sourceDir) continue;
+        discovered.push({ type: currentType, name });
+      }
+    }
+
+    return discovered.sort((left, right) => {
+      const typeDelta = RESOURCE_TYPES.indexOf(left.type) - RESOURCE_TYPES.indexOf(right.type);
+      if (typeDelta !== 0) return typeDelta;
+      return left.name.localeCompare(right.name);
+    });
+  }
+
+  async publishMany(
+    requests: PublishRequest[],
+    releaseType: "patch" | "minor" | "major",
+    projectDir: string,
+    options: PublishOptions = {},
+  ): Promise<PublishBatchItem[]> {
+    const results: PublishBatchItem[] = [];
+
+    for (const [index, request] of requests.entries()) {
+      options.onBatchProgress?.({
+        stage: "start",
+        current: index + 1,
+        total: requests.length,
+        item: request,
+        message: `Publishing ${request.type}/${request.name}.`,
+      });
+      try {
+        const result = await this.publish(
+          request.type,
+          request.name,
+          releaseType,
+          projectDir,
+          options,
+        );
+        results.push({
+          type: result.type,
+          name: result.name,
+          status: "published",
+          version: result.version,
+          tag: result.tag,
+          installScope: result.installScope,
+          linkPath: result.linkPath,
+          followUp: result.followUp,
+        });
+        options.onBatchProgress?.({
+          stage: "success",
+          current: index + 1,
+          total: requests.length,
+          item: request,
+          message: `Published ${result.type}/${result.name}@${result.version}.`,
+        });
+      } catch (error) {
+        if (
+          error instanceof HimanError &&
+          error.code === errorCodes.PUBLISH_NO_CHANGES
+        ) {
+          results.push({
+            type: request.type,
+            name: request.name,
+            status: "skipped",
+            error: {
+              code: error.code,
+              message: error.message,
+            },
+          });
+          options.onBatchProgress?.({
+            stage: "skip",
+            current: index + 1,
+            total: requests.length,
+            item: request,
+            message: error.message,
+          });
+          continue;
+        }
+
+        results.push({
+          type: request.type,
+          name: request.name,
+          status: "failed",
+          error: {
+            code: error instanceof HimanError ? error.code : "E_UNKNOWN",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
+        options.onBatchProgress?.({
+          stage: "failed",
+          current: index + 1,
+          total: requests.length,
+          item: request,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return results;
   }
 
   async create(
@@ -2708,6 +2858,49 @@ export class ServiceFactory {
       errorCodes.RESOURCE_NOT_FOUND,
       `No publish source found for ${type}/${name}. Create resource or switch to dev mode first.`,
     );
+  }
+
+  private async tryResolvePublishSourceDir(
+    type: ResourceType,
+    name: string,
+    projectDir: string,
+  ): Promise<string | undefined> {
+    try {
+      const sourceInfo = await this.getLockSourceInfo();
+      return await this.resolvePublishSourceDir(type, name, projectDir, sourceInfo);
+    } catch (error) {
+      if (
+        error instanceof HimanError &&
+        (error.code === errorCodes.CONFIG_NOT_FOUND ||
+          error.code === errorCodes.RESOURCE_NOT_FOUND)
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  private getProjectPublishRootCandidates(
+    projectDir: string,
+    type: ResourceType,
+  ): string[] {
+    const probeName = "__himan_probe__";
+    const roots = new Set<string>([
+      path.join(projectDir, ".himan", "dev", type),
+    ]);
+
+    for (const agent of getSupportedAgentNames()) {
+      for (const candidate of getResourcePathCandidatesForAgent(
+        projectDir,
+        type,
+        probeName,
+        agent,
+      )) {
+        roots.add(path.dirname(candidate));
+      }
+    }
+
+    return [...roots];
   }
 
   private getRepoResourceDirFromInfo(
