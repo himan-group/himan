@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import type { InstallMode, ResourceType } from "../domain/resource.js";
-import type { ServiceFactory } from "../services/index.js";
+import type { PublishFollowUp, ServiceFactory } from "../services/index.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
 import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-configs.js";
 import {
@@ -9,6 +9,9 @@ import {
   writeInstalledResources,
 } from "./installed-resource-list.js";
 import { runAction } from "./shared.js";
+import { promises as fs } from "node:fs";
+import { createInterface } from "node:readline/promises";
+import process from "node:process";
 
 export function registerProjectCommands(
   command: Command,
@@ -297,13 +300,45 @@ export function registerProjectCommands(
               result.installScope === "global" ? "globally" : "into current project"
             }\n`,
           );
+          await handlePublishFollowUp(result.followUp);
         });
       },
     );
 }
 
+async function handlePublishFollowUp(followUp?: PublishFollowUp): Promise<void> {
+  if (!followUp) return;
+
+  process.stdout.write(`${followUp.message}\n`);
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    process.stdout.write(
+      `Legacy path was kept. Remove it manually if you want to keep only the canonical copy.\n`,
+    );
+    return;
+  }
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const answer = await rl.question(
+      "Remove the legacy path now and keep the canonical copy? [y/N] ",
+    );
+    if (!/^y(es)?$/i.test(answer.trim())) {
+      process.stdout.write("Legacy path was kept.\n");
+      return;
+    }
+  } finally {
+    rl.close();
+  }
+
+  await fs.rm(followUp.legacyPath, { recursive: true, force: true });
+  process.stdout.write(`Removed legacy path: ${followUp.legacyPath}\n`);
+}
+
 function ensureResourceType(type: string): ResourceType {
-  if (type !== "rule" && type !== "command" && type !== "skill") {
+  if (type !== "rule" && type !== "command" && type !== "skill" && type !== "config") {
     throw new HimanError(
       errorCodes.UNSUPPORTED_RESOURCE_TYPE,
       `Unsupported resource type: ${type}`,

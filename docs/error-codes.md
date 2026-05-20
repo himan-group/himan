@@ -128,8 +128,8 @@
 ### `E_UNSUPPORTED_RESOURCE_TYPE`
 
 - **含义**：资源类型不受支持。
-- **常见触发**：输入了 `rule|command|skill` 之外的类型。
-- **建议处理**：修正类型为 `rule`、`command` 或 `skill`。
+- **常见触发**：输入了 `rule|command|skill|config` 之外的类型。
+- **建议处理**：修正类型为 `rule`、`command`、`skill` 或 `config`。注意 `config` 当前仅支持 Codex。
 
 ### `E_UNKNOWN`
 

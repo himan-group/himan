@@ -11,7 +11,7 @@ import {
 } from "./installed-resource-list.js";
 import { runAction } from "./shared.js";
 
-const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
+const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill", "config"];
 type ResourceGroups = Record<ResourceType, ResourceMeta[]>;
 type TerminalColorToken =
   | "groupTitle"
@@ -325,7 +325,7 @@ async function writeInstalledList(
 }
 
 function ensureResourceType(type: string): ResourceType {
-  if (type !== "rule" && type !== "command" && type !== "skill") {
+  if (type !== "rule" && type !== "command" && type !== "skill" && type !== "config") {
     throw new HimanError(
       errorCodes.UNSUPPORTED_RESOURCE_TYPE,
       `Unsupported resource type: ${type}`,
@@ -343,6 +343,7 @@ async function listGroupedResources(
     rule: await services.list("rule", agents, options),
     command: await services.list("command", agents, options),
     skill: await services.list("skill", agents, options),
+    config: await services.list("config", agents, options),
   };
 }
 
@@ -354,6 +355,7 @@ function formatResourceGroups(
     rule: formatResources(groups.rule, showDescription),
     command: formatResources(groups.command, showDescription),
     skill: formatResources(groups.skill, showDescription),
+    config: formatResources(groups.config, showDescription),
   };
 }
 
@@ -430,6 +432,7 @@ function groupResourcesByCategory(
 function formatGroupTitle(type: ResourceType): string {
   if (type === "rule") return "Rules";
   if (type === "command") return "Commands";
+  if (type === "config") return "Configs";
   return "Skills";
 }
 

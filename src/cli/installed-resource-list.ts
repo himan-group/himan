@@ -1,7 +1,7 @@
 import type { ResourceType } from "../domain/resource.js";
 import type { InstalledResource, ServiceFactory } from "../services/index.js";
 
-const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
+const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill", "config"];
 
 export type InstalledResourceGroups = Record<ResourceType, InstalledResource[]>;
 
@@ -21,6 +21,7 @@ export function groupInstalledResources(
     rule: resources.filter((resource) => resource.type === "rule"),
     command: resources.filter((resource) => resource.type === "command"),
     skill: resources.filter((resource) => resource.type === "skill"),
+    config: resources.filter((resource) => resource.type === "config"),
   };
 }
 
@@ -58,5 +59,6 @@ function formatInstalledResource(resource: InstalledResource): string {
 function formatGroupTitle(type: ResourceType): string {
   if (type === "rule") return "Rules";
   if (type === "command") return "Commands";
+  if (type === "config") return "Configs";
   return "Skills";
 }

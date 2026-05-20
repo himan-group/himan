@@ -9,6 +9,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 ### Added
 
 - Added `himan install skill <name[@version]> -r --depth <n>` for recursive skill dependency installs declared in `himan.yaml`, defaulting to one dependency layer when `-r/--recursive` is present, with shared-dependency de-duplication and circular dependency detection.
+- Added Codex-only `config` resources with source `configs/<name>/`, project/global install targets at `.codex/configs/<name>` / `~/.codex/configs/<name>`, and automatic activation of the single runtime file `.codex/config.toml`. Cursor and Claude Code config management remain follow-up work.
+- Changed Codex rule installs to use `.codex/rules/<name>` as the canonical path while keeping legacy `.agents/rules/<name>` detection, and added a publish-time cleanup prompt when Codex rules or skills are published from legacy paths that differ from the current canonical layout.
 
 ## [0.6.2] - 2026-05-19
 

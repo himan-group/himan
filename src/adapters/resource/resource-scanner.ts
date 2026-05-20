@@ -148,10 +148,12 @@ export class ResourceScanner {
   private getTypeDir(type: ResourceType): string {
     if (type === "rule") return "rules";
     if (type === "command") return "commands";
+    if (type === "config") return "configs";
     return "skills";
   }
 
   private getDefaultEntry(type: ResourceType): string {
+    if (type === "config") return "config.toml";
     return type === "skill" ? "SKILL.md" : "content.md";
   }
 }

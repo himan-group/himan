@@ -55,7 +55,7 @@ import { VersionResolver } from "../adapters/version/version-resolver.js";
 import YAML from "yaml";
 
 const execFileAsync = promisify(execFile);
-const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
+const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill", "config"];
 
 export interface InstalledResource {
   type: ResourceType;
@@ -84,6 +84,12 @@ export interface PublishOptions {
   installScope?: PublishInstallScope;
   source?: string;
   onProgress?: (progress: PublishProgress) => void;
+}
+
+export interface PublishFollowUp {
+  canonicalPath: string;
+  legacyPath: string;
+  message: string;
 }
 
 interface InstallResult {
@@ -978,6 +984,9 @@ export class ServiceFactory {
       name,
     );
     if (projectTarget) {
+      if (type === "config") {
+        await this.activateConfigResource(projectDir, projectTarget.resourcePath);
+      }
       return {
         type,
         name,
@@ -1010,6 +1019,9 @@ export class ServiceFactory {
       const sourcePath = globalTarget.linkPaths[index] ?? globalTarget.resourcePath;
       await this.materializeResource(sourcePath, linkPath, "copy");
     }
+    if (type === "config") {
+      await this.activateConfigResource(projectDir, projectLinkPaths[0]);
+    }
     return {
       type,
       name,
@@ -1037,6 +1049,9 @@ export class ServiceFactory {
       await fs.rm(linkPath, { recursive: true, force: true });
     }
     await this.lockStore.removeResource(projectDir, { type, name });
+    if (type === "config") {
+      await this.reactivateProjectConfig(projectDir);
+    }
     return { type, name, linkPath: installInfo.linkPaths[0] };
   }
 
@@ -1053,6 +1068,7 @@ export class ServiceFactory {
     tag: string;
     installScope: PublishInstallScope;
     linkPath: string;
+    followUp?: PublishFollowUp;
   }> {
     const installScope = options.installScope ?? "project";
     this.reportPublishProgress(options, "prepare", `Preparing ${type}/${name}.`);
@@ -1161,6 +1177,10 @@ export class ServiceFactory {
       "done",
       `Published ${type}/${name}@${result.version}.`,
     );
+    const followUp =
+      installScope === "project"
+        ? this.buildCodexPublishFollowUp(type, name, projectDir, sourceDir)
+        : undefined;
     return {
       type,
       name,
@@ -1168,6 +1188,7 @@ export class ServiceFactory {
       tag: result.tag,
       installScope,
       linkPath: linkPaths[0],
+      followUp,
     };
   }
 
@@ -1180,7 +1201,12 @@ export class ServiceFactory {
     this.validateCreateInput(type, name, options);
     await this.loadSourceFromConfig();
 
-    const agents = await this.resolveEffectiveAgents(projectDir, options.agents);
+    const agents = await this.resolveEffectiveAgents(
+      projectDir,
+      type,
+      options.agents,
+    );
+    this.validateResourceAgents(type, agents);
     const resourcePaths = getProjectResourcePaths(projectDir, type, name, agents);
     const entry = options.entry ?? this.getDefaultEntry(type);
     const files = resourcePaths.flatMap((resourcePath) => [
@@ -1529,7 +1555,13 @@ export class ServiceFactory {
             agents,
             resourceMeta?.agents,
           )
-        : await this.resolveEffectiveAgents(projectDir, agents, resourceMeta?.agents);
+        : await this.resolveEffectiveAgents(
+            projectDir,
+            type,
+            agents,
+            resourceMeta?.agents,
+          );
+    this.validateResourceAgents(type, effectiveTargets);
     const linkPaths =
       scope === "global"
         ? getGlobalResourcePaths(this.paths.getHomeDir(), type, name, effectiveTargets)
@@ -1552,12 +1584,27 @@ export class ServiceFactory {
     projectDir: string,
     sourceInfo?: LockSourceInfo,
   ): Promise<InstallResult> {
+    if (prepared.type === "config") {
+      const rootDir =
+        prepared.scope === "global" ? this.paths.getHomeDir() : projectDir;
+      await this.resetConfigTargets(rootDir);
+    }
+
     for (const linkPath of prepared.linkPaths) {
       await this.materializeResource(prepared.storePath, linkPath, prepared.mode);
+    }
+    if (prepared.type === "config") {
+      await this.activateConfigResource(
+        prepared.scope === "global" ? this.paths.getHomeDir() : projectDir,
+        prepared.linkPaths[0],
+      );
     }
     if (prepared.scope === "project") {
       if (!sourceInfo) {
         throw new Error("Project install requires source lock information.");
+      }
+      if (prepared.type === "config") {
+        await this.removeOtherProjectConfigLocks(projectDir, prepared.name);
       }
       await this.lockStore.upsertResource(projectDir, sourceInfo, {
         type: prepared.type,
@@ -2011,6 +2058,126 @@ export class ServiceFactory {
     await fs.symlink(sourcePath, targetPath, "dir");
   }
 
+  private getDefaultAgentsForType(type: ResourceType): string[] {
+    return type === "config" ? ["codex"] : normalizeAgents();
+  }
+
+  private validateResourceAgents(type: ResourceType, agents: string[]): void {
+    if (type !== "config") return;
+    const invalidAgents = normalizeAgents(agents).filter((agent) => agent !== "codex");
+    if (invalidAgents.length > 0) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Resource type ${type} currently only supports codex.`,
+        { type, agents, invalidAgents },
+      );
+    }
+  }
+
+  private getCodexConfigDir(rootDir: string): string {
+    return path.join(rootDir, ".codex");
+  }
+
+  private getLegacyCodexProjectPath(
+    projectDir: string,
+    type: ResourceType,
+    name: string,
+  ): string | undefined {
+    if (type === "rule") {
+      return path.join(projectDir, ".agents", "rules", name);
+    }
+    if (type === "skill") {
+      return path.join(projectDir, ".codex", "skills", name);
+    }
+    return undefined;
+  }
+
+  private buildCodexPublishFollowUp(
+    type: ResourceType,
+    name: string,
+    projectDir: string,
+    sourceDir: string,
+  ): PublishFollowUp | undefined {
+    const legacyPath = this.getLegacyCodexProjectPath(projectDir, type, name);
+    if (!legacyPath) return undefined;
+    if (path.resolve(sourceDir) !== path.resolve(legacyPath)) {
+      return undefined;
+    }
+
+    const canonicalPath = getProjectResourcePaths(projectDir, type, name, ["codex"])[0];
+    if (path.resolve(canonicalPath) === path.resolve(legacyPath)) {
+      return undefined;
+    }
+
+    const resourceLabel = type === "rule" ? "rule" : "skill";
+    return {
+      legacyPath,
+      canonicalPath,
+      message:
+        `Legacy Codex ${resourceLabel} path detected: ${legacyPath}\n` +
+        `Canonical Codex ${resourceLabel} path: ${canonicalPath}`,
+    };
+  }
+
+  private getCodexActiveConfigPath(rootDir: string): string {
+    return path.join(this.getCodexConfigDir(rootDir), "config.toml");
+  }
+
+  private async resetConfigTargets(rootDir: string): Promise<void> {
+    await fs.rm(this.getCodexActiveConfigPath(rootDir), { force: true });
+  }
+
+  private async activateConfigResource(
+    rootDir: string,
+    resourcePath: string,
+  ): Promise<void> {
+    const sourcePath = path.join(resourcePath, this.getDefaultEntry("config"));
+    if (!(await this.exists(sourcePath))) {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_METADATA,
+        `Config resource entry not found: ${sourcePath}`,
+        { resourcePath, sourcePath },
+      );
+    }
+    const targetPath = this.getCodexActiveConfigPath(rootDir);
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.copyFile(sourcePath, targetPath);
+  }
+
+  private async removeOtherProjectConfigLocks(
+    projectDir: string,
+    keepName: string,
+  ): Promise<void> {
+    const installedConfigs = await this.listInstalled(projectDir, "config");
+    for (const resource of installedConfigs) {
+      if (resource.name === keepName) continue;
+      await this.lockStore.removeResource(projectDir, {
+        type: resource.type,
+        name: resource.name,
+      });
+    }
+  }
+
+  private async reactivateProjectConfig(projectDir: string): Promise<void> {
+    const installedConfigs = await this.listInstalled(projectDir, "config");
+    if (installedConfigs.length === 0) {
+      await fs.rm(this.getCodexActiveConfigPath(projectDir), { force: true });
+      return;
+    }
+
+    const nextConfig = installedConfigs[installedConfigs.length - 1];
+    const nextTarget = await this.tryResolveProjectResourceTarget(
+      projectDir,
+      "config",
+      nextConfig.name,
+    );
+    if (!nextTarget) {
+      await fs.rm(this.getCodexActiveConfigPath(projectDir), { force: true });
+      return;
+    }
+    await this.activateConfigResource(projectDir, nextTarget.resourcePath);
+  }
+
   private resolveInstallMode(mode?: string): InstallMode {
     return mode === "link" ? "link" : "copy";
   }
@@ -2226,6 +2393,7 @@ export class ServiceFactory {
 
   private async resolveEffectiveAgents(
     projectDir: string,
+    type: ResourceType,
     explicitAgents?: string[],
     fallbackAgents?: string[],
   ): Promise<string[]> {
@@ -2233,10 +2401,14 @@ export class ServiceFactory {
       return normalizeAgents(explicitAgents);
     }
     const configuredAgents = await this.getConfiguredAgents(projectDir);
-    if (configuredAgents?.length) {
+    if (configuredAgents?.length && type !== "config") {
       return configuredAgents;
     }
-    return normalizeAgents(fallbackAgents);
+    const resolved =
+      fallbackAgents && fallbackAgents.length > 0
+        ? normalizeAgents(fallbackAgents)
+        : this.getDefaultAgentsForType(type);
+    return resolved;
   }
 
   private async resolveGlobalInstallAgents(
@@ -2253,7 +2425,7 @@ export class ServiceFactory {
     if (locked?.agents?.length) {
       return normalizeAgents(locked.agents);
     }
-    return this.resolveEffectiveAgents(projectDir, undefined, fallbackAgents);
+    return this.resolveEffectiveAgents(projectDir, type, undefined, fallbackAgents);
   }
 
   private async getConfiguredAgents(projectDir: string): Promise<string[] | undefined> {
@@ -2281,9 +2453,17 @@ export class ServiceFactory {
         (YAML.parse(raw) as { agents?: string[]; targets?: string[] } | null) ??
         null;
       if (!parsed) return null;
-      return { agents: parsed.agents ?? parsed.targets };
+      return {
+        agents:
+          parsed.agents ??
+          parsed.targets ??
+          (type === "config" ? this.getDefaultAgentsForType(type) : undefined),
+      };
     }
 
+    if (type === "config") {
+      return { agents: this.getDefaultAgentsForType(type) };
+    }
     if (type !== "skill") return null;
     const entryPath = path.join(resourceDir, this.getDefaultEntry(type));
     if (!(await this.exists(entryPath))) return null;
@@ -2552,10 +2732,12 @@ export class ServiceFactory {
   private getTypeDir(type: ResourceType): string {
     if (type === "rule") return "rules";
     if (type === "command") return "commands";
+    if (type === "config") return "configs";
     return "skills";
   }
 
   private getDefaultEntry(type: ResourceType): string {
+    if (type === "config") return "config.toml";
     return type === "skill" ? "SKILL.md" : "content.md";
   }
 
@@ -2566,6 +2748,16 @@ export class ServiceFactory {
     if (type === "command") {
       return `# ${name}\n\nDescribe command behavior here.\n`;
     }
+    if (type === "config") {
+      return [
+        "# Codex config resource generated by Himan.",
+        "",
+        'model = "gpt-5.5"',
+        'approval_policy = "on-request"',
+        'sandbox_mode = "workspace-write"',
+        "",
+      ].join("\n");
+    }
     return `# ${name}\n\nDescribe skill workflow here.\n`;
   }
 
@@ -2574,7 +2766,7 @@ export class ServiceFactory {
     name: string,
     options: CreateOptions,
   ): void {
-    if (!["rule", "command", "skill"].includes(type)) {
+    if (!["rule", "command", "skill", "config"].includes(type)) {
       throw new HimanError(
         errorCodes.UNSUPPORTED_RESOURCE_TYPE,
         `Unsupported resource type for create: ${type}`,
@@ -2601,7 +2793,7 @@ export class ServiceFactory {
     name: string,
     action: string,
   ): void {
-    if (!["rule", "command", "skill"].includes(type)) {
+    if (!["rule", "command", "skill", "config"].includes(type)) {
       throw new HimanError(
         errorCodes.UNSUPPORTED_RESOURCE_TYPE,
         `Unsupported resource type for ${action}: ${type}`,
@@ -2621,7 +2813,7 @@ export class ServiceFactory {
     oldName: string,
     newName: string,
   ): void {
-    if (!["rule", "command", "skill"].includes(type)) {
+    if (!["rule", "command", "skill", "config"].includes(type)) {
       throw new HimanError(
         errorCodes.UNSUPPORTED_RESOURCE_TYPE,
         `Unsupported resource type for rename: ${type}`,
