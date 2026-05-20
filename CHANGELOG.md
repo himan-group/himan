@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-05-20
+
+### Changed
+
+- Clarified `himan publish` help and documentation with explicit multi-name examples such as `himan publish skill skill-a,skill-c`.
+
 ## [0.7.1] - 2026-05-20
 
 ### Removed
