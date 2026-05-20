@@ -43,46 +43,6 @@ export function buildCli(): Command {
   return program;
 }
 
-export function buildSourceCli(): Command {
-  const program = createBaseProgram(
-    "himan-source",
-    "Source repository management CLI",
-  );
-  const services = new ServiceFactory();
-  registerSourceCommands(program, services, { includeInit: true });
-  return program;
-}
-
-export function buildResourceCli(): Command {
-  const program = createBaseProgram(
-    "himan-resource",
-    "Resource lifecycle management CLI",
-  );
-  const services = new ServiceFactory();
-  registerResourceCommands(program, services);
-  const agentCmd = program
-    .command("agent")
-    .description("Manage default agent configuration");
-  registerAgentCommands(agentCmd, services);
-  // Backward compatible: keep project lifecycle commands in himan-resource.
-  registerProjectCommands(program, services, { includeList: false });
-  return program;
-}
-
-export function buildProjectCli(): Command {
-  const program = createBaseProgram(
-    "himan-project",
-    "Project lifecycle management CLI",
-  );
-  const services = new ServiceFactory();
-  const agentCmd = program
-    .command("agent")
-    .description("Manage default agent configuration");
-  registerAgentCommands(agentCmd, services);
-  registerProjectCommands(program, services);
-  return program;
-}
-
 function appendCommandGroupsHelp(program: Command): void {
   program.addHelpText(
     "after",

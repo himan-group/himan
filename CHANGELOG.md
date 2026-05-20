@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the dedicated npm binaries `himan-source`, `himan-resource`, and `himan-project`; use grouped commands through the `himan` entrypoint instead.
+
 ## [0.7.0] - 2026-05-20
 
 ### Added

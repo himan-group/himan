@@ -4,12 +4,9 @@
 
 `@hi-man/himan` is an ESM TypeScript CLI for managing prompt and agent assets. It manages `rule`, `command`, `skill`, and Codex-only `config` resources from a Git-backed source, installs them into project-specific or user-level agent folders, supports in-place project development, publishes semver-tagged versions, and keeps a `himan.lock` for reproducible project installs.
 
-The npm package exposes four binaries:
+The npm package exposes a single binary:
 
 - `himan` -> `dist/bin/himan.js`
-- `himan-source` -> `dist/bin/himan-source.js`
-- `himan-resource` -> `dist/bin/himan-resource.js`
-- `himan-project` -> `dist/bin/himan-project.js`
 
 ## Commands
 
@@ -34,7 +31,7 @@ Runtime agent configuration commands:
 
 ## Source Layout
 
-- `src/bin/` contains executable entry files and the shared `runCliMain` wrapper.
+- `src/bin/` contains the executable entry file and the shared `runCliMain` wrapper.
 - `src/cli/` builds commander programs, command groups, command registration, and CLI error formatting.
 - `src/services/index.ts` contains `ServiceFactory`, the main application orchestration layer.
 - `src/domain/` contains resource types, doctor result types, and data contracts.
@@ -58,12 +55,6 @@ Runtime agent configuration commands:
 - `project list|install|dev|uninstall|publish`; direct installs require `--include-archived` for archived resources, can use `--source <alias>` for explicit source selection, and support `install skill <name[@version]> -r [--depth <n>]` for skill dependency installs declared in `himan.yaml` (default depth `1` when `-r/--recursive` is present); `publish` can use `--source <alias>`, while lock-file installs can restore archived resources already recorded in `himan.lock`
 - `agent list|use|current|clear`
 - Backward-compatible top-level resource/project lifecycle commands
-
-Dedicated binaries call the same builders:
-
-- `src/bin/himan-source.ts` -> source commands
-- `src/bin/himan-resource.ts` -> resource commands plus backward-compatible project commands
-- `src/bin/himan-project.ts` -> project commands
 
 Commander output is centralized in `src/cli/shared.ts` and `src/bin/shared.ts`. Business actions use `runAction()` so `HimanError` and Commander errors are formatted consistently. Commands with `--json` return structured error payloads on `stderr`.
 
