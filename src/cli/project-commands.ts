@@ -1,6 +1,10 @@
 import type { Command } from "commander";
 import type { InstallMode, ResourceType } from "../domain/resource.js";
-import type { ServiceFactory } from "../services/index.js";
+import type {
+  PublishBatchItem,
+  PublishFollowUp,
+  ServiceFactory,
+} from "../services/index.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
 import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-configs.js";
 import {
@@ -9,6 +13,9 @@ import {
   writeInstalledResources,
 } from "./installed-resource-list.js";
 import { runAction } from "./shared.js";
+import { promises as fs } from "node:fs";
+import { createInterface } from "node:readline/promises";
+import process from "node:process";
 
 export function registerProjectCommands(
   command: Command,
@@ -68,6 +75,8 @@ export function registerProjectCommands(
     .option("--source <alias>", "source alias for single-resource install")
     .option("-g, --global", "install into user-level agent directories")
     .option("--include-archived", "allow installing an archived resource explicitly")
+    .option("-r, --recursive", "install skill dependencies declared in himan.yaml")
+    .option("--depth <n>", "dependency install depth for recursive skill install (default: 1)")
     .description("Install resource, or install from himan.lock")
     .action(
       async (
@@ -79,11 +88,16 @@ export function registerProjectCommands(
           source?: string;
           global?: boolean;
           includeArchived?: boolean;
+          recursive?: boolean;
+          depth?: string;
         },
       ) => {
         await runAction(async () => {
           const agents = parseAgents(options.agent);
           const mode = parseInstallMode(options.mode);
+          const dependencyDepth = options.recursive
+            ? parseDependencyDepthOption(options.depth) ?? 1
+            : undefined;
           if (!type && !nameVersion) {
             if (options.source) {
               throw new HimanError(
@@ -94,7 +108,19 @@ export function registerProjectCommands(
             if (options.includeArchived) {
               throw new HimanError(
                 errorCodes.CLI_USAGE,
-                "--include-archived only applies to single-resource install.",
+                  "--include-archived only applies to single-resource install.",
+              );
+            }
+            if (options.recursive) {
+              throw new HimanError(
+                errorCodes.CLI_USAGE,
+                "--recursive only applies to single-resource skill install.",
+              );
+            }
+            if (options.depth !== undefined) {
+              throw new HimanError(
+                errorCodes.CLI_USAGE,
+                "--depth only applies to single-resource recursive skill install.",
               );
             }
             if (options.global) {
@@ -127,28 +153,70 @@ export function registerProjectCommands(
 
           const resourceType = ensureResourceType(type);
           const { name, version } = parseNameVersion(nameVersion);
-          const result = options.global
-            ? await services.installGlobal(
-                resourceType,
-                name,
-                version,
-                process.cwd(),
-                agents,
-                mode,
-                { includeArchived: options.includeArchived, source: options.source },
-              )
-            : await services.install(
-                resourceType,
-                name,
-                version,
-                process.cwd(),
-                agents,
-                mode,
-                { includeArchived: options.includeArchived, source: options.source },
-              );
-          process.stdout.write(
-            `Installed ${options.global ? "global " : ""}${result.type}/${result.name}@${result.version}\n`,
-          );
+          if (options.recursive && resourceType !== "skill") {
+            throw new HimanError(
+              errorCodes.CLI_USAGE,
+              "--recursive only applies to single-resource skill install.",
+            );
+          }
+          if (!options.recursive && options.depth !== undefined) {
+            throw new HimanError(
+              errorCodes.CLI_USAGE,
+              "--depth requires --recursive.",
+            );
+          }
+
+          const installOptions = {
+            includeArchived: options.includeArchived,
+            source: options.source,
+          };
+          const results = options.recursive
+            ? options.global
+              ? await services.installGlobalWithDependencies(
+                  name,
+                  version,
+                  process.cwd(),
+                  agents,
+                  mode,
+                  dependencyDepth,
+                  installOptions,
+                )
+              : await services.installWithDependencies(
+                  name,
+                  version,
+                  process.cwd(),
+                  agents,
+                  mode,
+                  dependencyDepth,
+                  installOptions,
+                )
+            : [
+                options.global
+                  ? await services.installGlobal(
+                      resourceType,
+                      name,
+                      version,
+                      process.cwd(),
+                      agents,
+                      mode,
+                      installOptions,
+                    )
+                  : await services.install(
+                      resourceType,
+                      name,
+                      version,
+                      process.cwd(),
+                      agents,
+                      mode,
+                      installOptions,
+                    ),
+              ];
+
+          for (const result of results) {
+            process.stdout.write(
+              `Installed ${options.global ? "global " : ""}${result.type}/${result.name}@${result.version}\n`,
+            );
+          }
         });
       },
     );
@@ -189,28 +257,29 @@ export function registerProjectCommands(
 
   command
     .command("publish")
-    .argument("<type>", "resource type")
-    .argument("<name>", "resource name")
+    .argument("[type]", "resource type")
+    .argument("[name]", "resource name or comma separated names")
     .option("--patch", "patch release")
     .option("--minor", "minor release")
     .option("--major", "major release")
     .option("--source <alias>", "source alias to publish into")
     .option("-g, --global", "install the published version into user-level agent directories")
+    .option("--all", "publish all current-project resources, or all resources of the given type")
     .description("Publish resource (default: --patch)")
     .action(
       async (
-        type: string,
-        name: string,
+        type: string | undefined,
+        name: string | undefined,
         options: {
           patch?: boolean;
           minor?: boolean;
           major?: boolean;
           source?: string;
           global?: boolean;
+          all?: boolean;
         },
       ) => {
         await runAction(async () => {
-          const resourceType = ensureResourceType(type);
           const releaseType = resolveReleaseType(options);
           const installScope = options.global ? "global" : "project";
           process.stdout.write(
@@ -218,9 +287,77 @@ export function registerProjectCommands(
               ? "Published resource will be installed globally; current project lock will not be updated.\n"
               : "Published resource will be installed into the current project and recorded in himan.lock. Use -g/--global to install globally instead.\n",
           );
-          const result = await services.publish(
-            resourceType,
-            name,
+          const resourceType = type ? ensureResourceType(type) : undefined;
+          const names = parsePublishNames(name);
+          const shouldBatch = Boolean(options.all) || names.length > 1 || !resourceType;
+
+          if (!shouldBatch) {
+            if (!resourceType || names.length !== 1) {
+              throw new HimanError(
+                errorCodes.CLI_USAGE,
+                "Publish usage:\n"
+                  + "  - himan publish <type> <name> [--patch|--minor|--major] [--source alias]\n"
+                  + "  - himan publish --all [--patch|--minor|--major] [--source alias]\n"
+                  + "  - himan publish <type> --all [--patch|--minor|--major] [--source alias]\n"
+                  + "  - himan publish <type> <name1,name2,...> [--patch|--minor|--major] [--source alias]",
+              );
+            }
+            const result = await services.publish(
+              resourceType,
+              names[0],
+              releaseType,
+              process.cwd(),
+              {
+                installScope,
+                source: options.source,
+                onProgress: (progress) => {
+                  process.stdout.write(`[publish:${progress.stage}] ${progress.message}\n`);
+                },
+              },
+            );
+            process.stdout.write(
+              `Published ${result.type}/${result.name}@${result.version} and installed ${
+                result.installScope === "global" ? "globally" : "into current project"
+              }\n`,
+            );
+            await handlePublishFollowUp(result.followUp);
+            return;
+          }
+
+          if (options.all && names.length > 0) {
+            throw new HimanError(
+              errorCodes.CLI_USAGE,
+              "--all cannot be used together with explicit resource names.",
+            );
+          }
+          if (!options.all && !resourceType) {
+            throw new HimanError(
+              errorCodes.CLI_USAGE,
+              "Batch publish without --all requires a resource type, for example `himan publish skill a,b`.",
+            );
+          }
+
+          process.stdout.write("[publish:batch] Scanning current project resources.\n");
+          const requests = options.all
+            ? await services.listProjectPublishResources(process.cwd(), resourceType)
+            : names.map((resourceName) => ({
+                type: resourceType!,
+                name: resourceName,
+              }));
+          if (requests.length === 0) {
+            throw new HimanError(
+              errorCodes.RESOURCE_NOT_FOUND,
+              resourceType
+                ? `No publishable project resources found for type ${resourceType}.`
+                : "No publishable project resources found.",
+            );
+          }
+
+          process.stdout.write(
+            `[publish:batch] Selected ${requests.length} resource(s).\n`,
+          );
+          const results = await services.publishMany(
+            requests,
             releaseType,
             process.cwd(),
             {
@@ -229,20 +366,82 @@ export function registerProjectCommands(
               onProgress: (progress) => {
                 process.stdout.write(`[publish:${progress.stage}] ${progress.message}\n`);
               },
+              onBatchProgress: (progress) => {
+                const prefix = `[publish:batch] (${progress.current}/${progress.total})`;
+                if (progress.stage === "start") {
+                  process.stdout.write(
+                    `${prefix} ${progress.message}\n`,
+                  );
+                  return;
+                }
+                if (progress.stage === "success") {
+                  process.stdout.write(`${prefix} ${progress.message}\n`);
+                  return;
+                }
+                if (progress.stage === "skip") {
+                  process.stdout.write(`${prefix} Skipped ${progress.item.type}/${progress.item.name}: ${progress.message}\n`);
+                  return;
+                }
+                process.stdout.write(`${prefix} Failed ${progress.item.type}/${progress.item.name}: ${progress.message}\n`);
+              },
             },
           );
-          process.stdout.write(
-            `Published ${result.type}/${result.name}@${result.version} and installed ${
-              result.installScope === "global" ? "globally" : "into current project"
-            }\n`,
-          );
+          await handlePublishBatchResults(results);
         });
       },
     );
 }
 
+async function handlePublishFollowUp(followUp?: PublishFollowUp): Promise<void> {
+  if (!followUp) return;
+
+  process.stdout.write(`${followUp.message}\n`);
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    process.stdout.write(
+      `Legacy path was kept. Remove it manually if you want to keep only the canonical copy.\n`,
+    );
+    return;
+  }
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const answer = await rl.question(
+      "Remove the legacy path now and keep the canonical copy? [y/N] ",
+    );
+    if (!/^y(es)?$/i.test(answer.trim())) {
+      process.stdout.write("Legacy path was kept.\n");
+      return;
+    }
+  } finally {
+    rl.close();
+  }
+
+  await fs.rm(followUp.legacyPath, { recursive: true, force: true });
+  process.stdout.write(`Removed legacy path: ${followUp.legacyPath}\n`);
+}
+
+async function handlePublishBatchResults(results: PublishBatchItem[]): Promise<void> {
+  const published = results.filter((item) => item.status === "published");
+  const skipped = results.filter((item) => item.status === "skipped");
+  const failed = results.filter((item) => item.status === "failed");
+
+  for (const item of published) {
+    await handlePublishFollowUp(item.followUp);
+  }
+
+  process.stdout.write(
+    `[publish:batch] Summary: ${published.length} published, ${skipped.length} skipped, ${failed.length} failed.\n`,
+  );
+  if (failed.length > 0) {
+    process.exitCode = 1;
+  }
+}
+
 function ensureResourceType(type: string): ResourceType {
-  if (type !== "rule" && type !== "command" && type !== "skill") {
+  if (type !== "rule" && type !== "command" && type !== "skill" && type !== "config") {
     throw new HimanError(
       errorCodes.UNSUPPORTED_RESOURCE_TYPE,
       `Unsupported resource type: ${type}`,
@@ -255,6 +454,16 @@ function parseNameVersion(input: string): { name: string; version?: string } {
   const idx = input.lastIndexOf("@");
   if (idx <= 0) return { name: input };
   return { name: input.slice(0, idx), version: input.slice(idx + 1) };
+}
+
+function parsePublishNames(input?: string): string[] {
+  if (!input) return [];
+  return [...new Set(
+    input
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+  )];
 }
 
 function resolveReleaseType(options: {
@@ -287,6 +496,19 @@ function parseInstallMode(input?: string): InstallMode | undefined {
     errorCodes.INVALID_INPUT,
     `Unsupported install mode: ${input}. Supported modes: link, copy`,
   );
+}
+
+function parseDependencyDepthOption(input?: string): number | undefined {
+  if (input === undefined) return undefined;
+  const normalized = input.trim();
+  if (!/^\d+$/.test(normalized)) {
+    throw new HimanError(
+      errorCodes.INVALID_INPUT,
+      `Unsupported dependency depth: ${input}. Use a non-negative integer.`,
+    );
+  }
+
+  return Number.parseInt(normalized, 10);
 }
 
 function parseAgents(input?: string): string[] | undefined {

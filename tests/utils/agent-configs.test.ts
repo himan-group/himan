@@ -53,8 +53,27 @@ describe("agent configs", () => {
       ]),
     ).toEqual([
       path.join(homeDir, ".cursor", "rules", "code-review"),
-      path.join(homeDir, ".agents", "rules", "code-review"),
+      path.join(homeDir, ".codex", "rules", "code-review"),
     ]);
+  });
+
+  it("builds codex rule paths under .codex", () => {
+    const projectDir = path.join("tmp", "project");
+    expect(
+      getProjectResourcePaths(projectDir, "rule", "code-review", ["codex"]),
+    ).toEqual([path.join(projectDir, ".codex", "rules", "code-review")]);
+  });
+
+  it("builds codex config paths under .codex", () => {
+    const projectDir = path.join("tmp", "project");
+    const homeDir = path.join("tmp", "home");
+
+    expect(
+      getProjectResourcePaths(projectDir, "config", "team-default", ["codex"]),
+    ).toEqual([path.join(projectDir, ".codex", "configs", "team-default")]);
+    expect(
+      getGlobalResourcePaths(homeDir, "config", "team-default", ["codex"]),
+    ).toEqual([path.join(homeDir, ".codex", "configs", "team-default")]);
   });
 
   it("includes .codex as a compatible codex skill path candidate", () => {
@@ -65,6 +84,23 @@ describe("agent configs", () => {
       path.join(projectDir, ".agents", "skills", "risk-check"),
       path.join(projectDir, ".codex", "skills", "risk-check"),
     ]);
+  });
+
+  it("prefers .codex and still supports .agents for codex rule path candidates", () => {
+    const projectDir = path.join("tmp", "project");
+    expect(
+      getResourcePathCandidatesForAgent(projectDir, "rule", "code-review", "codex"),
+    ).toEqual([
+      path.join(projectDir, ".codex", "rules", "code-review"),
+      path.join(projectDir, ".agents", "rules", "code-review"),
+    ]);
+  });
+
+  it("uses only .codex for codex config path candidates", () => {
+    const projectDir = path.join("tmp", "project");
+    expect(
+      getResourcePathCandidatesForAgent(projectDir, "config", "team-default", "codex"),
+    ).toEqual([path.join(projectDir, ".codex", "configs", "team-default")]);
   });
 
   it("lists supported canonical agent names", () => {

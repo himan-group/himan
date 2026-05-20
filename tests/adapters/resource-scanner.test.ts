@@ -68,7 +68,7 @@ describe("ResourceScanner", () => {
     expect(resources).toEqual([]);
   });
 
-  it("scans command and skill resources by type", async () => {
+  it("scans command, skill, and config resources by type", async () => {
     const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "himan-repo-"));
     tmpDirs.push(repoDir);
 
@@ -96,9 +96,24 @@ describe("ResourceScanner", () => {
       "utf8",
     );
 
+    await fs.mkdir(path.join(repoDir, "configs", "team-default"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, "configs", "team-default", "himan.yaml"),
+      [
+        "name: team-default",
+        "type: config",
+        "entry: config.toml",
+        "description: codex team config",
+        "agents:",
+        "  - codex",
+      ].join("\n"),
+      "utf8",
+    );
+
     const scanner = new ResourceScanner();
     const commands = await scanner.scanByType(repoDir, "command");
     const skills = await scanner.scanByType(repoDir, "skill");
+    const configs = await scanner.scanByType(repoDir, "config");
 
     expect(commands).toEqual([
       {
@@ -116,6 +131,15 @@ describe("ResourceScanner", () => {
         entry: "SKILL.md",
         description: "check project risks",
         agents: [],
+      },
+    ]);
+    expect(configs).toEqual([
+      {
+        name: "team-default",
+        type: "config",
+        entry: "config.toml",
+        description: "codex team config",
+        agents: ["codex"],
       },
     ]);
   });
@@ -147,9 +171,17 @@ describe("ResourceScanner", () => {
       "utf8",
     );
 
+    await fs.mkdir(path.join(repoDir, "configs", "legacy-config"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, "configs", "legacy-config", "config.toml"),
+      'model = "gpt-5.5"\n',
+      "utf8",
+    );
+
     const scanner = new ResourceScanner();
     const rules = await scanner.scanByType(repoDir, "rule");
     const skills = await scanner.scanByType(repoDir, "skill");
+    const configs = await scanner.scanByType(repoDir, "config");
 
     expect(rules).toEqual([
       {
@@ -167,6 +199,15 @@ describe("ResourceScanner", () => {
         entry: "SKILL.md",
         description: "Legacy skill description",
         agents: ["codex"],
+      },
+    ]);
+    expect(configs).toEqual([
+      {
+        name: "legacy-config",
+        type: "config",
+        entry: "config.toml",
+        description: undefined,
+        agents: [],
       },
     ]);
   });

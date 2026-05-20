@@ -37,11 +37,19 @@ const AGENT_ALIASES = buildAgentAliases();
 function getTypeDir(type: ResourceType): string {
   if (type === "rule") return "rules";
   if (type === "command") return "commands";
+  if (type === "config") return "configs";
   return "skills";
 }
 
-function getAgentBaseDir(agent: SupportedAgent): string {
-  return getAgentConfig(agent).baseDir;
+function getAgentBaseDir(agent: SupportedAgent, type?: ResourceType): string {
+  const config = getAgentConfig(agent);
+  if (agent === "codex") {
+    if (type === "rule" || type === "config") {
+      return ".codex";
+    }
+    return ".agents";
+  }
+  return config.baseDir;
 }
 
 function getAgentBaseDirCandidates(agent: SupportedAgent): string[] {
@@ -90,7 +98,7 @@ function getResourcePaths(
 ): string[] {
   const typeDir = getTypeDir(type);
   return normalizeAgents(agents).map((agent) =>
-    path.join(rootDir, getAgentBaseDir(agent), typeDir, name),
+    path.join(rootDir, getAgentBaseDir(agent, type), typeDir, name),
   );
 }
 
@@ -107,7 +115,15 @@ export function getResourcePathCandidatesForAgent(
   const normalized = normalizeAgent(agent);
   if (!normalized) return [];
   const typeDir = getTypeDir(type);
-  return getAgentBaseDirCandidates(normalized).map((baseDir) =>
+  const baseDirs =
+    normalized === "codex"
+      ? type === "config"
+        ? [".codex"]
+        : type === "rule"
+          ? [".codex", ".agents"]
+          : [".agents", ".codex"]
+      : getAgentBaseDirCandidates(normalized);
+  return baseDirs.map((baseDir) =>
     path.join(rootDir, baseDir, typeDir, name),
   );
 }

@@ -343,7 +343,7 @@ export function registerSourceCommands(
 }
 
 function ensureResourceType(type: string): ResourceType {
-  if (type !== "rule" && type !== "command" && type !== "skill") {
+  if (type !== "rule" && type !== "command" && type !== "skill" && type !== "config") {
     throw new HimanError(
       errorCodes.UNSUPPORTED_RESOURCE_TYPE,
       `Unsupported resource type: ${type}`,

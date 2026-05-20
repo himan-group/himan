@@ -55,7 +55,7 @@ import { VersionResolver } from "../adapters/version/version-resolver.js";
 import YAML from "yaml";
 
 const execFileAsync = promisify(execFile);
-const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill"];
+const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill", "config"];
 
 export interface InstalledResource {
   type: ResourceType;
@@ -80,15 +80,74 @@ export interface PublishProgress {
   message: string;
 }
 
+export interface PublishBatchProgress {
+  stage: "start" | "success" | "skip" | "failed";
+  current: number;
+  total: number;
+  item: PublishRequest;
+  message: string;
+}
+
 export interface PublishOptions {
   installScope?: PublishInstallScope;
   source?: string;
   onProgress?: (progress: PublishProgress) => void;
+  onBatchProgress?: (progress: PublishBatchProgress) => void;
+}
+
+export interface PublishFollowUp {
+  canonicalPath: string;
+  legacyPath: string;
+  message: string;
+}
+
+export interface PublishRequest {
+  type: ResourceType;
+  name: string;
+}
+
+export interface PublishBatchItem {
+  type: ResourceType;
+  name: string;
+  status: "published" | "skipped" | "failed";
+  version?: string;
+  tag?: string;
+  installScope?: PublishInstallScope;
+  linkPath?: string;
+  followUp?: PublishFollowUp;
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+
+interface InstallResult {
+  type: ResourceType;
+  name: string;
+  version: string;
+  linkPath: string;
+  mode: InstallMode;
 }
 
 interface InstallOptions {
   includeArchived?: boolean;
   source?: string;
+}
+
+interface SkillDependencyRef {
+  name: string;
+  optional: boolean;
+}
+
+interface PreparedInstall {
+  type: ResourceType;
+  name: string;
+  version: string;
+  storePath: string;
+  effectiveTargets: string[];
+  linkPaths: string[];
+  mode: InstallMode;
+  scope: "project" | "global";
 }
 
 interface SourceSelectionOptions {
@@ -848,13 +907,7 @@ export class ServiceFactory {
     agents?: string[],
     mode: InstallMode = "copy",
     options: InstallOptions = {},
-  ): Promise<{
-    type: ResourceType;
-    name: string;
-    version: string;
-    linkPath: string;
-    mode: InstallMode;
-  }> {
+  ): Promise<InstallResult> {
     const { source, sourceInfo } = await this.loadSourceWithInfoFromConfig(options.source);
     return this.installWithSource(
       source,
@@ -878,13 +931,7 @@ export class ServiceFactory {
     agents?: string[],
     mode: InstallMode = "copy",
     options: InstallOptions = {},
-  ): Promise<{
-    type: ResourceType;
-    name: string;
-    version: string;
-    linkPath: string;
-    mode: InstallMode;
-  }> {
+  ): Promise<InstallResult> {
     const source = await this.loadSourceFromConfig(options.source);
     return this.installWithSource(
       source,
@@ -895,6 +942,54 @@ export class ServiceFactory {
       projectDir,
       agents,
       mode,
+      "global",
+      options,
+    );
+  }
+
+  async installWithDependencies(
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents?: string[],
+    mode: InstallMode = "copy",
+    dependencyDepth = 1,
+    options: InstallOptions = {},
+  ): Promise<InstallResult[]> {
+    const { source, sourceInfo } = await this.loadSourceWithInfoFromConfig(options.source);
+    return this.installSkillDependencyClosure(
+      source,
+      sourceInfo,
+      name,
+      version,
+      projectDir,
+      agents,
+      mode,
+      dependencyDepth,
+      "project",
+      options,
+    );
+  }
+
+  async installGlobalWithDependencies(
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents?: string[],
+    mode: InstallMode = "copy",
+    dependencyDepth = 1,
+    options: InstallOptions = {},
+  ): Promise<InstallResult[]> {
+    const source = await this.loadSourceFromConfig(options.source);
+    return this.installSkillDependencyClosure(
+      source,
+      undefined,
+      name,
+      version,
+      projectDir,
+      agents,
+      mode,
+      dependencyDepth,
       "global",
       options,
     );
@@ -918,6 +1013,9 @@ export class ServiceFactory {
       name,
     );
     if (projectTarget) {
+      if (type === "config") {
+        await this.activateConfigResource(projectDir, projectTarget.resourcePath);
+      }
       return {
         type,
         name,
@@ -950,6 +1048,9 @@ export class ServiceFactory {
       const sourcePath = globalTarget.linkPaths[index] ?? globalTarget.resourcePath;
       await this.materializeResource(sourcePath, linkPath, "copy");
     }
+    if (type === "config") {
+      await this.activateConfigResource(projectDir, projectLinkPaths[0]);
+    }
     return {
       type,
       name,
@@ -977,6 +1078,9 @@ export class ServiceFactory {
       await fs.rm(linkPath, { recursive: true, force: true });
     }
     await this.lockStore.removeResource(projectDir, { type, name });
+    if (type === "config") {
+      await this.reactivateProjectConfig(projectDir);
+    }
     return { type, name, linkPath: installInfo.linkPaths[0] };
   }
 
@@ -993,6 +1097,7 @@ export class ServiceFactory {
     tag: string;
     installScope: PublishInstallScope;
     linkPath: string;
+    followUp?: PublishFollowUp;
   }> {
     const installScope = options.installScope ?? "project";
     this.reportPublishProgress(options, "prepare", `Preparing ${type}/${name}.`);
@@ -1101,6 +1206,10 @@ export class ServiceFactory {
       "done",
       `Published ${type}/${name}@${result.version}.`,
     );
+    const followUp =
+      installScope === "project"
+        ? this.buildCodexPublishFollowUp(type, name, projectDir, sourceDir)
+        : undefined;
     return {
       type,
       name,
@@ -1108,7 +1217,129 @@ export class ServiceFactory {
       tag: result.tag,
       installScope,
       linkPath: linkPaths[0],
+      followUp,
     };
+  }
+
+  async listProjectPublishResources(
+    projectDir: string,
+    type?: ResourceType,
+  ): Promise<PublishRequest[]> {
+    const types = type ? [type] : RESOURCE_TYPES;
+    const discovered: PublishRequest[] = [];
+
+    for (const currentType of types) {
+      const roots = this.getProjectPublishRootCandidates(projectDir, currentType);
+      const names = new Set<string>();
+
+      for (const root of roots) {
+        if (!(await this.exists(root))) continue;
+        const entries = await fs.readdir(root, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          names.add(entry.name);
+        }
+      }
+
+      for (const name of [...names].sort((left, right) => left.localeCompare(right))) {
+        const sourceDir = await this.tryResolvePublishSourceDir(currentType, name, projectDir);
+        if (!sourceDir) continue;
+        discovered.push({ type: currentType, name });
+      }
+    }
+
+    return discovered.sort((left, right) => {
+      const typeDelta = RESOURCE_TYPES.indexOf(left.type) - RESOURCE_TYPES.indexOf(right.type);
+      if (typeDelta !== 0) return typeDelta;
+      return left.name.localeCompare(right.name);
+    });
+  }
+
+  async publishMany(
+    requests: PublishRequest[],
+    releaseType: "patch" | "minor" | "major",
+    projectDir: string,
+    options: PublishOptions = {},
+  ): Promise<PublishBatchItem[]> {
+    const results: PublishBatchItem[] = [];
+
+    for (const [index, request] of requests.entries()) {
+      options.onBatchProgress?.({
+        stage: "start",
+        current: index + 1,
+        total: requests.length,
+        item: request,
+        message: `Publishing ${request.type}/${request.name}.`,
+      });
+      try {
+        const result = await this.publish(
+          request.type,
+          request.name,
+          releaseType,
+          projectDir,
+          options,
+        );
+        results.push({
+          type: result.type,
+          name: result.name,
+          status: "published",
+          version: result.version,
+          tag: result.tag,
+          installScope: result.installScope,
+          linkPath: result.linkPath,
+          followUp: result.followUp,
+        });
+        options.onBatchProgress?.({
+          stage: "success",
+          current: index + 1,
+          total: requests.length,
+          item: request,
+          message: `Published ${result.type}/${result.name}@${result.version}.`,
+        });
+      } catch (error) {
+        if (
+          error instanceof HimanError &&
+          error.code === errorCodes.PUBLISH_NO_CHANGES
+        ) {
+          results.push({
+            type: request.type,
+            name: request.name,
+            status: "skipped",
+            error: {
+              code: error.code,
+              message: error.message,
+            },
+          });
+          options.onBatchProgress?.({
+            stage: "skip",
+            current: index + 1,
+            total: requests.length,
+            item: request,
+            message: error.message,
+          });
+          continue;
+        }
+
+        results.push({
+          type: request.type,
+          name: request.name,
+          status: "failed",
+          error: {
+            code: error instanceof HimanError ? error.code : "E_UNKNOWN",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
+        options.onBatchProgress?.({
+          stage: "failed",
+          current: index + 1,
+          total: requests.length,
+          item: request,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return results;
   }
 
   async create(
@@ -1120,7 +1351,12 @@ export class ServiceFactory {
     this.validateCreateInput(type, name, options);
     await this.loadSourceFromConfig();
 
-    const agents = await this.resolveEffectiveAgents(projectDir, options.agents);
+    const agents = await this.resolveEffectiveAgents(
+      projectDir,
+      type,
+      options.agents,
+    );
+    this.validateResourceAgents(type, agents);
     const resourcePaths = getProjectResourcePaths(projectDir, type, name, agents);
     const entry = options.entry ?? this.getDefaultEntry(type);
     const files = resourcePaths.flatMap((resourcePath) => [
@@ -1298,13 +1534,146 @@ export class ServiceFactory {
     mode: InstallMode,
     scope: "project" | "global" = "project",
     options: InstallOptions = {},
-  ): Promise<{
-    type: ResourceType;
-    name: string;
-    version: string;
-    linkPath: string;
-    mode: InstallMode;
-  }> {
+  ): Promise<InstallResult> {
+    const prepared = await this.prepareInstall(
+      source,
+      type,
+      name,
+      version,
+      projectDir,
+      agents,
+      mode,
+      scope,
+      options,
+    );
+    return this.materializePreparedInstall(prepared, projectDir, sourceInfo);
+  }
+
+  private async installSkillDependencyClosure(
+    source: ResourceSourceAdapter,
+    sourceInfo: LockSourceInfo | undefined,
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents: string[] | undefined,
+    mode: InstallMode,
+    dependencyDepth: number,
+    scope: "project" | "global",
+    options: InstallOptions,
+  ): Promise<InstallResult[]> {
+    const installed = new Map<string, InstallResult>();
+    const results: InstallResult[] = [];
+    await this.installSkillDependencyNode(
+      source,
+      sourceInfo,
+      name,
+      version,
+      projectDir,
+      agents,
+      mode,
+      dependencyDepth,
+      scope,
+      options,
+      [],
+      installed,
+      results,
+    );
+    return results;
+  }
+
+  private async installSkillDependencyNode(
+    source: ResourceSourceAdapter,
+    sourceInfo: LockSourceInfo | undefined,
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents: string[] | undefined,
+    mode: InstallMode,
+    remainingDepth: number,
+    scope: "project" | "global",
+    options: InstallOptions,
+    visiting: string[],
+    installed: Map<string, InstallResult>,
+    results: InstallResult[],
+  ): Promise<InstallResult> {
+    const key = `skill/${name}`;
+    const cached = installed.get(key);
+    if (cached) return cached;
+
+    const cycleStartIndex = visiting.indexOf(key);
+    if (cycleStartIndex >= 0) {
+      const cycle = [...visiting.slice(cycleStartIndex), key];
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_METADATA,
+        `Circular skill dependency detected: ${cycle.join(" -> ")}.`,
+        { cycle },
+      );
+    }
+
+    const prepared = await this.prepareInstall(
+      source,
+      "skill",
+      name,
+      version,
+      projectDir,
+      agents,
+      mode,
+      scope,
+      options,
+    );
+
+    visiting.push(key);
+    try {
+      if (remainingDepth > 0) {
+        const dependencies = await this.readSkillDependenciesFromDir(prepared.storePath);
+        for (const dependency of dependencies) {
+          try {
+            await this.installSkillDependencyNode(
+              source,
+              sourceInfo,
+              dependency.name,
+              undefined,
+              projectDir,
+              prepared.effectiveTargets,
+              mode,
+              remainingDepth - 1,
+              scope,
+              options,
+              visiting,
+              installed,
+              results,
+            );
+          } catch (error) {
+            if (dependency.optional && this.isSkippableOptionalDependencyError(error)) {
+              continue;
+            }
+            throw error;
+          }
+        }
+      }
+
+      const result = await this.materializePreparedInstall(prepared, projectDir, sourceInfo);
+      installed.set(key, result);
+      results.push(result);
+      return result;
+    } finally {
+      if (visiting[visiting.length - 1] === key) {
+        visiting.pop();
+      }
+    }
+  }
+
+  private async prepareInstall(
+    source: ResourceSourceAdapter,
+    type: ResourceType,
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    agents: string[] | undefined,
+    mode: InstallMode,
+    scope: "project" | "global",
+    options: InstallOptions,
+  ): Promise<PreparedInstall> {
     const archived = await source.isArchived(type, name);
     if (archived && !options.includeArchived) {
       throw new HimanError(
@@ -1338,30 +1707,71 @@ export class ServiceFactory {
           )
         : await this.resolveEffectiveAgents(
             projectDir,
+            type,
             agents,
             resourceMeta?.agents,
           );
+    this.validateResourceAgents(type, effectiveTargets);
     const linkPaths =
       scope === "global"
         ? getGlobalResourcePaths(this.paths.getHomeDir(), type, name, effectiveTargets)
         : getProjectResourcePaths(projectDir, type, name, effectiveTargets);
-    for (const linkPath of linkPaths) {
-      await this.materializeResource(storePath, linkPath, mode);
+
+    return {
+      type,
+      name,
+      version: resolvedVersion,
+      storePath,
+      effectiveTargets,
+      linkPaths,
+      mode,
+      scope,
+    };
+  }
+
+  private async materializePreparedInstall(
+    prepared: PreparedInstall,
+    projectDir: string,
+    sourceInfo?: LockSourceInfo,
+  ): Promise<InstallResult> {
+    if (prepared.type === "config") {
+      const rootDir =
+        prepared.scope === "global" ? this.paths.getHomeDir() : projectDir;
+      await this.resetConfigTargets(rootDir);
     }
-    if (scope === "project") {
+
+    for (const linkPath of prepared.linkPaths) {
+      await this.materializeResource(prepared.storePath, linkPath, prepared.mode);
+    }
+    if (prepared.type === "config") {
+      await this.activateConfigResource(
+        prepared.scope === "global" ? this.paths.getHomeDir() : projectDir,
+        prepared.linkPaths[0],
+      );
+    }
+    if (prepared.scope === "project") {
       if (!sourceInfo) {
         throw new Error("Project install requires source lock information.");
       }
+      if (prepared.type === "config") {
+        await this.removeOtherProjectConfigLocks(projectDir, prepared.name);
+      }
       await this.lockStore.upsertResource(projectDir, sourceInfo, {
-        type,
-        name,
-        version: resolvedVersion,
-        agents: effectiveTargets,
-        mode,
+        type: prepared.type,
+        name: prepared.name,
+        version: prepared.version,
+        agents: prepared.effectiveTargets,
+        mode: prepared.mode,
       });
     }
 
-    return { type, name, version: resolvedVersion, linkPath: linkPaths[0], mode };
+    return {
+      type: prepared.type,
+      name: prepared.name,
+      version: prepared.version,
+      linkPath: prepared.linkPaths[0],
+      mode: prepared.mode,
+    };
   }
 
   private async loadSourceFromConfig(sourceRef?: string): Promise<ResourceSourceAdapter> {
@@ -1798,6 +2208,126 @@ export class ServiceFactory {
     await fs.symlink(sourcePath, targetPath, "dir");
   }
 
+  private getDefaultAgentsForType(type: ResourceType): string[] {
+    return type === "config" ? ["codex"] : normalizeAgents();
+  }
+
+  private validateResourceAgents(type: ResourceType, agents: string[]): void {
+    if (type !== "config") return;
+    const invalidAgents = normalizeAgents(agents).filter((agent) => agent !== "codex");
+    if (invalidAgents.length > 0) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Resource type ${type} currently only supports codex.`,
+        { type, agents, invalidAgents },
+      );
+    }
+  }
+
+  private getCodexConfigDir(rootDir: string): string {
+    return path.join(rootDir, ".codex");
+  }
+
+  private getLegacyCodexProjectPath(
+    projectDir: string,
+    type: ResourceType,
+    name: string,
+  ): string | undefined {
+    if (type === "rule") {
+      return path.join(projectDir, ".agents", "rules", name);
+    }
+    if (type === "skill") {
+      return path.join(projectDir, ".codex", "skills", name);
+    }
+    return undefined;
+  }
+
+  private buildCodexPublishFollowUp(
+    type: ResourceType,
+    name: string,
+    projectDir: string,
+    sourceDir: string,
+  ): PublishFollowUp | undefined {
+    const legacyPath = this.getLegacyCodexProjectPath(projectDir, type, name);
+    if (!legacyPath) return undefined;
+    if (path.resolve(sourceDir) !== path.resolve(legacyPath)) {
+      return undefined;
+    }
+
+    const canonicalPath = getProjectResourcePaths(projectDir, type, name, ["codex"])[0];
+    if (path.resolve(canonicalPath) === path.resolve(legacyPath)) {
+      return undefined;
+    }
+
+    const resourceLabel = type === "rule" ? "rule" : "skill";
+    return {
+      legacyPath,
+      canonicalPath,
+      message:
+        `Legacy Codex ${resourceLabel} path detected: ${legacyPath}\n` +
+        `Canonical Codex ${resourceLabel} path: ${canonicalPath}`,
+    };
+  }
+
+  private getCodexActiveConfigPath(rootDir: string): string {
+    return path.join(this.getCodexConfigDir(rootDir), "config.toml");
+  }
+
+  private async resetConfigTargets(rootDir: string): Promise<void> {
+    await fs.rm(this.getCodexActiveConfigPath(rootDir), { force: true });
+  }
+
+  private async activateConfigResource(
+    rootDir: string,
+    resourcePath: string,
+  ): Promise<void> {
+    const sourcePath = path.join(resourcePath, this.getDefaultEntry("config"));
+    if (!(await this.exists(sourcePath))) {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_METADATA,
+        `Config resource entry not found: ${sourcePath}`,
+        { resourcePath, sourcePath },
+      );
+    }
+    const targetPath = this.getCodexActiveConfigPath(rootDir);
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.copyFile(sourcePath, targetPath);
+  }
+
+  private async removeOtherProjectConfigLocks(
+    projectDir: string,
+    keepName: string,
+  ): Promise<void> {
+    const installedConfigs = await this.listInstalled(projectDir, "config");
+    for (const resource of installedConfigs) {
+      if (resource.name === keepName) continue;
+      await this.lockStore.removeResource(projectDir, {
+        type: resource.type,
+        name: resource.name,
+      });
+    }
+  }
+
+  private async reactivateProjectConfig(projectDir: string): Promise<void> {
+    const installedConfigs = await this.listInstalled(projectDir, "config");
+    if (installedConfigs.length === 0) {
+      await fs.rm(this.getCodexActiveConfigPath(projectDir), { force: true });
+      return;
+    }
+
+    const nextConfig = installedConfigs[installedConfigs.length - 1];
+    const nextTarget = await this.tryResolveProjectResourceTarget(
+      projectDir,
+      "config",
+      nextConfig.name,
+    );
+    if (!nextTarget) {
+      await fs.rm(this.getCodexActiveConfigPath(projectDir), { force: true });
+      return;
+    }
+    await this.activateConfigResource(projectDir, nextTarget.resourcePath);
+  }
+
   private resolveInstallMode(mode?: string): InstallMode {
     return mode === "link" ? "link" : "copy";
   }
@@ -2013,6 +2543,7 @@ export class ServiceFactory {
 
   private async resolveEffectiveAgents(
     projectDir: string,
+    type: ResourceType,
     explicitAgents?: string[],
     fallbackAgents?: string[],
   ): Promise<string[]> {
@@ -2020,10 +2551,14 @@ export class ServiceFactory {
       return normalizeAgents(explicitAgents);
     }
     const configuredAgents = await this.getConfiguredAgents(projectDir);
-    if (configuredAgents?.length) {
+    if (configuredAgents?.length && type !== "config") {
       return configuredAgents;
     }
-    return normalizeAgents(fallbackAgents);
+    const resolved =
+      fallbackAgents && fallbackAgents.length > 0
+        ? normalizeAgents(fallbackAgents)
+        : this.getDefaultAgentsForType(type);
+    return resolved;
   }
 
   private async resolveGlobalInstallAgents(
@@ -2040,7 +2575,7 @@ export class ServiceFactory {
     if (locked?.agents?.length) {
       return normalizeAgents(locked.agents);
     }
-    return this.resolveEffectiveAgents(projectDir, undefined, fallbackAgents);
+    return this.resolveEffectiveAgents(projectDir, type, undefined, fallbackAgents);
   }
 
   private async getConfiguredAgents(projectDir: string): Promise<string[] | undefined> {
@@ -2068,9 +2603,17 @@ export class ServiceFactory {
         (YAML.parse(raw) as { agents?: string[]; targets?: string[] } | null) ??
         null;
       if (!parsed) return null;
-      return { agents: parsed.agents ?? parsed.targets };
+      return {
+        agents:
+          parsed.agents ??
+          parsed.targets ??
+          (type === "config" ? this.getDefaultAgentsForType(type) : undefined),
+      };
     }
 
+    if (type === "config") {
+      return { agents: this.getDefaultAgentsForType(type) };
+    }
     if (type !== "skill") return null;
     const entryPath = path.join(resourceDir, this.getDefaultEntry(type));
     if (!(await this.exists(entryPath))) return null;
@@ -2080,6 +2623,106 @@ export class ServiceFactory {
         this.readStringArrayMetadata(metadata, "agents") ??
         this.readStringArrayMetadata(metadata, "targets"),
     };
+  }
+
+  private async readSkillDependenciesFromDir(
+    resourceDir: string,
+  ): Promise<SkillDependencyRef[]> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (!(await this.exists(yamlPath))) {
+      return [];
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = YAML.parse(await fs.readFile(yamlPath, "utf8"));
+    } catch {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_METADATA,
+        "himan.yaml is not valid YAML.",
+        { yamlPath },
+      );
+    }
+
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_METADATA,
+        "himan.yaml must be an object.",
+        { yamlPath },
+      );
+    }
+
+    const dependencies = (
+      parsed as {
+        analysis?: {
+          dependencies?: {
+            skills?: unknown;
+          };
+        };
+      }
+    ).analysis?.dependencies?.skills;
+    if (dependencies === undefined) {
+      return [];
+    }
+    if (!Array.isArray(dependencies)) {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_METADATA,
+        "analysis.dependencies.skills must be an array when present.",
+        { yamlPath },
+      );
+    }
+
+    const seen = new Set<string>();
+    const refs: SkillDependencyRef[] = [];
+    for (const entry of dependencies) {
+      const dependency = this.parseSkillDependencyEntry(entry, yamlPath);
+      if (seen.has(dependency.name)) {
+        continue;
+      }
+      seen.add(dependency.name);
+      refs.push(dependency);
+    }
+    return refs;
+  }
+
+  private parseSkillDependencyEntry(
+    entry: unknown,
+    yamlPath: string,
+  ): SkillDependencyRef {
+    if (typeof entry === "string") {
+      const name = entry.trim();
+      if (name) {
+        return { name, optional: false };
+      }
+    } else if (typeof entry === "object" && entry !== null && !Array.isArray(entry)) {
+      const { name, optional } = entry as { name?: unknown; optional?: unknown };
+      if (typeof name === "string" && name.trim()) {
+        if (optional !== undefined && typeof optional !== "boolean") {
+          throw new HimanError(
+            errorCodes.INVALID_RESOURCE_METADATA,
+            "Skill dependency optional flag must be boolean when present.",
+            { yamlPath, dependency: entry },
+          );
+        }
+        return { name: name.trim(), optional: optional === true };
+      }
+    }
+
+    throw new HimanError(
+      errorCodes.INVALID_RESOURCE_METADATA,
+      "Skill dependency entries must be a non-empty string or an object with a name field.",
+      { yamlPath, dependency: entry },
+    );
+  }
+
+  private isSkippableOptionalDependencyError(error: unknown): boolean {
+    const skippableCodes = new Set<string>([
+      errorCodes.RESOURCE_NOT_FOUND,
+      errorCodes.VERSION_NOT_FOUND,
+      errorCodes.RESOURCE_ARCHIVED,
+    ]);
+    return error instanceof HimanError
+      && skippableCodes.has(error.code);
   }
 
   private async updateRenamedResourceMetadata(
@@ -2217,6 +2860,49 @@ export class ServiceFactory {
     );
   }
 
+  private async tryResolvePublishSourceDir(
+    type: ResourceType,
+    name: string,
+    projectDir: string,
+  ): Promise<string | undefined> {
+    try {
+      const sourceInfo = await this.getLockSourceInfo();
+      return await this.resolvePublishSourceDir(type, name, projectDir, sourceInfo);
+    } catch (error) {
+      if (
+        error instanceof HimanError &&
+        (error.code === errorCodes.CONFIG_NOT_FOUND ||
+          error.code === errorCodes.RESOURCE_NOT_FOUND)
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  private getProjectPublishRootCandidates(
+    projectDir: string,
+    type: ResourceType,
+  ): string[] {
+    const probeName = "__himan_probe__";
+    const roots = new Set<string>([
+      path.join(projectDir, ".himan", "dev", type),
+    ]);
+
+    for (const agent of getSupportedAgentNames()) {
+      for (const candidate of getResourcePathCandidatesForAgent(
+        projectDir,
+        type,
+        probeName,
+        agent,
+      )) {
+        roots.add(path.dirname(candidate));
+      }
+    }
+
+    return [...roots];
+  }
+
   private getRepoResourceDirFromInfo(
     sourceInfo: LockSourceInfo,
     type: ResourceType,
@@ -2239,10 +2925,12 @@ export class ServiceFactory {
   private getTypeDir(type: ResourceType): string {
     if (type === "rule") return "rules";
     if (type === "command") return "commands";
+    if (type === "config") return "configs";
     return "skills";
   }
 
   private getDefaultEntry(type: ResourceType): string {
+    if (type === "config") return "config.toml";
     return type === "skill" ? "SKILL.md" : "content.md";
   }
 
@@ -2253,6 +2941,16 @@ export class ServiceFactory {
     if (type === "command") {
       return `# ${name}\n\nDescribe command behavior here.\n`;
     }
+    if (type === "config") {
+      return [
+        "# Codex config resource generated by Himan.",
+        "",
+        'model = "gpt-5.5"',
+        'approval_policy = "on-request"',
+        'sandbox_mode = "workspace-write"',
+        "",
+      ].join("\n");
+    }
     return `# ${name}\n\nDescribe skill workflow here.\n`;
   }
 
@@ -2261,7 +2959,7 @@ export class ServiceFactory {
     name: string,
     options: CreateOptions,
   ): void {
-    if (!["rule", "command", "skill"].includes(type)) {
+    if (!["rule", "command", "skill", "config"].includes(type)) {
       throw new HimanError(
         errorCodes.UNSUPPORTED_RESOURCE_TYPE,
         `Unsupported resource type for create: ${type}`,
@@ -2288,7 +2986,7 @@ export class ServiceFactory {
     name: string,
     action: string,
   ): void {
-    if (!["rule", "command", "skill"].includes(type)) {
+    if (!["rule", "command", "skill", "config"].includes(type)) {
       throw new HimanError(
         errorCodes.UNSUPPORTED_RESOURCE_TYPE,
         `Unsupported resource type for ${action}: ${type}`,
@@ -2308,7 +3006,7 @@ export class ServiceFactory {
     oldName: string,
     newName: string,
   ): void {
-    if (!["rule", "command", "skill"].includes(type)) {
+    if (!["rule", "command", "skill", "config"].includes(type)) {
       throw new HimanError(
         errorCodes.UNSUPPORTED_RESOURCE_TYPE,
         `Unsupported resource type for rename: ${type}`,

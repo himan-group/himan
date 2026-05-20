@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import YAML from "yaml";
 import { toRepoId } from "../../src/utils/repo-id.js";
 
 const TEST_REPO = "https://github.com/himan-group/himan-test.git";
@@ -484,6 +485,7 @@ describe("CLI commands with external git source", () => {
       rule: [],
       command: [],
       skill: [],
+      config: [],
     });
 
     const listResult = runCli(["list", "rule", "--json"], projectDir, homeDir);
@@ -496,6 +498,7 @@ describe("CLI commands with external git source", () => {
       rule: [],
       command: [],
       skill: [],
+      config: [],
     });
 
     const installedAliasResult = runCli(["list", "--installed", "--json"], projectDir, homeDir);
@@ -504,6 +507,7 @@ describe("CLI commands with external git source", () => {
       rule: [],
       command: [],
       skill: [],
+      config: [],
     });
 
     const historyResult = runCli(
@@ -725,6 +729,122 @@ describe("CLI commands with external git source", () => {
     await expect(fs.access(path.join(projectDir, ".cursor", "skills", "bug-analysis", "SKILL.md"))).resolves.toBeUndefined();
   });
 
+  it("manages codex config resources with a single active .codex/config.toml", async () => {
+    const configHomeDir = path.join(tmpRoot, "config-home");
+    const configProjectDir = path.join(tmpRoot, "config-project");
+    const configRemote = await createEmptyRemote("codex-config");
+    await fs.mkdir(configHomeDir, { recursive: true });
+    await fs.mkdir(configProjectDir, { recursive: true });
+
+    expect(runCli(["init", configRemote], configProjectDir, configHomeDir).status).toBe(0);
+    expect(runCli(["agent", "use", "cursor", "--project"], configProjectDir, configHomeDir).status)
+      .toBe(0);
+
+    const createDefault = runCli(
+      ["create", "config", "team-default", "--json"],
+      configProjectDir,
+      configHomeDir,
+    );
+    expect(createDefault.status).toBe(0);
+    const createDefaultPayload = JSON.parse(createDefault.stdout) as {
+      resourceDir: string;
+    };
+    expect(createDefaultPayload.resourceDir).toContain(
+      path.join(".codex", "configs", "team-default"),
+    );
+    await expect(
+      fs.access(path.join(configProjectDir, ".cursor", "configs", "team-default")),
+    ).rejects.toThrow();
+    await expect(
+      fs.readFile(
+        path.join(configProjectDir, ".codex", "configs", "team-default", "himan.yaml"),
+        "utf8",
+      ),
+    ).resolves.toContain("- codex");
+
+    await fs.appendFile(
+      path.join(configProjectDir, ".codex", "configs", "team-default", "config.toml"),
+      'model_reasoning_effort = "medium"\n',
+      "utf8",
+    );
+
+    const publishDefault = runCli(
+      ["publish", "config", "team-default", "--patch"],
+      configProjectDir,
+      configHomeDir,
+    );
+    expect(publishDefault.status).toBe(0);
+    expect(publishDefault.stdout).toContain("Published config/team-default@0.0.1");
+
+    const installDefault = runCli(
+      ["install", "config", "team-default@0.0.1"],
+      configProjectDir,
+      configHomeDir,
+    );
+    expect(installDefault.status).toBe(0);
+    await expect(
+      fs.readFile(
+        path.join(configProjectDir, ".codex", "configs", "team-default", "config.toml"),
+        "utf8",
+      ),
+    ).resolves.toContain('model_reasoning_effort = "medium"');
+    await expect(
+      fs.readFile(path.join(configProjectDir, ".codex", "config.toml"), "utf8"),
+    ).resolves.toContain('model_reasoning_effort = "medium"');
+
+    const createStrict = runCli(
+      ["create", "config", "team-strict"],
+      configProjectDir,
+      configHomeDir,
+    );
+    expect(createStrict.status).toBe(0);
+    await fs.appendFile(
+      path.join(configProjectDir, ".codex", "configs", "team-strict", "config.toml"),
+      'approval_policy = "never"\n',
+      "utf8",
+    );
+
+    const publishStrict = runCli(
+      ["publish", "config", "team-strict", "--patch"],
+      configProjectDir,
+      configHomeDir,
+    );
+    expect(publishStrict.status).toBe(0);
+    expect(publishStrict.stdout).toContain("Published config/team-strict@0.0.1");
+
+    const installStrict = runCli(
+      ["install", "config", "team-strict@0.0.1"],
+      configProjectDir,
+      configHomeDir,
+    );
+    expect(installStrict.status).toBe(0);
+    await expect(
+      fs.access(path.join(configProjectDir, ".codex", "configs", "team-default")),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.readFile(path.join(configProjectDir, ".codex", "config.toml"), "utf8"),
+    ).resolves.toContain('approval_policy = "never"');
+    await expect(
+      fs.readFile(path.join(configProjectDir, "himan.lock"), "utf8"),
+    ).resolves.toContain('"name": "team-strict"');
+    await expect(
+      fs.readFile(path.join(configProjectDir, "himan.lock"), "utf8"),
+    ).resolves.not.toContain('"name": "team-default"');
+
+    const uninstallStrict = runCli(
+      ["uninstall", "config", "team-strict"],
+      configProjectDir,
+      configHomeDir,
+    );
+    expect(uninstallStrict.status).toBe(0);
+    await expect(
+      fs.access(path.join(configProjectDir, ".codex", "configs", "team-strict")),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(configProjectDir, ".codex", "config.toml")),
+    ).rejects.toThrow();
+  }, 20000);
+
   it("publishes create artifact without dev workflow", async () => {
     const createResult = runCli(
       [
@@ -832,6 +952,107 @@ describe("CLI commands with external git source", () => {
     expect(storedSkillContent).toContain("Skill published from create artifact.");
   });
 
+  it("publishes all current-project resources with batch progress logs", async () => {
+    const batchHomeDir = path.join(tmpRoot, "batch-all-home");
+    const batchProjectDir = path.join(tmpRoot, "batch-all-project");
+    const batchRemote = await createEmptyRemote("batch-all");
+    await fs.mkdir(batchHomeDir, { recursive: true });
+    await fs.mkdir(batchProjectDir, { recursive: true });
+
+    expect(runCli(["init", batchRemote], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "rule", "batch-rule"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "command", "batch-command"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "batch-skill"], batchProjectDir, batchHomeDir).status).toBe(0);
+
+    const publishResult = runCli(["publish", "--all", "--patch"], batchProjectDir, batchHomeDir);
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("[publish:batch] Scanning current project resources.");
+    expect(publishResult.stdout).toContain("[publish:batch] Selected 3 resource(s).");
+    expect(publishResult.stdout).toContain("(1/3)");
+    expect(publishResult.stdout).toContain("Published rule/batch-rule@0.0.1.");
+    expect(publishResult.stdout).toContain("Published command/batch-command@0.0.1.");
+    expect(publishResult.stdout).toContain("Published skill/batch-skill@0.0.1.");
+    expect(publishResult.stdout).toContain("[publish:batch] Summary: 3 published, 0 skipped, 0 failed.");
+
+    expect(
+      JSON.parse(runCli(["history", "rule", "batch-rule", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "rule/batch-rule@0.0.1" }]);
+    expect(
+      JSON.parse(runCli(["history", "command", "batch-command", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "command/batch-command@0.0.1" }]);
+    expect(
+      JSON.parse(runCli(["history", "skill", "batch-skill", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "skill/batch-skill@0.0.1" }]);
+  }, 20000);
+
+  it("publishes all current-project skills only", async () => {
+    const batchHomeDir = path.join(tmpRoot, "batch-skill-all-home");
+    const batchProjectDir = path.join(tmpRoot, "batch-skill-all-project");
+    const batchRemote = await createEmptyRemote("batch-skill-all");
+    await fs.mkdir(batchHomeDir, { recursive: true });
+    await fs.mkdir(batchProjectDir, { recursive: true });
+
+    expect(runCli(["init", batchRemote], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "skill-one"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "skill-two"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "rule", "rule-one"], batchProjectDir, batchHomeDir).status).toBe(0);
+
+    const publishResult = runCli(
+      ["publish", "skill", "--all", "--patch"],
+      batchProjectDir,
+      batchHomeDir,
+    );
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("[publish:batch] Selected 2 resource(s).");
+    expect(publishResult.stdout).toContain("Published skill/skill-one@0.0.1.");
+    expect(publishResult.stdout).toContain("Published skill/skill-two@0.0.1.");
+    expect(publishResult.stdout).not.toContain("Published rule/rule-one@0.0.1.");
+
+    expect(
+      JSON.parse(runCli(["history", "skill", "skill-one", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "skill/skill-one@0.0.1" }]);
+    expect(
+      JSON.parse(runCli(["history", "skill", "skill-two", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "skill/skill-two@0.0.1" }]);
+    expect(
+      JSON.parse(runCli(["history", "rule", "rule-one", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([]);
+  }, 20000);
+
+  it("publishes multiple named skills from the current project", async () => {
+    const batchHomeDir = path.join(tmpRoot, "batch-skill-names-home");
+    const batchProjectDir = path.join(tmpRoot, "batch-skill-names-project");
+    const batchRemote = await createEmptyRemote("batch-skill-names");
+    await fs.mkdir(batchHomeDir, { recursive: true });
+    await fs.mkdir(batchProjectDir, { recursive: true });
+
+    expect(runCli(["init", batchRemote], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "skill-a"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "skill-b"], batchProjectDir, batchHomeDir).status).toBe(0);
+    expect(runCli(["create", "skill", "skill-c"], batchProjectDir, batchHomeDir).status).toBe(0);
+
+    const publishResult = runCli(
+      ["publish", "skill", "skill-a,skill-c", "--patch"],
+      batchProjectDir,
+      batchHomeDir,
+    );
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("[publish:batch] Selected 2 resource(s).");
+    expect(publishResult.stdout).toContain("Published skill/skill-a@0.0.1.");
+    expect(publishResult.stdout).toContain("Published skill/skill-c@0.0.1.");
+    expect(publishResult.stdout).not.toContain("Published skill/skill-b@0.0.1.");
+
+    expect(
+      JSON.parse(runCli(["history", "skill", "skill-a", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "skill/skill-a@0.0.1" }]);
+    expect(
+      JSON.parse(runCli(["history", "skill", "skill-b", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([]);
+    expect(
+      JSON.parse(runCli(["history", "skill", "skill-c", "--json"], batchProjectDir, batchHomeDir).stdout),
+    ).toEqual([{ version: "0.0.1", raw: "skill/skill-c@0.0.1" }]);
+  }, 20000);
+
   it("supports install and dev for command and skill", async () => {
     const installCommand = runCli(
       ["install", "command", "release-note@0.1.0"],
@@ -880,6 +1101,173 @@ describe("CLI commands with external git source", () => {
     await expect(
       fs.access(path.join(projectDir, ".himan", "dev", "skill", "risk-check")),
     ).rejects.toThrow();
+  });
+
+  it("installs one dependency layer by default when requested", async () => {
+    const dependencyHomeDir = path.join(tmpRoot, "skill-dependency-home");
+    const dependencyProjectDir = path.join(tmpRoot, "skill-dependency-project");
+    const dependencyRemote = await createSkillRemote("skill-dependency", [
+      {
+        name: "skill-root",
+        version: "1.0.0",
+        description: "root skill",
+        dependencies: ["skill-mid", "skill-shared"],
+      },
+      {
+        name: "skill-mid",
+        version: "1.0.0",
+        description: "mid skill",
+        dependencies: ["skill-leaf", "skill-shared"],
+      },
+      {
+        name: "skill-leaf",
+        version: "1.0.0",
+        description: "leaf skill",
+      },
+      {
+        name: "skill-shared",
+        version: "1.0.0",
+        description: "shared skill",
+      },
+    ]);
+
+    await fs.mkdir(dependencyHomeDir, { recursive: true });
+    await fs.mkdir(dependencyProjectDir, { recursive: true });
+
+    const initResult = runCli(["init", dependencyRemote], dependencyProjectDir, dependencyHomeDir);
+    expect(initResult.status).toBe(0);
+
+    const installResult = runCli(
+      ["install", "skill", "skill-root@1.0.0", "-r", "--agent", "codex"],
+      dependencyProjectDir,
+      dependencyHomeDir,
+    );
+    expect(installResult.status).toBe(0);
+    expect(installResult.stdout).toContain("Installed skill/skill-mid@1.0.0");
+    expect(installResult.stdout).toContain("Installed skill/skill-root@1.0.0");
+    expect(installResult.stdout).toContain("Installed skill/skill-shared@1.0.0");
+    expect(installResult.stdout.match(/Installed skill\/skill-shared@1.0.0/g)?.length ?? 0).toBe(1);
+    expect(installResult.stdout).not.toContain("Installed skill/skill-leaf@1.0.0");
+
+    for (const name of ["skill-root", "skill-mid", "skill-shared"]) {
+      await expect(
+        fs.readFile(
+          path.join(dependencyProjectDir, ".agents", "skills", name, "SKILL.md"),
+          "utf8",
+        ),
+      ).resolves.toContain(`# ${name}`);
+    }
+    await expect(
+      fs.access(path.join(dependencyProjectDir, ".agents", "skills", "skill-leaf")),
+    ).rejects.toThrow();
+
+    const lockRaw = await fs.readFile(path.join(dependencyProjectDir, "himan.lock"), "utf8");
+    const lock = JSON.parse(lockRaw) as {
+      resources: Array<{ type: string; name: string; agents?: string[] }>;
+    };
+    expect(lock.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "skill", name: "skill-root", agents: ["codex"] }),
+        expect.objectContaining({ type: "skill", name: "skill-mid", agents: ["codex"] }),
+        expect.objectContaining({ type: "skill", name: "skill-shared", agents: ["codex"] }),
+      ]),
+    );
+    expect(lock.resources.some((item) => item.type === "skill" && item.name === "skill-leaf")).toBe(
+      false,
+    );
+  });
+
+  it("installs deeper skill dependencies when an explicit depth is provided", async () => {
+    const dependencyHomeDir = path.join(tmpRoot, "skill-dependency-depth-home");
+    const dependencyProjectDir = path.join(tmpRoot, "skill-dependency-depth-project");
+    const dependencyRemote = await createSkillRemote("skill-dependency-depth", [
+      {
+        name: "skill-root",
+        version: "1.0.0",
+        description: "root skill",
+        dependencies: ["skill-mid"],
+      },
+      {
+        name: "skill-mid",
+        version: "1.0.0",
+        description: "mid skill",
+        dependencies: ["skill-leaf"],
+      },
+      {
+        name: "skill-leaf",
+        version: "1.0.0",
+        description: "leaf skill",
+      },
+    ]);
+
+    await fs.mkdir(dependencyHomeDir, { recursive: true });
+    await fs.mkdir(dependencyProjectDir, { recursive: true });
+
+    const initResult = runCli(["init", dependencyRemote], dependencyProjectDir, dependencyHomeDir);
+    expect(initResult.status).toBe(0);
+
+    const installResult = runCli(
+      ["install", "skill", "skill-root@1.0.0", "-r", "--depth", "2", "--agent", "codex"],
+      dependencyProjectDir,
+      dependencyHomeDir,
+    );
+    expect(installResult.status).toBe(0);
+    expect(installResult.stdout).toContain("Installed skill/skill-root@1.0.0");
+    expect(installResult.stdout).toContain("Installed skill/skill-mid@1.0.0");
+    expect(installResult.stdout).toContain("Installed skill/skill-leaf@1.0.0");
+
+    await expect(
+      fs.readFile(
+        path.join(dependencyProjectDir, ".agents", "skills", "skill-leaf", "SKILL.md"),
+        "utf8",
+      ),
+    ).resolves.toContain("# skill-leaf");
+  });
+
+  it("rejects circular skill dependencies during recursive install", async () => {
+    const cycleHomeDir = path.join(tmpRoot, "skill-cycle-home");
+    const cycleProjectDir = path.join(tmpRoot, "skill-cycle-project");
+    const cycleRemote = await createSkillRemote("skill-cycle", [
+      {
+        name: "cycle-a",
+        version: "1.0.0",
+        description: "cycle a",
+        dependencies: ["cycle-b"],
+      },
+      {
+        name: "cycle-b",
+        version: "1.0.0",
+        description: "cycle b",
+        dependencies: ["cycle-c"],
+      },
+      {
+        name: "cycle-c",
+        version: "1.0.0",
+        description: "cycle c",
+        dependencies: ["cycle-a"],
+      },
+    ]);
+
+    await fs.mkdir(cycleHomeDir, { recursive: true });
+    await fs.mkdir(cycleProjectDir, { recursive: true });
+
+    const initResult = runCli(["init", cycleRemote], cycleProjectDir, cycleHomeDir);
+    expect(initResult.status).toBe(0);
+
+    const installResult = runCli(
+      ["install", "skill", "cycle-a@1.0.0", "-r", "--depth", "3", "--agent", "codex"],
+      cycleProjectDir,
+      cycleHomeDir,
+    );
+    expect(installResult.status).toBe(1);
+    expect(installResult.stderr).toContain("E_INVALID_RESOURCE_METADATA");
+    expect(installResult.stderr).toContain(
+      "Circular skill dependency detected: skill/cycle-a -> skill/cycle-b -> skill/cycle-c -> skill/cycle-a.",
+    );
+    await expect(
+      fs.access(path.join(cycleProjectDir, ".agents", "skills", "cycle-a")),
+    ).rejects.toThrow();
+    await expect(fs.access(path.join(cycleProjectDir, "himan.lock"))).rejects.toThrow();
   });
 
   it("switches an existing Codex skill directory to dev mode", async () => {
@@ -952,6 +1340,52 @@ describe("CLI commands with external git source", () => {
     );
     expect(publishResult.status).toBe(0);
     expect(publishResult.stdout).toContain("Published skill/jira-issue-create@0.0.1");
+    expect(publishResult.stdout).toContain("Legacy Codex skill path detected");
+    expect(publishResult.stdout).toContain(".agents/skills/jira-issue-create");
+  });
+
+  it("supports dev and publish from legacy .agents rule directories for codex", async () => {
+    const rulePath = path.join(projectDir, ".agents", "rules", "legacy-codex-rule");
+    await fs.mkdir(rulePath, { recursive: true });
+    await fs.writeFile(
+      path.join(rulePath, "himan.yaml"),
+      [
+        "name: legacy-codex-rule",
+        "type: rule",
+        "version: 0.1.0",
+        "entry: content.md",
+        "description: legacy codex rule",
+        "agents:",
+        "  - codex",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(rulePath, "content.md"),
+      "# legacy-codex-rule\n\nLegacy rule content.\n",
+      "utf8",
+    );
+
+    const devResult = runCli(["dev", "rule", "legacy-codex-rule"], projectDir, homeDir);
+    expect(devResult.status).toBe(0);
+    expect(devResult.stdout).toContain("Editing rule/legacy-codex-rule in place");
+
+    await fs.appendFile(path.join(rulePath, "content.md"), "Published from .agents.\n", "utf8");
+    const publishResult = runCli(
+      ["publish", "rule", "legacy-codex-rule", "--patch"],
+      projectDir,
+      homeDir,
+    );
+    expect(publishResult.status).toBe(0);
+    expect(publishResult.stdout).toContain("Published rule/legacy-codex-rule@0.0.1");
+    expect(publishResult.stdout).toContain("Legacy Codex rule path detected");
+    await expect(
+      fs.readFile(
+        path.join(projectDir, ".codex", "rules", "legacy-codex-rule", "content.md"),
+        "utf8",
+      ),
+    ).resolves.toContain("Published from .agents.");
   });
 
   it("supports multi-agent installs for claude-code/codex/openclaw", async () => {
@@ -985,7 +1419,7 @@ describe("CLI commands with external git source", () => {
 
     const agentStyleTargets = [
       path.join(projectDir, ".claude", "rules", "agent-style"),
-      path.join(projectDir, ".agents", "rules", "agent-style"),
+      path.join(projectDir, ".codex", "rules", "agent-style"),
       path.join(projectDir, ".openclaw", "rules", "agent-style"),
     ];
     for (const targetPath of agentStyleTargets) {
@@ -1035,7 +1469,7 @@ describe("CLI commands with external git source", () => {
     const groupedListResult = runCli(["list", "--json"], projectDir, homeDir);
     expect(groupedListResult.status).toBe(0);
     const grouped = JSON.parse(groupedListResult.stdout) as Record<
-      "rule" | "command" | "skill",
+      "rule" | "command" | "skill" | "config",
       Array<Record<string, unknown>>
     >;
     expect(grouped.rule).toEqual(
@@ -1053,6 +1487,7 @@ describe("CLI commands with external git source", () => {
         expect.objectContaining({ name: "risk-check", type: "skill" }),
       ]),
     );
+    expect(grouped.config).toEqual(expect.any(Array));
 
     const groupedTextResult = runCli(["list"], projectDir, homeDir);
     expect(groupedTextResult.status).toBe(0);
@@ -1143,7 +1578,7 @@ describe("CLI commands with external git source", () => {
 
     const quickstartRulePath = path.join(
       quickstartProjectDir,
-      ".agents",
+      ".codex",
       "rules",
       "code-review",
     );
@@ -1213,13 +1648,13 @@ describe("CLI commands with external git source", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Installed global rule/code-review@1.0.0");
 
-    const globalPath = path.join(homeDir, ".agents", "rules", "code-review");
+    const globalPath = path.join(homeDir, ".codex", "rules", "code-review");
     expect((await fs.lstat(globalPath)).isSymbolicLink()).toBe(false);
     await expect(
       fs.readFile(path.join(globalPath, "content.md"), "utf8"),
     ).resolves.toContain("Follow code review checklist");
     await expect(
-      fs.access(path.join(globalInstallProjectDir, ".agents", "rules", "code-review")),
+      fs.access(path.join(globalInstallProjectDir, ".codex", "rules", "code-review")),
     ).rejects.toThrow();
     await expect(fs.access(path.join(globalInstallProjectDir, "himan.lock"))).rejects.toThrow();
   });
@@ -1270,7 +1705,7 @@ describe("CLI commands with external git source", () => {
         .status,
     ).toBe(0);
     await fs.appendFile(
-      path.join(globalEditProjectDir, ".agents", "rules", "global-edit", "content.md"),
+      path.join(globalEditProjectDir, ".codex", "rules", "global-edit", "content.md"),
       "Initial global-edit publish.\n",
       "utf8",
     );
@@ -1289,7 +1724,7 @@ describe("CLI commands with external git source", () => {
       homeDir,
     );
     expect(globalInstall.status).toBe(0);
-    await fs.rm(path.join(globalEditProjectDir, ".agents", "rules", "global-edit"), {
+    await fs.rm(path.join(globalEditProjectDir, ".codex", "rules", "global-edit"), {
       recursive: true,
       force: true,
     });
@@ -1301,7 +1736,7 @@ describe("CLI commands with external git source", () => {
     );
     const projectCopyPath = path.join(
       globalEditConsumerDir,
-      ".agents",
+      ".codex",
       "rules",
       "global-edit",
     );
@@ -1322,7 +1757,7 @@ describe("CLI commands with external git source", () => {
     );
     expect(publishGlobal.stdout).toContain("Published rule/global-edit@0.0.2");
     await expect(
-      fs.readFile(path.join(homeDir, ".agents", "rules", "global-edit", "content.md"), "utf8"),
+      fs.readFile(path.join(homeDir, ".codex", "rules", "global-edit", "content.md"), "utf8"),
     ).resolves.toContain("Published back to global install.");
     await expect(fs.access(path.join(globalEditConsumerDir, "himan.lock"))).rejects.toThrow();
   });
@@ -1346,7 +1781,7 @@ describe("CLI commands with external git source", () => {
 
     const result = runCli(["install", "rule", "code-review@1.0.0"], projectDir, homeDir);
     expect(result.status).toBe(0);
-    const codexRulePath = path.join(projectDir, ".agents", "rules", "code-review");
+    const codexRulePath = path.join(projectDir, ".codex", "rules", "code-review");
     expect((await fs.lstat(codexRulePath)).isSymbolicLink()).toBe(false);
     await expect(
       fs.readFile(path.join(codexRulePath, "content.md"), "utf8"),
@@ -1366,7 +1801,7 @@ describe("CLI commands with external git source", () => {
     const projectListResult = runCli(["project", "list", "--json"], projectDir, homeDir);
     expect(projectListResult.status).toBe(0);
     const projectList = JSON.parse(projectListResult.stdout) as Record<
-      "rule" | "command" | "skill",
+      "rule" | "command" | "skill" | "config",
       Array<Record<string, unknown>>
     >;
     expect(projectList.rule).toEqual(
@@ -1398,6 +1833,7 @@ describe("CLI commands with external git source", () => {
         }),
       ]),
     );
+    expect(projectList.config).toEqual(expect.any(Array));
 
     const installedAliasResult = runCli(
       ["list", "rule", "--installed", "--json"],
@@ -1490,7 +1926,7 @@ describe("CLI commands with external git source", () => {
       recursive: true,
       force: true,
     });
-    await fs.rm(path.join(projectDir, ".agents", "rules", "code-review"), {
+    await fs.rm(path.join(projectDir, ".codex", "rules", "code-review"), {
       recursive: true,
       force: true,
     });
@@ -1509,7 +1945,7 @@ describe("CLI commands with external git source", () => {
     expect(result.stdout).toContain("Installed command/release-note@0.1.0");
     expect(result.stdout).toContain("Installed skill/risk-check@0.0.1");
 
-    const restoredRulePath = path.join(projectDir, ".agents", "rules", "code-review");
+    const restoredRulePath = path.join(projectDir, ".codex", "rules", "code-review");
     expect((await fs.lstat(restoredRulePath)).isSymbolicLink()).toBe(false);
     await expect(
       fs.readFile(path.join(restoredRulePath, "content.md"), "utf8"),
@@ -1775,7 +2211,7 @@ describe("CLI commands with external git source", () => {
       }),
     );
     await expect(
-      fs.access(path.join(renameProjectDir, ".agents", "rules", "renamed-rule")),
+      fs.access(path.join(renameProjectDir, ".codex", "rules", "renamed-rule")),
     ).rejects.toThrow();
 
     const renameResult = runCli(
@@ -1796,9 +2232,9 @@ describe("CLI commands with external git source", () => {
     );
 
     await expect(
-      fs.access(path.join(renameProjectDir, ".agents", "rules", "rename-me")),
+      fs.access(path.join(renameProjectDir, ".codex", "rules", "rename-me")),
     ).rejects.toThrow();
-    const renamedPath = path.join(renameProjectDir, ".agents", "rules", "renamed-rule");
+    const renamedPath = path.join(renameProjectDir, ".codex", "rules", "renamed-rule");
     expect((await fs.lstat(renamedPath)).isSymbolicLink()).toBe(false);
     await expect(fs.readFile(path.join(renamedPath, "content.md"), "utf8")).resolves.toContain(
       "Rename me content.",
@@ -1900,7 +2336,7 @@ describe("CLI commands with external git source", () => {
       }),
     ]);
 
-    const installPath = path.join(archiveProjectDir, ".agents", "rules", "archive-me");
+    const installPath = path.join(archiveProjectDir, ".codex", "rules", "archive-me");
     await fs.rm(installPath, { recursive: true, force: true });
     const directInstall = runCli(
       ["install", "rule", "archive-me@1.0.0", "--agent", "codex"],
@@ -2169,6 +2605,45 @@ async function prepareRepoFixture(targetRepoDir: string): Promise<void> {
   runGit(["tag", "-f", "rule/code-review@1.0.0"], targetRepoDir);
 }
 
+async function createEmptyRemote(label: string): Promise<string> {
+  const seedDir = path.join(tmpRoot, `${label}-seed`);
+  const remoteDir = path.join(tmpRoot, `${label}.git`);
+
+  await fs.mkdir(seedDir, { recursive: true });
+  await fs.mkdir(remoteDir, { recursive: true });
+  await fs.writeFile(path.join(seedDir, "README.md"), `# ${label}\n`, "utf8");
+
+  runGit(["init", "--initial-branch=main"], seedDir);
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "add",
+      ".",
+    ],
+    seedDir,
+  );
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "commit",
+      "-m",
+      `Initialize ${label} fixture`,
+    ],
+    seedDir,
+  );
+  runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
+  runGit(["remote", "add", "origin", remoteDir], seedDir);
+  runGit(["push", "-u", "origin", "main"], seedDir);
+
+  return remoteDir;
+}
+
 async function createSingleRuleRemote(
   label: string,
   name: string,
@@ -2222,6 +2697,85 @@ async function createSingleRuleRemote(
     seedDir,
   );
   runGit(["tag", `rule/${name}@${version}`], seedDir);
+  runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
+  runGit(["remote", "add", "origin", remoteDir], seedDir);
+  runGit(["push", "-u", "origin", "main"], seedDir);
+  runGit(["push", "--tags"], seedDir);
+
+  return remoteDir;
+}
+
+async function createSkillRemote(
+  label: string,
+  skills: Array<{
+    name: string;
+    version: string;
+    description: string;
+    dependencies?: Array<string | { name: string; optional?: boolean }>;
+  }>,
+): Promise<string> {
+  const seedDir = path.join(tmpRoot, `${label}-seed`);
+  const remoteDir = path.join(tmpRoot, `${label}.git`);
+
+  await fs.mkdir(seedDir, { recursive: true });
+  await fs.mkdir(remoteDir, { recursive: true });
+
+  for (const skill of skills) {
+    const skillDir = path.join(seedDir, "skills", skill.name);
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(skillDir, "himan.yaml"),
+      YAML.stringify({
+        name: skill.name,
+        type: "skill",
+        version: skill.version,
+        entry: "SKILL.md",
+        description: skill.description,
+        agents: ["cursor"],
+        analysis: {
+          dependencies: {
+            skills: skill.dependencies ?? [],
+            scripts: [],
+            mcpTools: [],
+          },
+        },
+      }),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(skillDir, "SKILL.md"),
+      `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n# ${skill.name}\n`,
+      "utf8",
+    );
+  }
+
+  runGit(["init", "--initial-branch=main"], seedDir);
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "add",
+      ".",
+    ],
+    seedDir,
+  );
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "commit",
+      "-m",
+      `Add ${label} skill fixtures`,
+    ],
+    seedDir,
+  );
+  for (const skill of skills) {
+    runGit(["tag", `skill/${skill.name}@${skill.version}`], seedDir);
+  }
   runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
   runGit(["remote", "add", "origin", remoteDir], seedDir);
   runGit(["push", "-u", "origin", "main"], seedDir);
