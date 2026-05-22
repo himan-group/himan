@@ -30,6 +30,8 @@
   "files": [
     "dist",
     "docs/development.md",
+    "docs/command-reference.md",
+    "docs/user-guide.md",
     "docs/mvp",
     "docs/error-codes.md",
     "README.md",

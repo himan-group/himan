@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Changed
+
+- Streamlined the project README and moved detailed usage and command reference content into dedicated docs.
+
 ## [0.7.2] - 2026-05-20
 
 ### Changed
