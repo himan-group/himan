@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-05-26
+
+### Fixed
+
+- Preserved resource `comment.score` and `comment.text` when publishing from older project copies or regenerating Himan skill metadata.
+- Prevented `install --source` and `publish --source` from overwriting a non-empty project's `himan.lock` source when the selected source is different.
+
 ## [0.8.0] - 2026-05-26
 
 ### Added

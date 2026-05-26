@@ -21,6 +21,7 @@ Use this skill when a task creates or updates a Himan/Codex skill. The output sk
    - Existing `himan.yaml` `category`.
    - Name-based fallback mapping (for example `common-*` -> `Common`, `github-*` -> `GitHub`), then `General`.
 4. Generate or update `himan.yaml` with `type: skill`, `entry: SKILL.md`, `category`, `agents`, and `analysis`.
+   Preserve existing user-maintained metadata that is not owned by static analysis. In particular, keep an existing `comment.score` and optional `comment.text` unchanged unless the user explicitly asks to edit the resource comment.
 5. Re-run metadata generation after any material edit to `SKILL.md`, references, scripts, or dependency declarations.
 6. Validate that `himan.yaml.name` matches `SKILL.md` front matter and the folder name.
 7. Validate that `himan.yaml.category` matches the intended source README grouping.
@@ -94,6 +95,7 @@ analysis:
 - Prefer explicit `category` in `SKILL.md` front matter for stable source README grouping.
 - Keep token fields tied to the tokenizer or estimator that produced them.
 - Keep `contentHash` based on package text content, excluding `himan.yaml` itself.
+- Preserve `comment.score` and `comment.text` when refreshing metadata. Resource comments are managed by `himan comment` / `himan resource comment`, not by metadata regeneration.
 - Do not let the new-resource default overwrite an existing skill version; resolve it from lock/source metadata or pass `--version` explicitly.
 - Use `0.0.1` only for newly created skill resources with no known existing version, unless the user explicitly requests a different initial version.
 - Use `agents: [codex]` for Codex-only skills unless the user asks for another target.

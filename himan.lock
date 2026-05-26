@@ -1,12 +1,12 @@
 {
   "version": 1,
   "source": {
-    "name": "default",
+    "name": "shopee",
     "type": "git",
     "repo": "https://git.garena.com/detao.li/himan-resource.git",
     "repoId": "https_git.garena.com_detao.li_himan-resource"
   },
-  "updatedAt": "2026-05-14T07:49:39.100Z",
+  "updatedAt": "2026-05-26T10:35:35.839Z",
   "resources": [
     {
       "type": "skill",
@@ -27,6 +27,16 @@
       ],
       "mode": "copy",
       "updatedAt": "2026-05-11T08:36:35.621Z"
+    },
+    {
+      "type": "skill",
+      "name": "common-readme-writer",
+      "version": "0.0.1",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-26T10:37:14.819Z"
     },
     {
       "type": "skill",
@@ -51,12 +61,12 @@
     {
       "type": "skill",
       "name": "himan-skill-metadata",
-      "version": "0.0.4",
+      "version": "0.0.5",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-14T07:48:59.100Z"
+      "updatedAt": "2026-05-26T10:35:35.839Z"
     }
   ]
 }

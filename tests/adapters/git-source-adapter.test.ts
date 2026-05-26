@@ -241,6 +241,50 @@ describe("GitSourceAdapter", () => {
     ).resolves.toContain("- Commented on `rule/code-review` with score 8/10.");
   });
 
+  it("preserves source comment metadata when publishing from an older project copy", async () => {
+    const { remoteDir, targetDir } = await createRemoteFixture();
+    const adapter = new GitSourceAdapter();
+    const sourceDir = path.join(tmpRoot, "comment-preserving-publish", "code-review");
+
+    await adapter.init({
+      type: "git",
+      repo: remoteDir,
+      repoDir: targetDir,
+      repoId: "test-source",
+    });
+    configureGitUser(targetDir);
+    await adapter.comment("rule", "code-review", {
+      score: 9,
+      text: "Keep source rating",
+    });
+    await writeNamedRule(sourceDir, {
+      name: "code-review",
+      description: "updated from old project copy",
+      content: "# code-review\n\nUpdated content.\n",
+    });
+
+    await adapter.publish("rule", "code-review", "0.1.0", sourceDir);
+
+    const yaml = await fs.readFile(
+      path.join(targetDir, "rules", "code-review", "himan.yaml"),
+      "utf8",
+    );
+    expect(yaml).toContain("comment:");
+    expect(yaml).toContain("score: 9");
+    expect(yaml).toContain("text: Keep source rating");
+    await expect(adapter.list("rule")).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "code-review",
+          comment: {
+            score: 9,
+            text: "Keep source rating",
+          },
+        }),
+      ]),
+    );
+  });
+
   it("publishes a valid resource and writes the requested version", async () => {
     const { remoteDir, targetDir } = await createRemoteFixture();
     const adapter = new GitSourceAdapter();
