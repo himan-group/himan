@@ -1,4 +1,4 @@
-# 合并或推送到 master 后：根据 package.json 的 version 创建并推送 v{version}。
+# 合并到 master 后：根据 package.json 的 version 创建并推送 v{version}。
 # 若打标签或推送失败，仅告警，工作流仍成功（不阻断已完成的 merge）。
 
 name: Tag version on master
@@ -7,11 +7,6 @@ on:
   push:
     branches:
       - master
-  pull_request_target:
-    branches:
-      - master
-    types: [closed]
-  workflow_dispatch:
 
 concurrency:
   group: tag-version-master
@@ -20,18 +15,14 @@ concurrency:
 jobs:
   push-version-tag:
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request_target' || github.event.pull_request.merged == true
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
 
       - name: Create and push version tag
-        env:
-          RELEASE_SHA: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
         run: |
           set -euo pipefail
           VERSION=$(jq -r .version package.json)
@@ -40,7 +31,7 @@ jobs:
             exit 0
           fi
           TAG="v${VERSION}"
-          SHA="${RELEASE_SHA}"
+          SHA="${GITHUB_SHA}"
 
           git fetch origin --tags --quiet || true
 

@@ -134,4 +134,4 @@ There is no monorepo package sharing. Shared behavior is local to `src/`:
 - For TypeScript changes, run `pnpm run typecheck` or `pnpm run verify` depending on scope.
 - For CLI behavior changes, run `pnpm test`; the integration test builds `dist/` in `beforeAll`.
 - Before release, run `pnpm run verify`.
-- GitHub Actions verify pushes to `dev` and PRs into `dev` or `master` with typecheck, tests, and build; publish to npm through npm Trusted Publishing/OIDC after PRs are merged to `master` or commits are pushed to `master`, skipping npm publish when the package version already exists; check that `v{package.version}` does not already exist for PRs into `master`; and create/push `v{package.version}` tags after PRs are merged to `master` or commits are pushed to `master`.
+- GitHub Actions verify PRs into `dev` or `master` with typecheck, tests, and build; publish to npm on `master` through npm Trusted Publishing/OIDC; check that `v{package.version}` does not already exist for PRs into `master`; and create/push `v{package.version}` tags after pushes to `master`.
