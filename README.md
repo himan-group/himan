@@ -94,6 +94,7 @@ himan install
 | 设置默认 agent | `himan agent use codex` |
 | 安装资产 | `himan install skill code-review` |
 | 递归安装 skill 依赖 | `himan install skill code-review -r --depth 2` |
+| 评价资产 | `himan comment skill code-review 9 "Stable team default"` |
 | 进入开发态 | `himan dev skill code-review` |
 | 发布新版本 | `himan publish skill code-review --minor` |
 | 批量发布 | `himan publish skill skill-a,skill-b` |
@@ -114,7 +115,7 @@ your-himan-source/
   archive/
 ```
 
-每个资产目录可以放一个 `himan.yaml`，用于描述名称、类型、版本、入口、默认 agent、分类、依赖和静态分析信息。
+每个资产目录可以放一个 `himan.yaml`，用于描述名称、类型、版本、入口、默认 agent、分类、依赖、`comment.score` / `comment.text` 评价和静态分析信息。
 
 更多目录规范、安装目标、lock 行为、多 source、归档和发布细节见 [docs/user-guide.md](./docs/user-guide.md)。
 

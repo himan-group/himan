@@ -37,14 +37,19 @@ himan agent --help
 
 | 命令 | 说明 |
 | --- | --- |
-| `himan resource list [type] [--source alias] [--agent a,b] [--brief] [--installed] [--archived] [--include-archived] [--json]` | 默认列出当前 source 的 active 资源；未传 `type` 时按类型分组；`--installed` 改为查看当前项目已安装资源。 |
+| `himan resource list [type] [--source alias] [--agent a,b] [--brief] [--comment] [--installed] [--archived] [--include-archived] [--json]` | 默认列出当前 source 的 active 资源和评分；同分类内按评分从高到低排序，未评分资源排最后；未传 `type` 时按类型分组；`--comment` 额外展示短评；`--installed` 改为查看当前项目已安装资源。 |
 | `himan resource history <type> <name> [--source alias] [--json]` | 按 Git tag 查看资源版本历史。 |
 | `himan resource create <type> <name> [--description text] [--agent a,b] [--entry file] [--template name] [--force] [--dry-run] [--json]` | 在当前项目 agent 目标目录创建资源脚手架。 |
+| `himan resource comment <type> <name> <score> [text...] [--source alias] [--clear-text] [--dry-run] [--json]` | 写入或修改资源 `comment.score` 和可选 `comment.text`；评分为 1-10，短评最多 64 个单词或汉字。 |
+| `himan resource dev <type> <name>` | 切换到开发态；项目资源原地编辑，全局资源先复制到当前项目目标目录。 |
+| `himan resource publish [type] [name[,name...]] [--patch\|--minor\|--major] [--source alias] [-g\|--global] [--all]` | 发布单个、多个或全部当前项目资源；默认 patch。 |
 | `himan resource archive <type> <name> [--reason text] [--dry-run] [--json]` | 将当前 source 中的资源移动到 `archive/<plural>/<name>`。 |
 | `himan resource restore <type> <name> [--dry-run] [--json]` | 将归档资源恢复回 active 类型目录。 |
 | `himan resource rename <type> <old-name> <new-name> [--dry-run] [--no-project] [--json]` | 重命名当前 source 中的资源；当前不推荐作为日常操作。 |
 
 支持的 `type`：`rule`、`command`、`skill`、`config`。
+
+`himan comment <type> <name> <score> [text...]` 是 `himan resource comment ...` 的顶层简写。
 
 ## Project
 
@@ -52,9 +57,7 @@ himan agent --help
 | --- | --- |
 | `himan project list [type] [--agent a,b] [--json]` | 查看当前项目 `himan.lock` 中记录的已安装资源。 |
 | `himan project install [type] [name[@version]] [--source alias] [--agent a,b] [--mode link\|copy] [-g\|--global] [--include-archived] [-r\|--recursive] [--depth n]` | 有参数时安装单个资源；无参数时按 `himan.lock` 恢复安装。 |
-| `himan project dev <type> <name>` | 切换到开发态；项目资源原地编辑，全局资源先复制到当前项目目标目录。 |
-| `himan project uninstall <type> <name>` | 从项目移除安装目标，并删除 `himan.lock` 条目。 |
-| `himan project publish [type] [name[,name...]] [--patch\|--minor\|--major] [--source alias] [-g\|--global] [--all]` | 发布单个、多个或全部当前项目资源；默认 patch。 |
+| `himan project uninstall <type> <name> [-g\|--global]` | 默认从项目移除安装目标并删除 `himan.lock` 条目；传 `-g` 时从用户级 agent 目录移除，不修改项目 lock。 |
 
 常用简写在顶层也可用：
 

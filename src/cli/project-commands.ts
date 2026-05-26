@@ -20,7 +20,13 @@ import process from "node:process";
 export function registerProjectCommands(
   command: Command,
   services: ServiceFactory,
-  options: { includeList?: boolean } = {},
+  options: {
+    includeList?: boolean;
+    includeInstall?: boolean;
+    includeDev?: boolean;
+    includeUninstall?: boolean;
+    includePublish?: boolean;
+  } = {},
 ): void {
   if (options.includeList !== false) {
     command
@@ -66,240 +72,262 @@ export function registerProjectCommands(
       );
   }
 
-  command
-    .command("install")
-    .argument("[type]", "resource type")
-    .argument("[name[@version]]", "resource name with optional @version")
-    .option("--agent <list>", "install target agents, comma separated")
-    .option("--mode <mode>", "install mode: link or copy")
-    .option("--source <alias>", "source alias for single-resource install")
-    .option("-g, --global", "install into user-level agent directories")
-    .option("--include-archived", "allow installing an archived resource explicitly")
-    .option("-r, --recursive", "install skill dependencies declared in himan.yaml")
-    .option("--depth <n>", "dependency install depth for recursive skill install (default: 1)")
-    .description("Install resource, or install from himan.lock")
-    .action(
-      async (
-        type: string | undefined,
-        nameVersion: string | undefined,
-        options: {
-          agent?: string;
-          mode?: string;
-          source?: string;
-          global?: boolean;
-          includeArchived?: boolean;
-          recursive?: boolean;
-          depth?: string;
-        },
-      ) => {
-        await runAction(async () => {
-          const agents = parseAgents(options.agent);
-          const mode = parseInstallMode(options.mode);
-          const dependencyDepth = options.recursive
-            ? parseDependencyDepthOption(options.depth) ?? 1
-            : undefined;
-          if (!type && !nameVersion) {
-            if (options.source) {
-              throw new HimanError(
-                errorCodes.CLI_USAGE,
-                "--source only applies to single-resource install.",
-              );
-            }
-            if (options.includeArchived) {
-              throw new HimanError(
-                errorCodes.CLI_USAGE,
+  if (options.includeInstall !== false) {
+    command
+      .command("install")
+      .argument("[type]", "resource type")
+      .argument("[name[@version]]", "resource name with optional @version")
+      .option("--agent <list>", "install target agents, comma separated")
+      .option("--mode <mode>", "install mode: link or copy")
+      .option("--source <alias>", "source alias for single-resource install")
+      .option("-g, --global", "install into user-level agent directories")
+      .option("--include-archived", "allow installing an archived resource explicitly")
+      .option("-r, --recursive", "install skill dependencies declared in himan.yaml")
+      .option(
+        "--depth <n>",
+        "dependency install depth for recursive skill install (default: 1)",
+      )
+      .description("Install resource, or install from himan.lock")
+      .action(
+        async (
+          type: string | undefined,
+          nameVersion: string | undefined,
+          commandOptions: {
+            agent?: string;
+            mode?: string;
+            source?: string;
+            global?: boolean;
+            includeArchived?: boolean;
+            recursive?: boolean;
+            depth?: string;
+          },
+        ) => {
+          await runAction(async () => {
+            const agents = parseAgents(commandOptions.agent);
+            const mode = parseInstallMode(commandOptions.mode);
+            const dependencyDepth = commandOptions.recursive
+              ? parseDependencyDepthOption(commandOptions.depth) ?? 1
+              : undefined;
+            if (!type && !nameVersion) {
+              if (commandOptions.source) {
+                throw new HimanError(
+                  errorCodes.CLI_USAGE,
+                  "--source only applies to single-resource install.",
+                );
+              }
+              if (commandOptions.includeArchived) {
+                throw new HimanError(
+                  errorCodes.CLI_USAGE,
                   "--include-archived only applies to single-resource install.",
+                );
+              }
+              if (commandOptions.recursive) {
+                throw new HimanError(
+                  errorCodes.CLI_USAGE,
+                  "--recursive only applies to single-resource skill install.",
+                );
+              }
+              if (commandOptions.depth !== undefined) {
+                throw new HimanError(
+                  errorCodes.CLI_USAGE,
+                  "--depth only applies to single-resource recursive skill install.",
+                );
+              }
+              if (commandOptions.global) {
+                throw new HimanError(
+                  errorCodes.CLI_USAGE,
+                  "Global install requires a resource:\n"
+                    + "  - himan install <type> <name[@version]> -g [--source alias] [--mode link|copy]",
+                );
+              }
+              const results = await services.installFromLock(process.cwd(), agents, mode);
+              if (results.length === 0) {
+                process.stdout.write("No resources in lock file.\n");
+                return;
+              }
+              for (const item of results) {
+                process.stdout.write(`Installed ${item.type}/${item.name}@${item.version}\n`);
+              }
+              return;
+            }
+
+            if (!type || !nameVersion) {
+              throw new HimanError(
+                errorCodes.CLI_USAGE,
+                "Install usage:\n"
+                  + "  - himan install  # install from himan.lock\n"
+                  + "  - himan install <type> <name[@version]> [--source alias] [--mode link|copy]  # install single resource\n"
+                  + "  - himan install <type> <name[@version]> -g [--source alias] [--mode link|copy]  # install single resource globally",
               );
             }
-            if (options.recursive) {
+
+            const resourceType = ensureResourceType(type);
+            const { name, version } = parseNameVersion(nameVersion);
+            if (commandOptions.recursive && resourceType !== "skill") {
               throw new HimanError(
                 errorCodes.CLI_USAGE,
                 "--recursive only applies to single-resource skill install.",
               );
             }
-            if (options.depth !== undefined) {
+            if (!commandOptions.recursive && commandOptions.depth !== undefined) {
               throw new HimanError(
                 errorCodes.CLI_USAGE,
-                "--depth only applies to single-resource recursive skill install.",
+                "--depth requires --recursive.",
               );
             }
-            if (options.global) {
-              throw new HimanError(
-                errorCodes.CLI_USAGE,
-                "Global install requires a resource:\n"
-                  + "  - himan install <type> <name[@version]> -g [--source alias] [--mode link|copy]",
+
+            const installOptions = {
+              includeArchived: commandOptions.includeArchived,
+              source: commandOptions.source,
+            };
+            const results = commandOptions.recursive
+              ? commandOptions.global
+                ? await services.installGlobalWithDependencies(
+                    name,
+                    version,
+                    process.cwd(),
+                    agents,
+                    mode,
+                    dependencyDepth,
+                    installOptions,
+                  )
+                : await services.installWithDependencies(
+                    name,
+                    version,
+                    process.cwd(),
+                    agents,
+                    mode,
+                    dependencyDepth,
+                    installOptions,
+                  )
+              : [
+                  commandOptions.global
+                    ? await services.installGlobal(
+                        resourceType,
+                        name,
+                        version,
+                        process.cwd(),
+                        agents,
+                        mode,
+                        installOptions,
+                      )
+                    : await services.install(
+                        resourceType,
+                        name,
+                        version,
+                        process.cwd(),
+                        agents,
+                        mode,
+                        installOptions,
+                      ),
+                ];
+
+            for (const result of results) {
+              process.stdout.write(
+                `Installed ${commandOptions.global ? "global " : ""}${result.type}/${result.name}@${result.version}\n`,
               );
             }
-            const results = await services.installFromLock(process.cwd(), agents, mode);
-            if (results.length === 0) {
-              process.stdout.write("No resources in lock file.\n");
-              return;
-            }
-            for (const item of results) {
-              process.stdout.write(`Installed ${item.type}/${item.name}@${item.version}\n`);
-            }
+          });
+        },
+      );
+  }
+
+  if (options.includeDev !== false) {
+    command
+      .command("dev")
+      .argument("<type>", "resource type")
+      .argument("<name>", "resource name")
+      .description("Switch resource to development mode")
+      .action(async (type: string, name: string) => {
+        await runAction(async () => {
+          const resourceType = ensureResourceType(type);
+          const result = await services.dev(resourceType, name, process.cwd());
+          if (result.sourceScope === "global") {
+            process.stdout.write(
+              `Copied global ${result.type}/${result.name} into current project: ${result.devPath}\n`,
+            );
             return;
           }
-
-          if (!type || !nameVersion) {
-            throw new HimanError(
-              errorCodes.CLI_USAGE,
-              "Install usage:\n"
-                + "  - himan install  # install from himan.lock\n"
-                + "  - himan install <type> <name[@version]> [--source alias] [--mode link|copy]  # install single resource\n"
-                + "  - himan install <type> <name[@version]> -g [--source alias] [--mode link|copy]  # install single resource globally",
-            );
-          }
-
-          const resourceType = ensureResourceType(type);
-          const { name, version } = parseNameVersion(nameVersion);
-          if (options.recursive && resourceType !== "skill") {
-            throw new HimanError(
-              errorCodes.CLI_USAGE,
-              "--recursive only applies to single-resource skill install.",
-            );
-          }
-          if (!options.recursive && options.depth !== undefined) {
-            throw new HimanError(
-              errorCodes.CLI_USAGE,
-              "--depth requires --recursive.",
-            );
-          }
-
-          const installOptions = {
-            includeArchived: options.includeArchived,
-            source: options.source,
-          };
-          const results = options.recursive
-            ? options.global
-              ? await services.installGlobalWithDependencies(
-                  name,
-                  version,
-                  process.cwd(),
-                  agents,
-                  mode,
-                  dependencyDepth,
-                  installOptions,
-                )
-              : await services.installWithDependencies(
-                  name,
-                  version,
-                  process.cwd(),
-                  agents,
-                  mode,
-                  dependencyDepth,
-                  installOptions,
-                )
-            : [
-                options.global
-                  ? await services.installGlobal(
-                      resourceType,
-                      name,
-                      version,
-                      process.cwd(),
-                      agents,
-                      mode,
-                      installOptions,
-                    )
-                  : await services.install(
-                      resourceType,
-                      name,
-                      version,
-                      process.cwd(),
-                      agents,
-                      mode,
-                      installOptions,
-                    ),
-              ];
-
-          for (const result of results) {
-            process.stdout.write(
-              `Installed ${options.global ? "global " : ""}${result.type}/${result.name}@${result.version}\n`,
-            );
-          }
-        });
-      },
-    );
-
-  command
-    .command("dev")
-    .argument("<type>", "resource type")
-    .argument("<name>", "resource name")
-    .description("Switch resource to development mode")
-    .action(async (type: string, name: string) => {
-      await runAction(async () => {
-        const resourceType = ensureResourceType(type);
-        const result = await services.dev(resourceType, name, process.cwd());
-        if (result.sourceScope === "global") {
           process.stdout.write(
-            `Copied global ${result.type}/${result.name} into current project: ${result.devPath}\n`,
+            `Editing ${result.type}/${result.name} in place: ${result.devPath}\n`,
           );
-          return;
-        }
-        process.stdout.write(
-          `Editing ${result.type}/${result.name} in place: ${result.devPath}\n`,
-        );
+        });
       });
-    });
+  }
 
-  command
-    .command("uninstall")
-    .argument("<type>", "resource type")
-    .argument("<name>", "resource name")
-    .description("Uninstall resource from project and lock")
-    .action(async (type: string, name: string) => {
-      await runAction(async () => {
-        const resourceType = ensureResourceType(type);
-        const result = await services.uninstall(resourceType, name, process.cwd());
-        process.stdout.write(`Uninstalled ${result.type}/${result.name}\n`);
+  if (options.includeUninstall !== false) {
+    command
+      .command("uninstall")
+      .argument("<type>", "resource type")
+      .argument("<name>", "resource name")
+      .option("-g, --global", "uninstall from user-level agent directories")
+      .description("Uninstall resource from project and lock")
+      .action(async (type: string, name: string, options: { global?: boolean }) => {
+        await runAction(async () => {
+          const resourceType = ensureResourceType(type);
+          const result = options.global
+            ? await services.uninstallGlobal(resourceType, name, process.cwd())
+            : await services.uninstall(resourceType, name, process.cwd());
+          process.stdout.write(
+            `Uninstalled ${options.global ? "global " : ""}${result.type}/${result.name}\n`,
+          );
+        });
       });
-    });
+  }
 
-  command
-    .command("publish")
-    .argument("[type]", "resource type")
-    .argument("[name]", "resource name, or comma-separated names in one argument")
-    .option("--patch", "patch release")
-    .option("--minor", "minor release")
-    .option("--major", "major release")
-    .option("--source <alias>", "source alias to publish into")
-    .option("-g, --global", "install the published version into user-level agent directories")
-    .option("--all", "publish all current-project resources, or all resources of the given type")
-    .description("Publish resource (default: --patch)")
-    .addHelpText(
-      "after",
-      `
+  if (options.includePublish !== false) {
+    command
+      .command("publish")
+      .argument("[type]", "resource type")
+      .argument("[name]", "resource name, or comma-separated names in one argument")
+      .option("--patch", "patch release")
+      .option("--minor", "minor release")
+      .option("--major", "major release")
+      .option("--source <alias>", "source alias to publish into")
+      .option(
+        "-g, --global",
+        "install the published version into user-level agent directories",
+      )
+      .option(
+        "--all",
+        "publish all current-project resources, or all resources of the given type",
+      )
+      .description("Publish resource (default: --patch)")
+      .addHelpText(
+        "after",
+        `
 Examples:
   $ himan publish skill risk-check
   $ himan publish skill skill-a,skill-c
   $ himan publish --all
   $ himan publish skill --all
 `,
-    )
-    .action(
-      async (
-        type: string | undefined,
-        name: string | undefined,
-        options: {
-          patch?: boolean;
-          minor?: boolean;
-          major?: boolean;
-          source?: string;
-          global?: boolean;
-          all?: boolean;
-        },
-      ) => {
-        await runAction(async () => {
-          const releaseType = resolveReleaseType(options);
-          const installScope = options.global ? "global" : "project";
-          process.stdout.write(
-            options.global
-              ? "Published resource will be installed globally; current project lock will not be updated.\n"
-              : "Published resource will be installed into the current project and recorded in himan.lock. Use -g/--global to install globally instead.\n",
-          );
-          const resourceType = type ? ensureResourceType(type) : undefined;
-          const names = parsePublishNames(name);
-          const shouldBatch = Boolean(options.all) || names.length > 1 || !resourceType;
+      )
+      .action(
+        async (
+          type: string | undefined,
+          name: string | undefined,
+          options: {
+            patch?: boolean;
+            minor?: boolean;
+            major?: boolean;
+            source?: string;
+            global?: boolean;
+            all?: boolean;
+          },
+        ) => {
+          await runAction(async () => {
+            const releaseType = resolveReleaseType(options);
+            const installScope = options.global ? "global" : "project";
+            process.stdout.write(
+              options.global
+                ? "Published resource will be installed globally; current project lock will not be updated.\n"
+                : "Published resource will be installed into the current project and recorded in himan.lock. Use -g/--global to install globally instead.\n",
+            );
+            const resourceType = type ? ensureResourceType(type) : undefined;
+            const names = parsePublishNames(name);
+            const shouldBatch =
+              Boolean(options.all) || names.length > 1 || !resourceType;
 
           if (!shouldBatch) {
             if (!resourceType || names.length !== 1) {
@@ -400,9 +428,10 @@ Examples:
             },
           );
           await handlePublishBatchResults(results);
-        });
-      },
-    );
+          });
+        },
+      );
+  }
 }
 
 async function handlePublishFollowUp(followUp?: PublishFollowUp): Promise<void> {

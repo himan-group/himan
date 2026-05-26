@@ -25,11 +25,19 @@ export function buildCli(): Command {
     .command("resource")
     .description("Manage resources from current default source");
   registerResourceCommands(resourceCmd, services);
+  registerProjectCommands(resourceCmd, services, {
+    includeList: false,
+    includeInstall: false,
+    includeUninstall: false,
+  });
 
   const projectCmd = program
     .command("project")
     .description("Manage installed resources in current project");
-  registerProjectCommands(projectCmd, services);
+  registerProjectCommands(projectCmd, services, {
+    includeDev: false,
+    includePublish: false,
+  });
 
   const agentCmd = program
     .command("agent")
@@ -53,14 +61,14 @@ Command groups:
            source use, source list, source init-docs, source clone, source sync
   resource Source resource discovery and metadata
            list, list --source, list --archived, list --installed, history,
-           history --source, create,
+           history --source, create, comment, dev, publish,
            archive, restore, rename (not recommended yet),
            resource list, resource history, resource create,
+           resource comment, resource dev, resource publish,
            resource archive, resource restore, resource rename
-  project  Resource usage lifecycle in current project or user-level agent dirs
-           list, install, install --source, install --include-archived, dev,
-           uninstall, publish, publish --source,
-           project list, project install, project dev, project uninstall, project publish
+  project  Installed resource state in current project or user-level agent dirs
+           list, install, install --source, install --include-archived, uninstall,
+           project list, project install, project uninstall
   agent    Default agent configuration
            agent list, agent use, agent current, agent clear
   doctor   Runtime and project health checks

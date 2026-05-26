@@ -49,7 +49,7 @@ your-himan-source/
 
 - `README.md`：source 入口文档，建议记录资源索引、推荐安装方式、默认 agent 策略和维护约定。
 - `CHANGELOG.md`：source 级变更记录，建议记录新增、变更、废弃、归档和重要发布。
-- `himan.yaml`：可选元数据；存在时用于扫描、校验、读取入口、默认 agent、分类、依赖和静态分析。
+- `himan.yaml`：可选元数据；存在时用于扫描、校验、读取入口、默认 agent、分类、评价、依赖和静态分析。
 - `archive/`：source 级软下线目录；默认资源列表、README 索引和 `source sync` active 快照不会包含归档资源。
 
 示例 `himan.yaml`：
@@ -60,6 +60,9 @@ type: skill
 version: 0.1.0
 entry: SKILL.md
 description: Review API changes.
+comment:
+  score: 9
+  text: Stable team default.
 agents:
   - codex
 analysis:
@@ -68,7 +71,7 @@ analysis:
       - common-code-review
 ```
 
-`analysis` 是静态构建信息，不记录运行时 token 或执行耗时。`himan create skill` 会为新 skill scaffold 生成基础分析信息。
+`comment.score` 是 1-10 分评价；`comment.text` 是可选短评，最多 64 个单词或汉字。`analysis` 是静态构建信息，不记录运行时 token 或执行耗时。`himan create skill` 会为新 skill scaffold 生成基础分析信息。
 
 ## 初始化与 source 管理
 
@@ -80,6 +83,8 @@ himan source list
 ```
 
 source 的配置名是本地内部 key，别名是日常命令使用的稳定引用。显式资源命令默认作用于当前 current source，也可以在 `list`、`history`、`install <type> ...`、`publish` 中用 `--source <alias>` 指定 source。
+
+资源评价可通过 `himan comment <type> <name> <score> [text...]` 写入 source 元数据，也可使用完整形式 `himan resource comment ...`；`resource list` 默认展示评分，同分类内按评分从高到低排序，未评分资源排最后，传 `--comment` 时额外展示短评。
 
 无参数 `himan install` 会按 `himan.lock` 中记录的 source 恢复安装，不受当前 default source 切换影响。
 
@@ -131,6 +136,16 @@ himan install
 
 ```bash
 himan create skill api-review --description "Review API changes"
+himan resource dev skill api-review
+himan resource publish skill api-review
+himan resource publish skill api-review --minor
+himan resource publish skill skill-a,skill-b
+himan resource publish --all
+```
+
+顶层简写仍可用：
+
+```bash
 himan dev skill api-review
 himan publish skill api-review
 himan publish skill api-review --minor

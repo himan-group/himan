@@ -24,6 +24,9 @@ describe("ResourceScanner", () => {
         "type: rule",
         "entry: content.md",
         "description: enforce standards",
+        "comment:",
+        "  score: 9",
+        "  text: Useful default checklist",
         "agents:",
         "  - cursor",
       ].join("\n"),
@@ -39,6 +42,10 @@ describe("ResourceScanner", () => {
         type: "rule",
         entry: "content.md",
         description: "enforce standards",
+        comment: {
+          score: 9,
+          text: "Useful default checklist",
+        },
         agents: ["cursor"],
       },
     ]);

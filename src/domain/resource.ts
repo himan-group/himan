@@ -7,6 +7,11 @@ export interface ResourceRef {
   version?: string;
 }
 
+export interface ResourceComment {
+  score: number;
+  text?: string;
+}
+
 export interface ResourceMeta {
   name: string;
   type: ResourceType;
@@ -14,6 +19,7 @@ export interface ResourceMeta {
   version?: string;
   category?: string;
   description?: string;
+  comment?: ResourceComment;
   agents?: string[];
   archived?: boolean;
   archivedAt?: string;
@@ -82,6 +88,23 @@ export interface RenameResult {
   resourceDir: string;
   latestVersion?: string;
   tag?: string;
+  committed: boolean;
+  dryRun: boolean;
+}
+
+export interface CommentOptions {
+  score: number;
+  text?: string;
+  clearText?: boolean;
+  dryRun?: boolean;
+}
+
+export interface CommentResult {
+  type: ResourceType;
+  name: string;
+  comment: ResourceComment;
+  resourceDir: string;
+  metadataPath: string;
   committed: boolean;
   dryRun: boolean;
 }

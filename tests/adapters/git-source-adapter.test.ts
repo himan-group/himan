@@ -163,6 +163,84 @@ describe("GitSourceAdapter", () => {
     ).resolves.toContain("- Restored `rule/code-review` from archive.");
   });
 
+  it("adds resource comment metadata and renders it in source docs", async () => {
+    const { remoteDir, targetDir } = await createRemoteFixture();
+    const adapter = new GitSourceAdapter();
+
+    await adapter.init({
+      type: "git",
+      repo: remoteDir,
+      repoDir: targetDir,
+      repoId: "test-source",
+    });
+    configureGitUser(targetDir);
+    await writeNamedRule(targetDir, {
+      name: "alpha-rule",
+      description: "unrated rule",
+      content: "# alpha-rule\n",
+    });
+    await writeNamedRule(targetDir, {
+      name: "lower-rule",
+      description: "lower scored rule",
+      content: "# lower-rule\n",
+    });
+    commitAll(targetDir, "Add comment sorting fixtures");
+
+    const result = await adapter.comment("rule", "code-review", {
+      score: 8,
+      text: "Useful shared baseline",
+    });
+    await adapter.comment("rule", "lower-rule", {
+      score: 5,
+      text: "Useful in narrow cases",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        type: "rule",
+        name: "code-review",
+        comment: {
+          score: 8,
+          text: "Useful shared baseline",
+        },
+        committed: true,
+        dryRun: false,
+      }),
+    );
+    const yaml = await fs.readFile(
+      path.join(targetDir, "rules", "code-review", "himan.yaml"),
+      "utf8",
+    );
+    expect(yaml).toContain("comment:");
+    expect(yaml).toContain("score: 8");
+    expect(yaml).toContain("text: Useful shared baseline");
+    await expect(adapter.list("rule")).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "code-review",
+          comment: {
+            score: 8,
+            text: "Useful shared baseline",
+          },
+        }),
+      ]),
+    );
+    const readme = await fs.readFile(path.join(targetDir, "README.md"), "utf8");
+    expect(readme).toContain('<th width="160">Score</th>');
+    expect(readme).toContain(
+      '<td width="160"><code>8/10</code><br><small>Useful shared baseline</small></td>',
+    );
+    expect(readme.indexOf("<code>code-review</code>")).toBeLessThan(
+      readme.indexOf("<code>lower-rule</code>"),
+    );
+    expect(readme.indexOf("<code>lower-rule</code>")).toBeLessThan(
+      readme.indexOf("<code>alpha-rule</code>"),
+    );
+    await expect(
+      fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
+    ).resolves.toContain("- Commented on `rule/code-review` with score 8/10.");
+  });
+
   it("publishes a valid resource and writes the requested version", async () => {
     const { remoteDir, targetDir } = await createRemoteFixture();
     const adapter = new GitSourceAdapter();
