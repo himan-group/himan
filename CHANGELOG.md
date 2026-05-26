@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-05-26
+
+### Changed
+
+- Changed project `himan.lock` files to support additional named sources through `sources` and per-resource `source` references while keeping the top-level `source` as the default.
+
 ## [0.8.1] - 2026-05-26
 
 ### Fixed

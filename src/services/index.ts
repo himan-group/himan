@@ -63,6 +63,7 @@ export interface InstalledResource {
   type: ResourceType;
   name: string;
   version: string;
+  source?: string;
   agents: string[];
   mode: InstallMode;
   updatedAt: string;
@@ -721,7 +722,7 @@ export class ServiceFactory {
         name: "lock",
         status: "ok",
         message: `himan.lock tracks ${lock.resources.length} resources.`,
-        details: { lockPath, source: lock.source },
+        details: { lockPath, source: lock.source, sources: lock.sources },
       },
       lock,
     };
@@ -739,11 +740,16 @@ export class ServiceFactory {
     }
 
     try {
-      const source = await this.loadSourceFromLock(
-        this.normalizeLockSourceInfo(lock.source),
-      );
+      const sourceCache = new Map<string, ResourceSourceAdapter>();
       const archived: string[] = [];
       for (const resource of lock.resources) {
+        const sourceInfo = this.resolveLockResourceSourceInfo(lock, resource.source);
+        const sourceKey = resource.source ?? "__default__";
+        let source = sourceCache.get(sourceKey);
+        if (!source) {
+          source = await this.loadSourceFromLock(sourceInfo);
+          sourceCache.set(sourceKey, source);
+        }
         if (await source.isArchived(resource.type, resource.name)) {
           archived.push(`${resource.type}/${resource.name}@${resource.version}`);
         }
@@ -753,7 +759,7 @@ export class ServiceFactory {
         return {
           name: "archive",
           status: "warn",
-          message: `${archived.length} locked resources are archived in the current source.`,
+          message: `${archived.length} locked resources are archived in their recorded source.`,
           details: { resources: archived },
         };
       }
@@ -761,7 +767,7 @@ export class ServiceFactory {
       return {
         name: "archive",
         status: "ok",
-        message: "No locked resources are archived in the current source.",
+        message: "No locked resources are archived in their recorded source.",
       };
     } catch (error) {
       return {
@@ -908,6 +914,7 @@ export class ServiceFactory {
         type: resource.type,
         name: resource.name,
         version: resource.version,
+        source: resource.source,
         agents: normalizeAgents(resource.agents),
         mode: this.resolveInstallMode(resource.mode),
         updatedAt: resource.updatedAt,
@@ -1161,8 +1168,12 @@ export class ServiceFactory {
     const { source, sourceInfo } = await this.loadSourceWithInfoFromConfig(
       options.source,
     );
+    let lockResourceSource: string | undefined;
     if (installScope === "project") {
-      await this.assertProjectLockSourceCompatible(projectDir, sourceInfo);
+      lockResourceSource = await this.resolveProjectLockResourceSource(
+        projectDir,
+        sourceInfo,
+      );
     }
     if (await source.isArchived(type, name)) {
       throw new HimanError(
@@ -1251,6 +1262,7 @@ export class ServiceFactory {
         type,
         name,
         version: nextVersion,
+        source: lockResourceSource,
         agents: nextAgents,
         mode: installMode,
       });
@@ -1563,9 +1575,15 @@ export class ServiceFactory {
       linkPath: string;
       mode: InstallMode;
     }> = [];
-    const lockSourceInfo = this.normalizeLockSourceInfo(lock.source);
-    const lockedSource = await this.loadSourceFromLock(lockSourceInfo);
+    const sourceCache = new Map<string, ResourceSourceAdapter>();
     for (const item of lock.resources) {
+      const lockSourceInfo = this.resolveLockResourceSourceInfo(lock, item.source);
+      const sourceKey = item.source ?? "__default__";
+      let lockedSource = sourceCache.get(sourceKey);
+      if (!lockedSource) {
+        lockedSource = await this.loadSourceFromLock(lockSourceInfo);
+        sourceCache.set(sourceKey, lockedSource);
+      }
       const result = await this.installWithSource(
         lockedSource,
         lockSourceInfo,
@@ -1794,11 +1812,15 @@ export class ServiceFactory {
     projectDir: string,
     sourceInfo?: LockSourceInfo,
   ): Promise<InstallResult> {
+    let lockResourceSource: string | undefined;
     if (prepared.scope === "project") {
       if (!sourceInfo) {
         throw new Error("Project install requires source lock information.");
       }
-      await this.assertProjectLockSourceCompatible(projectDir, sourceInfo);
+      lockResourceSource = await this.resolveProjectLockResourceSource(
+        projectDir,
+        sourceInfo,
+      );
     }
 
     if (prepared.type === "config") {
@@ -1827,6 +1849,7 @@ export class ServiceFactory {
         type: prepared.type,
         name: prepared.name,
         version: prepared.version,
+        source: lockResourceSource,
         agents: prepared.effectiveTargets,
         mode: prepared.mode,
       });
@@ -2103,32 +2126,91 @@ export class ServiceFactory {
       type: ResourceType;
       name: string;
       version: string;
+      source?: string;
       agents?: string[];
       mode?: InstallMode;
     },
   ): Promise<void> {
-    await this.assertProjectLockSourceCompatible(projectDir, sourceInfo);
     await this.lockStore.upsertResource(projectDir, sourceInfo, resource);
   }
 
-  private async assertProjectLockSourceCompatible(
+  private async resolveProjectLockResourceSource(
     projectDir: string,
     sourceInfo: LockSourceInfo,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const lock = await this.lockStore.load(projectDir);
-    if (!lock || lock.resources.length === 0) return;
+    if (!lock || lock.resources.length === 0) return undefined;
 
     const lockSource = this.normalizeLockSourceInfo(lock.source);
     const selectedSource = this.normalizeLockSourceInfo(sourceInfo);
-    if (this.isSameLockSource(lockSource, selectedSource)) return;
+    if (this.isSameLockSource(lockSource, selectedSource)) return undefined;
+
+    const sourceName = selectedSource.name?.trim();
+    if (!sourceName) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Project lock already has a default source. Additional lock sources require a source name.`,
+        {
+          lockSource,
+          selectedSource,
+          lockPath: this.lockStore.getLockPath(projectDir),
+        },
+      );
+    }
+
+    if (lockSource.name === sourceName) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Lock source name conflicts with the default source: ${sourceName}`,
+        {
+          lockSource,
+          selectedSource,
+          lockPath: this.lockStore.getLockPath(projectDir),
+        },
+      );
+    }
+
+    const existingSource = lock.sources?.[sourceName];
+    if (!existingSource) return sourceName;
+    if (this.isSameLockSource(this.normalizeLockSourceInfo(existingSource), selectedSource)) {
+      return sourceName;
+    }
 
     throw new HimanError(
       errorCodes.INVALID_INPUT,
-      `Project lock is bound to source ${this.formatLockSource(lockSource)}; cannot update it from source ${this.formatLockSource(selectedSource)}. Use the lock source, install globally with -g/--global, or start a new project lock.`,
+      `Lock source name already refers to a different source: ${sourceName}`,
       {
         lockSource,
+        existingSource,
         selectedSource,
         lockPath: this.lockStore.getLockPath(projectDir),
+      },
+    );
+  }
+
+  private resolveLockResourceSourceInfo(
+    lock: ProjectLock,
+    sourceName?: string,
+  ): LockSourceInfo {
+    if (!sourceName) return this.normalizeLockSourceInfo(lock.source);
+    const sourceInfo = lock.sources?.[sourceName];
+    if (sourceInfo) {
+      return this.normalizeLockSourceInfo({
+        name: sourceInfo.name ?? sourceName,
+        type: sourceInfo.type,
+        repo: sourceInfo.repo,
+        repoId: sourceInfo.repoId,
+      });
+    }
+    if (lock.source.name === sourceName) {
+      return this.normalizeLockSourceInfo(lock.source);
+    }
+    throw new HimanError(
+      errorCodes.LOCK_INVALID,
+      `Lock resource references unknown source: ${sourceName}`,
+      {
+        source: sourceName,
+        availableSources: Object.keys(lock.sources ?? {}),
       },
     );
   }
@@ -2142,14 +2224,6 @@ export class ServiceFactory {
       if (a.repo && b.repo) return a.repo === b.repo;
     }
     return true;
-  }
-
-  private formatLockSource(sourceInfo: LockSourceInfo): string {
-    const label = sourceInfo.name ?? sourceInfo.repo ?? sourceInfo.type;
-    if (sourceInfo.repo && sourceInfo.repo !== label) {
-      return `${label} (${sourceInfo.repo})`;
-    }
-    return label;
   }
 
   private async getLockedResource(projectDir: string, type: ResourceType, name: string) {

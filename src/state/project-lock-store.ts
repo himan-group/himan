@@ -13,6 +13,7 @@ export interface LockResourceEntry {
   type: ResourceType;
   name: string;
   version: string;
+  source?: string;
   agents?: string[];
   mode?: InstallMode;
   updatedAt: string;
@@ -21,6 +22,7 @@ export interface LockResourceEntry {
 export interface ProjectLock {
   version: 1;
   source: LockSourceInfo;
+  sources?: Record<string, LockSourceInfo>;
   updatedAt: string;
   resources: LockResourceEntry[];
 }
@@ -62,6 +64,7 @@ export class ProjectLockStore {
       type: ResourceType;
       name: string;
       version: string;
+      source?: string;
       agents?: string[];
       mode?: InstallMode;
     },
@@ -75,8 +78,14 @@ export class ProjectLockStore {
       resources: [],
     };
 
-    if (lock.resources.length === 0) {
+    if (lock.resources.length === 0 && !resource.source) {
       lock.source = source;
+    }
+    if (resource.source) {
+      lock.sources = {
+        ...(lock.sources ?? {}),
+        [resource.source]: source,
+      };
     }
     lock.updatedAt = now;
 
@@ -85,6 +94,11 @@ export class ProjectLockStore {
     );
     if (found) {
       found.version = resource.version;
+      if (resource.source) {
+        found.source = resource.source;
+      } else {
+        delete found.source;
+      }
       found.agents = resource.agents;
       found.mode = resource.mode;
       found.updatedAt = now;
@@ -93,6 +107,7 @@ export class ProjectLockStore {
         type: resource.type,
         name: resource.name,
         version: resource.version,
+        source: resource.source,
         agents: resource.agents,
         mode: resource.mode,
         updatedAt: now,
@@ -103,8 +118,9 @@ export class ProjectLockStore {
       if (a.type !== b.type) return a.type.localeCompare(b.type);
       return a.name.localeCompare(b.name);
     });
+    this.pruneUnusedSources(lock);
 
-    await fs.writeFile(this.getLockPath(projectDir), JSON.stringify(lock, null, 2), "utf8");
+    await this.writeLock(projectDir, lock);
   }
 
   async removeResource(
@@ -122,8 +138,9 @@ export class ProjectLockStore {
     }
 
     lock.resources = nextResources;
+    this.pruneUnusedSources(lock);
     lock.updatedAt = new Date().toISOString();
-    await fs.writeFile(this.getLockPath(projectDir), JSON.stringify(lock, null, 2), "utf8");
+    await this.writeLock(projectDir, lock);
   }
 
   async renameResource(
@@ -147,6 +164,38 @@ export class ProjectLockStore {
       if (a.type !== b.type) return a.type.localeCompare(b.type);
       return a.name.localeCompare(b.name);
     });
-    await fs.writeFile(this.getLockPath(projectDir), JSON.stringify(lock, null, 2), "utf8");
+    await this.writeLock(projectDir, lock);
+  }
+
+  private pruneUnusedSources(lock: ProjectLock): void {
+    if (!lock.sources) return;
+    const usedSources = new Set(
+      lock.resources
+        .map((resource) => resource.source)
+        .filter((source): source is string => Boolean(source)),
+    );
+    const sources = Object.fromEntries(
+      Object.entries(lock.sources).filter(([name]) => usedSources.has(name)),
+    );
+    if (Object.keys(sources).length > 0) {
+      lock.sources = sources;
+      return;
+    }
+    delete lock.sources;
+  }
+
+  private async writeLock(projectDir: string, lock: ProjectLock): Promise<void> {
+    const orderedLock: ProjectLock = {
+      version: lock.version,
+      source: lock.source,
+      ...(lock.sources ? { sources: lock.sources } : {}),
+      updatedAt: lock.updatedAt,
+      resources: lock.resources,
+    };
+    await fs.writeFile(
+      this.getLockPath(projectDir),
+      JSON.stringify(orderedLock, null, 2),
+      "utf8",
+    );
   }
 }

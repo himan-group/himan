@@ -98,7 +98,7 @@ describe("ServiceFactory lock restore", () => {
     );
   });
 
-  it("refuses to update a non-empty lock from a different source", async () => {
+  it("records additional source refs and restores each resource from its source", async () => {
     const lockedRemote = await createRemoteFixture("locked-mismatch", [
       {
         name: "code-review",
@@ -120,43 +120,107 @@ describe("ServiceFactory lock restore", () => {
     await services.initSource("git", lockedRemote);
     await services.addSource("other-source", "git", otherRemote, "other");
     await services.install("rule", "code-review", "1.0.0", projectDir, ["cursor"], "copy");
-
-    await expect(
-      services.install("rule", "other-rule", "1.0.0", projectDir, ["cursor"], "copy", {
+    await services.install(
+      "rule",
+      "other-rule",
+      "1.0.0",
+      projectDir,
+      ["cursor"],
+      "copy",
+      {
         source: "other",
-      }),
-    ).rejects.toMatchObject({
-      code: "E_INVALID_INPUT",
-      message: expect.stringContaining("Project lock is bound to source"),
-    });
-
-    const lock = JSON.parse(
-      await fs.readFile(path.join(projectDir, "himan.lock"), "utf8"),
-    ) as { source: { repo?: string }; resources: Array<{ name: string }> };
-    expect(lock.source).toEqual(expect.objectContaining({ repo: lockedRemote }));
-    expect(lock.resources).toEqual([
-      expect.objectContaining({ name: "code-review" }),
-    ]);
-    await expect(
-      fs.access(path.join(projectDir, ".cursor", "rules", "other-rule")),
-    ).rejects.toThrow();
-
-    await expect(
-      services.publish("rule", "other-rule", "patch", projectDir, {
-        source: "other",
-      }),
-    ).rejects.toMatchObject({
-      code: "E_INVALID_INPUT",
-      message: expect.stringContaining("Project lock is bound to source"),
-    });
-
-    const otherHistory = await services.history("rule", "other-rule", {
+      },
+    );
+    await services.create(
+      "rule",
+      "published-other",
+      { agents: ["cursor"] },
+      projectDir,
+    );
+    await fs.appendFile(
+      path.join(projectDir, ".cursor", "rules", "published-other", "content.md"),
+      "published to other source\n",
+      "utf8",
+    );
+    const published = await services.publish("rule", "published-other", "patch", projectDir, {
       source: "other",
     });
-    expect(otherHistory).toEqual([
-      expect.objectContaining({ version: "1.0.0" }),
+    expect(published).toEqual(
+      expect.objectContaining({
+        name: "published-other",
+        version: "0.0.1",
+      }),
+    );
+
+    const lockRaw = await fs.readFile(path.join(projectDir, "himan.lock"), "utf8");
+    expect(lockRaw.indexOf('"sources"')).toBeGreaterThan(lockRaw.indexOf('"source"'));
+    expect(lockRaw.indexOf('"sources"')).toBeLessThan(lockRaw.indexOf('"updatedAt"'));
+    const lock = JSON.parse(lockRaw) as {
+      source: { repo?: string };
+      sources?: Record<string, { repo?: string }>;
+      resources: Array<{ name: string; source?: string }>;
+    };
+    expect(lock.source).toEqual(expect.objectContaining({ repo: lockedRemote }));
+    expect(lock.sources).toEqual({
+      other: expect.objectContaining({ repo: otherRemote }),
+    });
+    expect(lock.resources).toEqual([
+      expect.objectContaining({ name: "code-review" }),
+      expect.objectContaining({ name: "other-rule", source: "other" }),
+      expect.objectContaining({ name: "published-other", source: "other" }),
     ]);
-  });
+    await expect(
+      fs.readFile(path.join(projectDir, ".cursor", "rules", "other-rule", "content.md"), "utf8"),
+    ).resolves.toContain("from other source");
+
+    await fs.rm(path.join(projectDir, ".cursor", "rules", "code-review"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.rm(path.join(projectDir, ".cursor", "rules", "other-rule"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.rm(path.join(projectDir, ".cursor", "rules", "published-other"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.rm(path.join(fakeHomeDir, ".himan", "store", "rule", "code-review", "1.0.0"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.rm(path.join(fakeHomeDir, ".himan", "store", "rule", "other-rule", "1.0.0"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.rm(
+      path.join(fakeHomeDir, ".himan", "store", "rule", "published-other", "0.0.1"),
+      {
+        recursive: true,
+        force: true,
+      },
+    );
+
+    const restored = await services.installFromLock(projectDir);
+
+    expect(restored).toEqual([
+      expect.objectContaining({ name: "code-review", version: "1.0.0" }),
+      expect.objectContaining({ name: "other-rule", version: "1.0.0" }),
+      expect.objectContaining({ name: "published-other", version: "0.0.1" }),
+    ]);
+    await expect(
+      fs.readFile(path.join(projectDir, ".cursor", "rules", "code-review", "content.md"), "utf8"),
+    ).resolves.toContain("from locked source");
+    await expect(
+      fs.readFile(path.join(projectDir, ".cursor", "rules", "other-rule", "content.md"), "utf8"),
+    ).resolves.toContain("from other source");
+    await expect(
+      fs.readFile(
+        path.join(projectDir, ".cursor", "rules", "published-other", "content.md"),
+        "utf8",
+      ),
+    ).resolves.toContain("published to other source");
+  }, 20000);
 });
 
 async function createRemoteFixture(

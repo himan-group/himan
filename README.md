@@ -16,7 +16,7 @@
 
 - **以 Git 作为资产来源**：资产源头就是普通 Git 仓库，版本历史、权限、评审和备份沿用团队现有流程。
 - **不绑定单一 agent**：同一套资产可安装到 Cursor、Claude Code、Codex、OpenClaw，不受某个 agent 目录结构限制。
-- **安装结果可复现**：项目内写入 `himan.lock`，记录 source、精确版本、目标 agent 和安装模式；换机器后 `himan install` 即可恢复。
+- **安装结果可复现**：项目内写入 `himan.lock`，记录默认 source、可选额外 source、精确版本、目标 agent 和安装模式；换机器后 `himan install` 即可恢复。
 - **在真实项目中开发和验证**：`create` / `dev` 直接在当前项目的 agent 目录工作，验证后用 `publish` 回写 source、发布新版本并更新文档索引。
 - **适合团队治理**：支持多 source、别名、归档、恢复、批量发布、递归安装 skill 依赖，以及 `doctor` 本地健康检查。
 
@@ -73,7 +73,7 @@ himan init https://github.com/your-org/your-himan-source.git --agent codex
 himan install
 ```
 
-`himan install` 无参数时会按当前项目的 `himan.lock` 恢复安装，而不是盲目使用最新版本。
+`himan install` 无参数时会按当前项目的 `himan.lock` 恢复安装，而不是盲目使用最新版本；资源条目未指定 `source` 时使用 lock 顶层默认 source。
 
 ## 核心概念
 
@@ -82,7 +82,7 @@ himan install
 | `source` | 存放资产的 Git 仓库，目录通常包含 `rules/`、`commands/`、`skills/`、`configs/`。 |
 | `resource` | himan 中的一份可复用、可安装资产，类型为 `rule`、`command`、`skill`、`config`。 |
 | `agent` | 资产安装目标，支持 `cursor`、`claude-code`、`codex`、`openclaw`。 |
-| `himan.lock` | 项目级锁文件，记录已安装资产的 source、版本、agent 和安装模式。 |
+| `himan.lock` | 项目级锁文件，记录已安装资产的默认 source、可选额外 source、版本、agent 和安装模式。 |
 | Git tag | 资产版本以 `<type>/<name>@<semver>` 标记，例如 `skill/code-review@1.2.0`。 |
 
 ## 常用工作流
