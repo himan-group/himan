@@ -29,15 +29,17 @@ async function main() {
   const root = path.resolve(skillDir);
   const entry = options.entry ?? "SKILL.md";
   const entryPath = path.join(root, entry);
+  const metadataPath = path.join(root, "himan.yaml");
   const skillRaw = await fs.readFile(entryPath, "utf8");
   const frontMatter = parseFrontMatter(skillRaw);
+  const existingComment = await readExistingComment(metadataPath);
   const name = options.name ?? frontMatter.name ?? path.basename(root);
   const description = options.description ?? frontMatter.description;
   const version = options.version ?? (await resolveVersion(root, name)) ?? DEFAULT_VERSION;
   const category =
     options.category ??
     frontMatter.category ??
-    (await readYamlStringField(path.join(root, "himan.yaml"), "category")) ??
+    (await readYamlStringField(metadataPath, "category")) ??
     inferCategory(name);
 
   if (!description) {
@@ -60,6 +62,7 @@ async function main() {
     description,
     category,
     agents: options.agents,
+    ...(existingComment ? { comment: existingComment } : {}),
     analysis: {
       content: {
         tokenizer: TOKENIZER,
@@ -90,8 +93,8 @@ async function main() {
     return;
   }
 
-  await fs.writeFile(path.join(root, "himan.yaml"), yaml, "utf8");
-  process.stdout.write(`Wrote ${path.join(root, "himan.yaml")}\n`);
+  await fs.writeFile(metadataPath, yaml, "utf8");
+  process.stdout.write(`Wrote ${metadataPath}\n`);
 }
 
 function parseArgs(args) {
@@ -278,6 +281,72 @@ async function readYamlStringField(filePath, fieldName) {
 
   const value = unquote(match[1].trim());
   return value ? value : undefined;
+}
+
+async function readExistingComment(filePath) {
+  let raw;
+  try {
+    raw = await fs.readFile(filePath, "utf8");
+  } catch {
+    return undefined;
+  }
+
+  const inline = new RegExp(`^comment:\\s*\\{(.+?)\\}\\s*$`, "m").exec(raw);
+  if (inline) {
+    return normalizeComment(
+      Object.fromEntries(
+        inline[1]
+          .split(",")
+          .map((part) => part.trim())
+          .map((part) => {
+            const index = part.indexOf(":");
+            return index === -1
+              ? [part, ""]
+              : [part.slice(0, index).trim(), readYamlScalar(part.slice(index + 1))];
+          }),
+      ),
+    );
+  }
+
+  const lines = raw.split(/\r?\n/);
+  const commentIndex = lines.findIndex((line) => /^comment:\s*$/.test(line));
+  if (commentIndex === -1) return undefined;
+
+  const fields = {};
+  for (const line of lines.slice(commentIndex + 1)) {
+    if (/^\S/.test(line)) break;
+    const match = /^\s+([A-Za-z0-9_-]+):\s*(.*?)\s*$/.exec(line);
+    if (!match) continue;
+    fields[match[1]] = readYamlScalar(match[2]);
+  }
+  return normalizeComment(fields);
+}
+
+function normalizeComment(fields) {
+  const score = Number(fields.score);
+  if (!Number.isInteger(score) || score < 1 || score > 10) return undefined;
+
+  const text = typeof fields.text === "string" ? fields.text.trim() : "";
+  return {
+    score,
+    ...(text ? { text } : {}),
+  };
+}
+
+function readYamlScalar(value) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"')) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return unquote(trimmed);
+    }
+  }
+  return unquote(trimmed);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function pathExists(filePath) {

@@ -2,7 +2,11 @@ name: common-readme-writer
 type: skill
 version: 0.0.1
 entry: SKILL.md
-description: Create, evaluate, or rewrite concise README.md files for npm CLI and GitHub projects. Use when Codex needs to improve project positioning, highlight differentiators, simplify onboarding, split long reference content into docs, or apply README best practices to command-line tools, developer tools, plugins, SDKs, and similar open source packages.
+description: Create, evaluate, or rewrite concise README.md files for npm CLI
+  and GitHub projects. Use when Codex needs to improve project positioning,
+  highlight differentiators, simplify onboarding, split long reference content
+  into docs, or apply README best practices to command-line tools, developer
+  tools, plugins, SDKs, and similar open source packages.
 category: Common
 agents:
   - codex
@@ -13,7 +17,7 @@ analysis:
     entryTokens: 1344
     packageTokens: 1344
     contentHash: sha256:2c3d1f93bed114a0eb211e77928214ec59aa4d4df0e2deaffc5ce4db278fdebc
-    measuredAt: "2026-05-25T09:12:16.000Z"
+    measuredAt: 2026-05-25T09:12:16.000Z
     measuredBy: codex
   dependencies:
     skills:
@@ -23,6 +27,6 @@ analysis:
     mcpTools: []
   generation:
     generatedBy: codex
-    generatedAt: "2026-05-25T09:12:16.000Z"
+    generatedAt: 2026-05-25T09:12:16.000Z
     model: gpt-5
     promptRef: skill-creator

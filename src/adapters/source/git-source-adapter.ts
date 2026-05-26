@@ -10,6 +10,7 @@ import type {
   RenameResult,
   ResourceListOptions,
   ResourceMeta,
+  ResourceComment,
   ResourceType,
   RestoreOptions,
   RestoreResult,
@@ -200,15 +201,21 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     const metadataResult = await this.validatePublishResource(type, name, sourceDir);
     await this.ensurePublishHasContentChanges(type, name, sourceDir);
     const sameDir = await this.isSameDirectory(sourceDir, targetDir);
+    const existingComment = sameDir
+      ? undefined
+      : await this.readResourceCommentFromDir(targetDir);
     if (!sameDir) {
       await fs.rm(targetDir, { recursive: true, force: true });
       await fs.mkdir(path.dirname(targetDir), { recursive: true });
       await fs.cp(sourceDir, targetDir, { recursive: true });
     }
 
-    if (metadataResult.shouldWriteMetadata) {
+    if (metadataResult.shouldWriteMetadata || existingComment) {
       const yamlPath = path.join(targetDir, "himan.yaml");
-      const metadata = { ...metadataResult.metadata, version };
+      const metadata: PublishMetadata = { ...metadataResult.metadata, version };
+      if (!this.readCommentMetadata(metadata).comment && existingComment) {
+        metadata.comment = existingComment;
+      }
       await fs.writeFile(yamlPath, YAML.stringify(metadata), "utf8");
     }
     const section = await this.resolvePublishChangelogSection(repoDir, type, name);
@@ -1652,6 +1659,21 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       return this.isRecord(parsed) ? parsed : null;
     } catch {
       return null;
+    }
+  }
+
+  private async readResourceCommentFromDir(
+    resourceDir: string,
+  ): Promise<ResourceComment | undefined> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (!(await this.exists(yamlPath))) return undefined;
+
+    try {
+      const parsed = YAML.parse(await fs.readFile(yamlPath, "utf8")) as unknown;
+      if (!this.isRecord(parsed)) return undefined;
+      return this.readCommentMetadata(parsed).comment;
+    } catch {
+      return undefined;
     }
   }
 

@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserved resource `comment.score` and `comment.text` when publishing from older project copies or regenerating Himan skill metadata.
+
 ## [0.8.0] - 2026-05-26
 
 ### Added

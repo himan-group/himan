@@ -1,6 +1,6 @@
 name: himan-skill-metadata
 type: skill
-version: 0.0.4
+version: 0.0.5
 entry: SKILL.md
 description: Create or update Himan skill metadata. Use when Codex creates,
   edits, migrates, or audits a skill folder with SKILL.md and should also
@@ -14,10 +14,10 @@ analysis:
   content:
     tokenizer: approx-char-v1
     tokenEstimator: ceil(chars/4)
-    entryTokens: 1172
-    packageTokens: 4713
-    contentHash: sha256:b231ed03dec7900abc4039e25ef6d022e3b3ae4041c1baf608834223b8f481f2
-    measuredAt: 2026-05-19T04:30:10.381Z
+    entryTokens: 1275
+    packageTokens: 5272
+    contentHash: sha256:588f5dca83a5ef954f3d52b4bd259ba6e7665d25ecec4d2569473da0fe51df97
+    measuredAt: 2026-05-26T08:41:18.642Z
     measuredBy: codex
   dependencies:
     skills:
@@ -29,5 +29,8 @@ analysis:
       - functions.exec_command
   generation:
     generatedBy: codex
-    generatedAt: 2026-05-19T04:30:10.381Z
+    generatedAt: 2026-05-26T08:41:18.642Z
     promptRef: skill-creator
+comment:
+  score: 9
+  text: 创建/修改Skill时，自动补充himan规定的meta信息
