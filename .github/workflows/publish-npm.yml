@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - master
+  pull_request_target:
+    branches:
+      - master
+    types: [closed]
   workflow_dispatch:
 
 concurrency:
@@ -13,11 +17,14 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.merged == true
     permissions:
       contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
 
       - uses: pnpm/action-setup@v4
         with:
@@ -34,5 +41,34 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Check whether package version is already published
+        id: npm-version
+        run: |
+          set -euo pipefail
+          PACKAGE_NAME=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).name")
+          VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
+          if [ -z "$PACKAGE_NAME" ] || [ "$PACKAGE_NAME" = "undefined" ] || [ -z "$VERSION" ] || [ "$VERSION" = "undefined" ]; then
+            echo "::error::Could not read package name or version from package.json"
+            exit 1
+          fi
+
+          LOG_FILE=$(mktemp)
+          if npm view "${PACKAGE_NAME}@${VERSION}" version --registry=https://registry.npmjs.org >"$LOG_FILE" 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Package ${PACKAGE_NAME}@${VERSION} is already published; skipping npm publish."
+            exit 0
+          fi
+
+          if grep -Eiq 'E404|404|not found' "$LOG_FILE"; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "Package ${PACKAGE_NAME}@${VERSION} is not published yet."
+            exit 0
+          fi
+
+          cat "$LOG_FILE"
+          echo "::error::Failed to check npm package version availability"
+          exit 1
+
       - name: Publish to npmjs.com
+        if: steps.npm-version.outputs.published != 'true'
         run: pnpm run release
