@@ -26,15 +26,17 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.1
-
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: pnpm
           registry-url: https://registry.npmjs.org
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.1 --activate
+          pnpm --version
 
       - name: Use npm CLI with trusted publishing support
         run: npm install -g npm@^11.5.1

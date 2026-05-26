@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 - Fixed the GitHub Actions verify workflow so `dev` branch pushes and PRs into `dev` trigger CI checks again.
 - Fixed release automation so npm publishing and version tag creation also run from merged PR events into `master`, with npm duplicate-version skips for repeated triggers.
+- Fixed GitHub Actions setup failures by replacing the external `pnpm/action-setup` action with Corepack-based pnpm activation.
 
 ## [0.8.2] - 2026-05-26
 
