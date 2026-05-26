@@ -6,6 +6,19 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-26
+
+### Added
+
+- Added `himan comment <type> <name> <score> [text...]` and `himan resource comment ...` for storing resource `comment.score` and optional `comment.text`, with list and source README score display.
+
+### Changed
+
+- Streamlined the project README and moved detailed usage and command reference content into dedicated docs.
+- Changed resource list and source README resource indexes to sort resources within each category by descending `comment.score`, with unrated resources last.
+- Moved grouped `dev` and `publish` commands from `himan project ...` to `himan resource ...` while preserving the top-level `himan dev` and `himan publish` shortcuts.
+- Added `-g` / `--global` to `himan uninstall` for removing user-level global install targets without changing project lock.
+
 ## [0.7.2] - 2026-05-20
 
 ### Changed

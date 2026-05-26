@@ -18,6 +18,8 @@ type TerminalColorToken =
   | "category"
   | "resource"
   | "version"
+  | "score"
+  | "comment"
   | "description"
   | "muted";
 
@@ -27,6 +29,7 @@ export function registerResourceCommands(command: Command, services: ServiceFact
     .argument("[type]", "resource type")
     .option("--agent <list>", "agent list filter, comma separated")
     .option("--brief", "hide resource descriptions")
+    .option("--comment", "show resource comment text")
     .option("--source <alias>", "source alias for source resource list")
     .option("--installed", "list resources installed in current project")
     .option("--archived", "list archived resources only")
@@ -40,6 +43,7 @@ export function registerResourceCommands(command: Command, services: ServiceFact
           json?: boolean;
           agent?: string;
           brief?: boolean;
+          comment?: boolean;
           source?: string;
           installed?: boolean;
           archived?: boolean;
@@ -49,6 +53,7 @@ export function registerResourceCommands(command: Command, services: ServiceFact
         await runAction(async () => {
           const agents = parseAgents(options.agent);
           const showDescription = !options.brief;
+          const showCommentText = Boolean(options.comment);
           if (options.installed && options.source) {
             throw new HimanError(
               errorCodes.CLI_USAGE,
@@ -81,11 +86,11 @@ export function registerResourceCommands(command: Command, services: ServiceFact
             const groups = await listGroupedResources(services, agents, listOptions);
             if (options.json) {
               process.stdout.write(
-                `${JSON.stringify(formatResourceGroups(groups, showDescription), null, 2)}\n`,
+                `${JSON.stringify(formatResourceGroups(groups, showDescription, showCommentText), null, 2)}\n`,
               );
               return;
             }
-            writeGroupedResources(groups, showDescription);
+            writeGroupedResources(groups, showDescription, showCommentText);
             return;
           }
 
@@ -93,12 +98,12 @@ export function registerResourceCommands(command: Command, services: ServiceFact
           const resources = await services.list(resourceType, agents, listOptions);
           if (options.json) {
             process.stdout.write(
-              `${JSON.stringify(formatResources(resources, showDescription), null, 2)}\n`,
+              `${JSON.stringify(formatResources(resources, showDescription, showCommentText), null, 2)}\n`,
             );
             return;
           }
 
-          writeResourceList(resources, showDescription);
+          writeResourceList(resources, showDescription, showCommentText);
         });
       },
     );
@@ -186,6 +191,55 @@ export function registerResourceCommands(command: Command, services: ServiceFact
           }
           process.stdout.write(
             `Created ${result.type}/${result.name} at ${result.resourceDir}${
+              result.dryRun ? " (dry-run)" : ""
+            }\n`,
+          );
+        });
+      },
+    );
+
+  command
+    .command("comment")
+    .argument("<type>", "resource type")
+    .argument("<name>", "resource name")
+    .argument("<score>", "integer score from 1 to 10")
+    .argument("[text...]", "optional short comment text")
+    .option("--source <alias>", "source alias")
+    .option("--clear-text", "remove existing comment text")
+    .option("--dry-run", "show comment result without writing")
+    .option("--json", "output json format")
+    .description("Add or update a source resource score and optional comment text")
+    .action(
+      async (
+        type: string,
+        name: string,
+        scoreInput: string,
+        textParts: string[] | undefined,
+        options: {
+          source?: string;
+          clearText?: boolean;
+          dryRun?: boolean;
+          json?: boolean;
+        },
+      ) => {
+        await runAction(async () => {
+          const resourceType = ensureResourceType(type);
+          const score = parseScore(scoreInput);
+          const text = textParts?.length ? textParts.join(" ") : undefined;
+          const result = await services.comment(resourceType, name, {
+            score,
+            ...(text !== undefined ? { text } : {}),
+            source: options.source,
+            clearText: options.clearText,
+            dryRun: options.dryRun,
+          });
+          if (options.json) {
+            process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+            return;
+          }
+          const suffix = result.comment.text ? `: ${result.comment.text}` : "";
+          process.stdout.write(
+            `Commented ${result.type}/${result.name} ${result.comment.score}/10${suffix}${
               result.dryRun ? " (dry-run)" : ""
             }\n`,
           );
@@ -337,7 +391,7 @@ function ensureResourceType(type: string): ResourceType {
 async function listGroupedResources(
   services: ServiceFactory,
   agents?: string[],
-  options: { archived?: boolean; includeArchived?: boolean } = {},
+  options: { archived?: boolean; includeArchived?: boolean; source?: string } = {},
 ): Promise<ResourceGroups> {
   return {
     rule: await services.list("rule", agents, options),
@@ -350,27 +404,41 @@ async function listGroupedResources(
 function formatResourceGroups(
   groups: ResourceGroups,
   showDescription: boolean,
+  showCommentText: boolean,
 ): ResourceGroups {
   return {
-    rule: formatResources(groups.rule, showDescription),
-    command: formatResources(groups.command, showDescription),
-    skill: formatResources(groups.skill, showDescription),
-    config: formatResources(groups.config, showDescription),
+    rule: formatResources(groups.rule, showDescription, showCommentText),
+    command: formatResources(groups.command, showDescription, showCommentText),
+    skill: formatResources(groups.skill, showDescription, showCommentText),
+    config: formatResources(groups.config, showDescription, showCommentText),
   };
 }
 
 function formatResources(
   resources: ResourceMeta[],
   showDescription: boolean,
+  showCommentText: boolean,
 ): ResourceMeta[] {
-  if (showDescription) return resources;
-  return resources.map((resource) => {
-    const { description: _description, ...withoutDescription } = resource;
-    return withoutDescription;
+  return [...resources].sort(compareResourcesByCategoryAndScore).map((resource) => {
+    if (showDescription && showCommentText) return resource;
+    const { description: _description, comment: _comment, ...base } = resource;
+    const result: ResourceMeta = showDescription
+      ? { ...base, description: resource.description }
+      : base;
+    if (resource.comment) {
+      result.comment = showCommentText
+        ? resource.comment
+        : { score: resource.comment.score };
+    }
+    return result;
   });
 }
 
-function writeGroupedResources(groups: ResourceGroups, showDescription: boolean): void {
+function writeGroupedResources(
+  groups: ResourceGroups,
+  showDescription: boolean,
+  showCommentText: boolean,
+): void {
   const hasResources = RESOURCE_TYPES.some((type) => groups[type].length > 0);
   if (!hasResources) {
     process.stdout.write("No resources found.\n");
@@ -381,11 +449,15 @@ function writeGroupedResources(groups: ResourceGroups, showDescription: boolean)
     const resources = groups[type];
     if (resources.length === 0) continue;
     process.stdout.write(`${styleTerminal(formatGroupTitle(type), "groupTitle")}:\n`);
-    writeResourceList(resources, showDescription);
+    writeResourceList(resources, showDescription, showCommentText);
   }
 }
 
-function writeResourceList(resources: ResourceMeta[], showDescription: boolean): void {
+function writeResourceList(
+  resources: ResourceMeta[],
+  showDescription: boolean,
+  showCommentText: boolean,
+): void {
   if (resources.length === 0) {
     process.stdout.write("No resources found.\n");
     return;
@@ -396,7 +468,7 @@ function writeResourceList(resources: ResourceMeta[], showDescription: boolean):
     process.stdout.write(`${styleTerminal(`[${category}]`, "category")}\n`);
     for (const resource of categoryResources) {
       process.stdout.write(
-        `${styleTerminal("-", "muted")} ${styleTerminal(resource.name, "resource")} ${styleTerminal("|", "muted")} ${styleTerminal(resource.version ?? "-", "version")}\n`,
+        `${styleTerminal("-", "muted")} ${styleTerminal(resource.name, "resource")} ${styleTerminal("|", "muted")} ${styleTerminal(resource.version ?? "-", "version")} ${styleTerminal("|", "muted")} ${styleTerminal(formatScore(resource.comment?.score), "score")}\n`,
       );
       if (showDescription && resource.description) {
         process.stdout.write(
@@ -407,6 +479,11 @@ function writeResourceList(resources: ResourceMeta[], showDescription: boolean):
         );
       } else if (showDescription && resource.archived) {
         process.stdout.write(`  ${styleTerminal("[archived]", "description")}\n`);
+      }
+      if (showCommentText && resource.comment?.text) {
+        process.stdout.write(
+          `  ${styleTerminal(`Comment: ${resource.comment.text}`, "comment")}\n`,
+        );
       }
     }
     process.stdout.write("\n");
@@ -426,7 +503,36 @@ function groupResourcesByCategory(
     }
     grouped.set(category, [resource]);
   }
-  return [...grouped.entries()];
+  return [...grouped.entries()].map(([category, categoryResources]) => [
+    category,
+    [...categoryResources].sort(compareResourcesByScore),
+  ]);
+}
+
+function compareResourcesByScore(a: ResourceMeta, b: ResourceMeta): number {
+  return compareScoreThenName(a.comment?.score, b.comment?.score, a.name, b.name);
+}
+
+function compareResourcesByCategoryAndScore(a: ResourceMeta, b: ResourceMeta): number {
+  const categoryOrder = resolveResourceCategory(a.name, a.category).localeCompare(
+    resolveResourceCategory(b.name, b.category),
+  );
+  if (categoryOrder !== 0) return categoryOrder;
+  return compareResourcesByScore(a, b);
+}
+
+function compareScoreThenName(
+  aScore: number | undefined,
+  bScore: number | undefined,
+  aName: string,
+  bName: string,
+): number {
+  if (aScore !== undefined && bScore !== undefined && aScore !== bScore) {
+    return bScore - aScore;
+  }
+  if (aScore !== undefined && bScore === undefined) return -1;
+  if (aScore === undefined && bScore !== undefined) return 1;
+  return aName.localeCompare(bName);
 }
 
 function formatGroupTitle(type: ResourceType): string {
@@ -436,6 +542,27 @@ function formatGroupTitle(type: ResourceType): string {
   return "Skills";
 }
 
+function formatScore(score: number | undefined): string {
+  return score === undefined ? "-" : `${score}/10`;
+}
+
+function parseScore(input: string): number {
+  if (!/^\d+$/.test(input)) {
+    throw new HimanError(
+      errorCodes.INVALID_INPUT,
+      "Resource comment score must be an integer from 1 to 10.",
+    );
+  }
+  const score = Number(input);
+  if (!Number.isInteger(score) || score < 1 || score > 10) {
+    throw new HimanError(
+      errorCodes.INVALID_INPUT,
+      "Resource comment score must be an integer from 1 to 10.",
+    );
+  }
+  return score;
+}
+
 function styleTerminal(text: string, token: TerminalColorToken): string {
   if (!shouldUseColor()) return text;
   const codeMap: Record<TerminalColorToken, string> = {
@@ -443,6 +570,8 @@ function styleTerminal(text: string, token: TerminalColorToken): string {
     category: "1;33",
     resource: "1;37",
     version: "1;34",
+    score: "1;35",
+    comment: "90",
     description: "90",
     muted: "90",
   };

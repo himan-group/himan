@@ -8,6 +8,8 @@ import type { DoctorCheck, DoctorResult } from "../domain/doctor.js";
 import type {
   ArchiveOptions,
   ArchiveResult,
+  CommentOptions,
+  CommentResult,
   CreateOptions,
   CreateResult,
   InstallMode,
@@ -846,6 +848,33 @@ export class ServiceFactory {
     });
   }
 
+  async comment(
+    type: ResourceType,
+    name: string,
+    options: CommentOptions & SourceSelectionOptions,
+  ): Promise<CommentResult> {
+    this.validateResourceIdentity(type, name, "comment");
+    this.validateResourceScore(options.score);
+    const hasText = Object.hasOwn(options, "text");
+    if (hasText && options.clearText) {
+      throw new HimanError(
+        errorCodes.CLI_USAGE,
+        "Use either comment text or --clear-text, not both.",
+      );
+    }
+
+    const source = await this.loadSourceFromConfig(options.source);
+    const normalizedText = hasText
+      ? this.normalizeResourceCommentText(options.text)
+      : undefined;
+    return source.comment(type, name, {
+      score: options.score,
+      ...(hasText ? { text: normalizedText } : {}),
+      clearText: options.clearText,
+      dryRun: options.dryRun,
+    });
+  }
+
   async restore(
     type: ResourceType,
     name: string,
@@ -1082,6 +1111,34 @@ export class ServiceFactory {
       await this.reactivateProjectConfig(projectDir);
     }
     return { type, name, linkPath: installInfo.linkPaths[0] };
+  }
+
+  async uninstallGlobal(
+    type: ResourceType,
+    name: string,
+    projectDir: string,
+  ): Promise<{ type: ResourceType; name: string; linkPath: string }> {
+    const globalTarget = await this.tryResolveGlobalResourceTarget(
+      projectDir,
+      type,
+      name,
+    );
+    if (!globalTarget || globalTarget.linkPaths.length === 0) {
+      throw new HimanError(
+        errorCodes.INSTALL_NOT_FOUND,
+        `Global installed resource link not found for ${type}/${name}.`,
+      );
+    }
+
+    for (const linkPath of globalTarget.linkPaths) {
+      await fs.rm(linkPath, { recursive: true, force: true });
+    }
+    if (type === "config") {
+      await fs.rm(this.getCodexActiveConfigPath(this.paths.getHomeDir()), {
+        force: true,
+      });
+    }
+    return { type, name, linkPath: globalTarget.linkPaths[0] };
   }
 
   async publish(
@@ -2999,6 +3056,35 @@ export class ServiceFactory {
         `Invalid resource name: ${name}. Use kebab-case only.`,
       );
     }
+  }
+
+  private validateResourceScore(score: number): void {
+    if (!Number.isInteger(score) || score < 1 || score > 10) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "Resource comment score must be an integer from 1 to 10.",
+      );
+    }
+  }
+
+  private normalizeResourceCommentText(text: string | undefined): string | undefined {
+    const trimmed = text?.trim();
+    if (!trimmed) return undefined;
+
+    const tokenCount = this.countResourceCommentTextTokens(trimmed);
+    if (tokenCount > 64) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "Resource comment text must be at most 64 words or Chinese characters.",
+        { tokenCount, limit: 64 },
+      );
+    }
+    return trimmed;
+  }
+
+  private countResourceCommentTextTokens(input: string): number {
+    const tokens = input.match(/\p{Script=Han}|[\p{Letter}\p{Number}]+/gu);
+    return tokens?.length ?? 0;
   }
 
   private validateRenameInput(

@@ -1,6 +1,8 @@
 import type {
   ArchiveOptions,
   ArchiveResult,
+  CommentOptions,
+  CommentResult,
   CreateOptions,
   CreateResult,
   PublishResult,
@@ -59,6 +61,7 @@ const README_RESOURCES_END = "<!-- himan:resources:end -->";
 const RESOURCE_TABLE_WIDTH = "100%";
 const RESOURCE_COLUMN_ATTR_WIDTH = "288";
 const VERSION_COLUMN_ATTR_WIDTH = "112";
+const COMMENT_COLUMN_ATTR_WIDTH = "160";
 const INITIAL_SOURCE_SCAFFOLD_LINE = "- Initial source README/CHANGELOG scaffold.";
 const PUBLISHED_CHANGELOG_LINE =
   /^- Published `(rule|command|skill|config)\/([^`@]+)@([^`]+)`\.$/;
@@ -78,6 +81,10 @@ interface ResourceDocsItem {
   type: ResourceType;
   category: string;
   description?: string;
+  comment?: {
+    score: number;
+    text?: string;
+  };
 }
 
 interface ResourceDocsRef {
@@ -381,6 +388,99 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       resourceDir,
       latestVersion,
       tag,
+      committed,
+      dryRun: false,
+    };
+  }
+
+  async comment(
+    type: ResourceType,
+    name: string,
+    options: CommentOptions,
+  ): Promise<CommentResult> {
+    const repoDir = this.getRepoDir();
+    const typeDir = this.getTypeDir(type);
+    const resourceDir = path.join(repoDir, typeDir, name);
+    const metadataPath = path.join(resourceDir, "himan.yaml");
+    const archiveDir = path.join(repoDir, "archive", typeDir, name);
+
+    if (!(await this.exists(resourceDir))) {
+      if (await this.exists(archiveDir)) {
+        throw new HimanError(
+          errorCodes.RESOURCE_ARCHIVED,
+          `Resource is archived: ${type}/${name}`,
+        );
+      }
+      throw new HimanError(
+        errorCodes.RESOURCE_NOT_FOUND,
+        `Resource not found: ${type}/${name}`,
+      );
+    }
+
+    const currentMetadata = (await this.exists(metadataPath))
+      ? await this.readResourceYamlObject(metadataPath, type, name)
+      : await this.inferPublishResourceMetadata(type, name, resourceDir);
+    const nextMetadata: Record<string, unknown> = {
+      ...currentMetadata,
+      name,
+      type,
+      comment: {
+        score: options.score,
+      },
+    };
+    delete nextMetadata.rating;
+    delete nextMetadata.review;
+    if (!options.clearText && Object.hasOwn(options, "text") && options.text) {
+      nextMetadata.comment = {
+        ...(nextMetadata.comment as Record<string, unknown>),
+        text: options.text,
+      };
+    } else if (!options.clearText) {
+      const existingText = this.readCommentTextMetadata(currentMetadata);
+      if (existingText) {
+        nextMetadata.comment = {
+          ...(nextMetadata.comment as Record<string, unknown>),
+          text: existingText,
+        };
+      }
+    }
+    const comment = this.readCommentMetadata(nextMetadata).comment ?? {
+      score: options.score,
+    };
+
+    if (options.dryRun) {
+      return {
+        type,
+        name,
+        comment,
+        resourceDir,
+        metadataPath,
+        committed: false,
+        dryRun: true,
+      };
+    }
+
+    await fs.writeFile(metadataPath, YAML.stringify(nextMetadata), "utf8");
+    const docsPaths = await this.maintainSourceDocs(repoDir, {
+      section: "Changed",
+      line: `- Commented on \`${type}/${name}\` with score ${options.score}/10.`,
+    });
+    const committed = await this.repoManager.commitAndPush(
+      repoDir,
+      `comment ${type}/${name}`,
+      undefined,
+      [
+        path.relative(repoDir, metadataPath),
+        ...docsPaths.map((docPath) => path.relative(repoDir, docPath)),
+      ],
+    );
+
+    return {
+      type,
+      name,
+      comment,
+      resourceDir,
+      metadataPath,
       committed,
       dryRun: false,
     };
@@ -1180,7 +1280,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     type: ResourceType,
   ): Promise<string> {
     const hash = createHash("sha256");
-    hash.update("himan-resource-index-v1");
+    hash.update("himan-resource-index-v2");
 
     if (!(await this.exists(baseDir))) {
       hash.update("\0missing");
@@ -1363,6 +1463,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
           "    <tr>",
           `      <th width="${RESOURCE_COLUMN_ATTR_WIDTH}">Resource</th>`,
           `      <th width="${VERSION_COLUMN_ATTR_WIDTH}">Version</th>`,
+          `      <th width="${COMMENT_COLUMN_ATTR_WIDTH}">Score</th>`,
           "      <th>Description</th>",
           "    </tr>",
           "  </thead>",
@@ -1379,6 +1480,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
             "    <tr>",
             `      <td width="${RESOURCE_COLUMN_ATTR_WIDTH}"><code>${this.escapeHtml(ref.name)}</code></td>`,
             `      <td width="${VERSION_COLUMN_ATTR_WIDTH}"><code>${this.escapeHtml(ref.version ?? "-")}</code></td>`,
+            `      <td width="${COMMENT_COLUMN_ATTR_WIDTH}">${this.formatResourceCommentCell(resource)}</td>`,
             `      <td>${this.escapeHtml(resource.description ?? "-")}</td>`,
             "    </tr>",
           );
@@ -1433,6 +1535,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
           await this.readResourceCategory(repoDir, resource.type, resource.name),
         ),
         description: resource.description,
+        comment: resource.comment,
       })),
     );
 
@@ -1442,8 +1545,19 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     return items.sort((a, b) => {
       const categoryOrder = a.category.localeCompare(b.category);
       if (categoryOrder !== 0) return categoryOrder;
-      return a.name.localeCompare(b.name);
+      return this.compareDocsItemsByScore(a, b);
     });
+  }
+
+  private compareDocsItemsByScore(a: ResourceDocsItem, b: ResourceDocsItem): number {
+    const aScore = a.comment?.score;
+    const bScore = b.comment?.score;
+    if (aScore !== undefined && bScore !== undefined && aScore !== bScore) {
+      return bScore - aScore;
+    }
+    if (aScore !== undefined && bScore === undefined) return -1;
+    if (aScore === undefined && bScore !== undefined) return 1;
+    return a.name.localeCompare(b.name);
   }
 
   private async scanEntryBasedDocsItems(
@@ -1475,6 +1589,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
           this.readStringMetadata(metadata, "category"),
         ),
         description: this.readStringMetadata(metadata, "description"),
+        ...this.readCommentMetadata(metadata),
       });
     }
     return items;
@@ -1517,6 +1632,14 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       .replace(/\r?\n+/g, "<br>");
   }
 
+  private formatResourceCommentCell(resource: ResourceDocsItem): string {
+    if (!resource.comment) return "-";
+    const text = resource.comment.text
+      ? `<br><small>${this.escapeHtml(resource.comment.text)}</small>`
+      : "";
+    return `<code>${resource.comment.score}/10</code>${text}`;
+  }
+
   private async readSkillFrontMatter(
     skillPath: string,
   ): Promise<Record<string, unknown> | null> {
@@ -1540,6 +1663,42 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     if (typeof value !== "string") return undefined;
     const trimmed = value.trim();
     return trimmed ? trimmed : undefined;
+  }
+
+  private readScoreMetadata(
+    metadata: Record<string, unknown> | null,
+  ): number | undefined {
+    const comment = metadata?.comment;
+    if (typeof comment !== "object" || comment === null || Array.isArray(comment)) {
+      return undefined;
+    }
+    const value = (comment as { score?: unknown }).score;
+    if (typeof value !== "number" || !Number.isInteger(value)) return undefined;
+    return value >= 1 && value <= 10 ? value : undefined;
+  }
+
+  private readCommentMetadata(
+    metadata: Record<string, unknown> | null,
+  ): Pick<ResourceDocsItem, "comment"> {
+    const score = this.readScoreMetadata(metadata);
+    if (score === undefined) return {};
+    const text = this.readCommentTextMetadata(metadata);
+    return {
+      comment: {
+        score,
+        ...(text ? { text } : {}),
+      },
+    };
+  }
+
+  private readCommentTextMetadata(
+    metadata: Record<string, unknown> | null,
+  ): string | undefined {
+    const comment = metadata?.comment;
+    if (typeof comment !== "object" || comment === null || Array.isArray(comment)) {
+      return undefined;
+    }
+    return this.readStringMetadata(comment as Record<string, unknown>, "text");
   }
 
   private readStringArrayMetadata(

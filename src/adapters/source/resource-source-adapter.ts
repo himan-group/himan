@@ -1,6 +1,8 @@
 import type {
   ArchiveOptions,
   ArchiveResult,
+  CommentOptions,
+  CommentResult,
   CreateOptions,
   CreateResult,
   PublishResult,
@@ -55,6 +57,11 @@ export interface ResourceSourceAdapter {
     newName: string,
     options?: RenameOptions,
   ): Promise<RenameResult>;
+  comment(
+    type: ResourceType,
+    name: string,
+    options: CommentOptions,
+  ): Promise<CommentResult>;
   archive(
     type: ResourceType,
     name: string,

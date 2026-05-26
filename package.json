@@ -1,6 +1,6 @@
 {
   "name": "@hi-man/himan",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "description": "Prompt and agent asset management CLI",
   "keywords": [
     "ai",
@@ -30,6 +30,8 @@
   "files": [
     "dist",
     "docs/development.md",
+    "docs/command-reference.md",
+    "docs/user-guide.md",
     "docs/mvp",
     "docs/error-codes.md",
     "README.md",

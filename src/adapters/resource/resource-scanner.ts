@@ -43,6 +43,7 @@ export class ResourceScanner {
           version: this.readStringMetadata(parsed, "version"),
           category: this.readStringMetadata(parsed, "category"),
           description: parsed.description,
+          ...this.readCommentMetadata(parsed),
           agents: Array.isArray((parsed as { agents?: unknown }).agents)
             ? ((parsed as { agents?: string[] }).agents ?? [])
             : ((parsed as { targets?: string[] }).targets ?? []),
@@ -88,6 +89,7 @@ export class ResourceScanner {
       version: this.readStringMetadata(metadata, "version"),
       category: this.readStringMetadata(metadata, "category"),
       description: this.readStringMetadata(metadata, "description"),
+      ...this.readCommentMetadata(metadata),
       agents:
         this.readStringArrayMetadata(metadata, "agents") ??
         this.readStringArrayMetadata(metadata, "targets") ??
@@ -121,6 +123,47 @@ export class ResourceScanner {
     if (typeof value !== "string") return undefined;
     const trimmed = value.trim();
     return trimmed ? trimmed : undefined;
+  }
+
+  private readScoreMetadata(
+    metadata: Record<string, unknown> | null,
+  ): number | undefined {
+    const comment = metadata?.comment;
+    if (
+      typeof comment !== "object" ||
+      comment === null ||
+      Array.isArray(comment) ||
+      !("score" in comment)
+    ) {
+      return undefined;
+    }
+    const value = (comment as { score?: unknown }).score;
+    if (typeof value !== "number" || !Number.isInteger(value)) return undefined;
+    return value >= 1 && value <= 10 ? value : undefined;
+  }
+
+  private readCommentMetadata(
+    metadata: Record<string, unknown> | null,
+  ): Pick<ResourceMeta, "comment"> {
+    const score = this.readScoreMetadata(metadata);
+    if (score === undefined) return {};
+    const text = this.readCommentTextMetadata(metadata);
+    return {
+      comment: {
+        score,
+        ...(text ? { text } : {}),
+      },
+    };
+  }
+
+  private readCommentTextMetadata(
+    metadata: Record<string, unknown> | null,
+  ): string | undefined {
+    const comment = metadata?.comment;
+    if (typeof comment !== "object" || comment === null || Array.isArray(comment)) {
+      return undefined;
+    }
+    return this.readStringMetadata(comment as Record<string, unknown>, "text");
   }
 
   private readStringArrayMetadata(

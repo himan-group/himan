@@ -94,6 +94,22 @@ describe("CLI commands with external git source", () => {
     expect(helpResult.stdout).toContain("himan publish skill skill-a,skill-c");
   });
 
+  it("documents resource dev and publish instead of project dev and publish", () => {
+    const resourceHelp = runCli(["resource", "--help"], projectDir, homeDir);
+    expect(resourceHelp.status).toBe(0);
+    expect(resourceHelp.stdout).toContain("dev");
+    expect(resourceHelp.stdout).toContain("publish");
+
+    const projectHelp = runCli(["project", "--help"], projectDir, homeDir);
+    expect(projectHelp.status).toBe(0);
+    expect(projectHelp.stdout).not.toContain("dev");
+    expect(projectHelp.stdout).not.toContain("publish");
+
+    const projectDev = runCli(["project", "dev", "rule", "code-review"], projectDir, homeDir);
+    expect(projectDev.status).not.toBe(0);
+    expect(projectDev.stderr).toContain("unknown command 'dev'");
+  });
+
   it("reports doctor errors before init", async () => {
     const doctorHomeDir = path.join(tmpRoot, "doctor-home");
     const doctorProjectDir = path.join(tmpRoot, "doctor-project");
@@ -870,7 +886,7 @@ describe("CLI commands with external git source", () => {
     await fs.appendFile(contentPath, "Publish from create artifact.\n", "utf8");
 
     const publishResult = runCli(
-      ["publish", "command", "release-note", "--minor"],
+      ["resource", "publish", "command", "release-note", "--minor"],
       projectDir,
       homeDir,
     );
@@ -1075,7 +1091,11 @@ describe("CLI commands with external git source", () => {
       fs.readFile(path.join(commandLinkPath, "content.md"), "utf8"),
     ).resolves.toContain("Publish from create artifact.");
 
-    const devCommand = runCli(["dev", "command", "release-note"], projectDir, homeDir);
+    const devCommand = runCli(
+      ["resource", "dev", "command", "release-note"],
+      projectDir,
+      homeDir,
+    );
     expect(devCommand.status).toBe(0);
     expect(devCommand.stdout).toContain("Editing command/release-note in place");
 
@@ -1501,13 +1521,13 @@ describe("CLI commands with external git source", () => {
     expect(groupedTextResult.stdout).toContain("Rules:\n");
     expect(groupedTextResult.stdout).toContain("[General]\n");
     expect(groupedTextResult.stdout).toContain(
-      "- code-review | 1.0.0",
+      "- code-review | 1.0.0 | -",
     );
     expect(groupedTextResult.stdout).toContain("  enforce code review standards");
     expect(groupedTextResult.stdout).toContain("Commands:\n");
-    expect(groupedTextResult.stdout).toContain("- release-note | 0.1.0");
+    expect(groupedTextResult.stdout).toContain("- release-note | 0.1.0 | -");
     expect(groupedTextResult.stdout).toContain("Skills:\n");
-    expect(groupedTextResult.stdout).toContain("- risk-check | 0.0.1");
+    expect(groupedTextResult.stdout).toContain("- risk-check | 0.0.1 | -");
 
     const historyResult = runCli(
       ["history", "rule", "code-review", "--json"],
@@ -1634,9 +1654,138 @@ describe("CLI commands with external git source", () => {
       homeDir,
     );
     expect(groupedTextWithoutDescriptionResult.status).toBe(0);
-    expect(groupedTextWithoutDescriptionResult.stdout).toContain("- code-review | 1.0.0");
+    expect(groupedTextWithoutDescriptionResult.stdout).toContain(
+      "- code-review | 1.0.0 | -",
+    );
     expect(groupedTextWithoutDescriptionResult.stdout).not.toContain(
       "enforce code review standards",
+    );
+  });
+
+  it("can add resource comment metadata and optionally list comment text", async () => {
+    const invalidScoreResult = runCli(
+      ["resource", "comment", "rule", "code-review", "11"],
+      projectDir,
+      homeDir,
+    );
+    expect(invalidScoreResult.status).toBe(1);
+    expect(invalidScoreResult.stderr).toContain("[E_INVALID_INPUT]");
+
+    const longTextResult = runCli(
+      ["resource", "comment", "rule", "code-review", "7", "字".repeat(65)],
+      projectDir,
+      homeDir,
+    );
+    expect(longTextResult.status).toBe(1);
+    expect(longTextResult.stderr).toContain(
+      "Resource comment text must be at most 64 words or Chinese characters.",
+    );
+
+    const commentResult = runCli(
+      ["comment", "rule", "code-review", "7", "Reliable baseline"],
+      projectDir,
+      homeDir,
+    );
+    expect(commentResult.status).toBe(0);
+    expect(commentResult.stdout).toContain(
+      "Commented rule/code-review 7/10: Reliable baseline",
+    );
+
+    const yaml = await fs.readFile(
+      path.join(repoDir, "rules", "code-review", "himan.yaml"),
+      "utf8",
+    );
+    expect(yaml).toContain("comment:");
+    expect(yaml).toContain("score: 7");
+    expect(yaml).toContain("text: Reliable baseline");
+
+    const listedResult = runCli(["list", "rule", "--json"], projectDir, homeDir);
+    expect(listedResult.status).toBe(0);
+    const listed = JSON.parse(listedResult.stdout) as Array<Record<string, unknown>>;
+    expect(listed.find((item) => item.name === "code-review")).toEqual(
+      expect.objectContaining({
+        comment: {
+          score: 7,
+        },
+      }),
+    );
+
+    const listedWithCommentResult = runCli(
+      ["list", "rule", "--comment", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(listedWithCommentResult.status).toBe(0);
+    const listedWithComment = JSON.parse(
+      listedWithCommentResult.stdout,
+    ) as Array<Record<string, unknown>>;
+    expect(listedWithComment.find((item) => item.name === "code-review")).toEqual(
+      expect.objectContaining({
+        comment: {
+          score: 7,
+          text: "Reliable baseline",
+        },
+      }),
+    );
+
+    const textListResult = runCli(["list", "rule", "--comment"], projectDir, homeDir);
+    expect(textListResult.status).toBe(0);
+    expect(textListResult.stdout).toContain("- code-review | 1.0.0 | 7/10");
+    expect(textListResult.stdout).toContain("Comment: Reliable baseline");
+  });
+
+  it("sorts source resource lists within a category by score", async () => {
+    const sortingHomeDir = path.join(tmpRoot, "score-sort-home");
+    const sortingProjectDir = path.join(tmpRoot, "score-sort-project");
+    await fs.mkdir(sortingHomeDir, { recursive: true });
+    await fs.mkdir(sortingProjectDir, { recursive: true });
+    const remoteDir = await createRuleCatalogRemote("score-sort", [
+      {
+        name: "middle-rule",
+        version: "1.0.0",
+        description: "middle scored rule",
+        score: 5,
+      },
+      {
+        name: "unrated-rule",
+        version: "1.0.0",
+        description: "unrated rule",
+      },
+      {
+        name: "top-rule",
+        version: "1.0.0",
+        description: "top scored rule",
+        score: 9,
+      },
+    ]);
+
+    const initResult = runCli(["init", remoteDir], sortingProjectDir, sortingHomeDir);
+    expect(initResult.status).toBe(0);
+
+    const listResult = runCli(
+      ["resource", "list", "rule", "--json"],
+      sortingProjectDir,
+      sortingHomeDir,
+    );
+    expect(listResult.status).toBe(0);
+    const listed = JSON.parse(listResult.stdout) as Array<{ name: string }>;
+    expect(listed.map((item) => item.name)).toEqual([
+      "top-rule",
+      "middle-rule",
+      "unrated-rule",
+    ]);
+
+    const textListResult = runCli(
+      ["resource", "list", "rule"],
+      sortingProjectDir,
+      sortingHomeDir,
+    );
+    expect(textListResult.status).toBe(0);
+    expect(textListResult.stdout.indexOf("- top-rule | 1.0.0 | 9/10")).toBeLessThan(
+      textListResult.stdout.indexOf("- middle-rule | 1.0.0 | 5/10"),
+    );
+    expect(textListResult.stdout.indexOf("- middle-rule | 1.0.0 | 5/10")).toBeLessThan(
+      textListResult.stdout.indexOf("- unrated-rule | 1.0.0 | -"),
     );
   });
 
@@ -1663,6 +1812,16 @@ describe("CLI commands with external git source", () => {
     await expect(
       fs.access(path.join(globalInstallProjectDir, ".codex", "rules", "code-review")),
     ).rejects.toThrow();
+    await expect(fs.access(path.join(globalInstallProjectDir, "himan.lock"))).rejects.toThrow();
+
+    const uninstallResult = runCli(
+      ["uninstall", "rule", "code-review", "-g"],
+      globalInstallProjectDir,
+      homeDir,
+    );
+    expect(uninstallResult.status).toBe(0);
+    expect(uninstallResult.stdout).toContain("Uninstalled global rule/code-review");
+    await expect(fs.access(globalPath)).rejects.toThrow();
     await expect(fs.access(path.join(globalInstallProjectDir, "himan.lock"))).rejects.toThrow();
   });
 
@@ -2704,6 +2863,83 @@ async function createSingleRuleRemote(
     seedDir,
   );
   runGit(["tag", `rule/${name}@${version}`], seedDir);
+  runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
+  runGit(["remote", "add", "origin", remoteDir], seedDir);
+  runGit(["push", "-u", "origin", "main"], seedDir);
+  runGit(["push", "--tags"], seedDir);
+
+  return remoteDir;
+}
+
+async function createRuleCatalogRemote(
+  label: string,
+  rules: Array<{
+    name: string;
+    version: string;
+    description: string;
+    score?: number;
+    text?: string;
+  }>,
+): Promise<string> {
+  const seedDir = path.join(tmpRoot, `${label}-seed`);
+  const remoteDir = path.join(tmpRoot, `${label}.git`);
+
+  await fs.mkdir(seedDir, { recursive: true });
+  await fs.mkdir(remoteDir, { recursive: true });
+
+  for (const rule of rules) {
+    const ruleDir = path.join(seedDir, "rules", rule.name);
+    await fs.mkdir(ruleDir, { recursive: true });
+    await fs.writeFile(
+      path.join(ruleDir, "himan.yaml"),
+      YAML.stringify({
+        name: rule.name,
+        type: "rule",
+        version: rule.version,
+        entry: "content.md",
+        description: rule.description,
+        ...(rule.score !== undefined
+          ? {
+              comment: {
+                score: rule.score,
+                ...(rule.text ? { text: rule.text } : {}),
+              },
+            }
+          : {}),
+        agents: ["cursor"],
+      }),
+      "utf8",
+    );
+    await fs.writeFile(path.join(ruleDir, "content.md"), `# ${rule.name}\n`, "utf8");
+  }
+
+  runGit(["init", "--initial-branch=main"], seedDir);
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "add",
+      ".",
+    ],
+    seedDir,
+  );
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "commit",
+      "-m",
+      `Add ${label} rule catalog`,
+    ],
+    seedDir,
+  );
+  for (const rule of rules) {
+    runGit(["tag", `rule/${rule.name}@${rule.version}`], seedDir);
+  }
   runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
   runGit(["remote", "add", "origin", remoteDir], seedDir);
   runGit(["push", "-u", "origin", "main"], seedDir);
