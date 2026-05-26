@@ -75,7 +75,9 @@ export class ProjectLockStore {
       resources: [],
     };
 
-    lock.source = source;
+    if (lock.resources.length === 0) {
+      lock.source = source;
+    }
     lock.updatedAt = now;
 
     const found = lock.resources.find(

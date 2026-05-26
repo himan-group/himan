@@ -1161,6 +1161,9 @@ export class ServiceFactory {
     const { source, sourceInfo } = await this.loadSourceWithInfoFromConfig(
       options.source,
     );
+    if (installScope === "project") {
+      await this.assertProjectLockSourceCompatible(projectDir, sourceInfo);
+    }
     if (await source.isArchived(type, name)) {
       throw new HimanError(
         errorCodes.RESOURCE_ARCHIVED,
@@ -1244,7 +1247,7 @@ export class ServiceFactory {
     }
 
     if (installScope === "project") {
-      await this.lockStore.upsertResource(projectDir, sourceInfo, {
+      await this.upsertProjectLockResource(projectDir, sourceInfo, {
         type,
         name,
         version: nextVersion,
@@ -1791,6 +1794,13 @@ export class ServiceFactory {
     projectDir: string,
     sourceInfo?: LockSourceInfo,
   ): Promise<InstallResult> {
+    if (prepared.scope === "project") {
+      if (!sourceInfo) {
+        throw new Error("Project install requires source lock information.");
+      }
+      await this.assertProjectLockSourceCompatible(projectDir, sourceInfo);
+    }
+
     if (prepared.type === "config") {
       const rootDir =
         prepared.scope === "global" ? this.paths.getHomeDir() : projectDir;
@@ -1813,7 +1823,7 @@ export class ServiceFactory {
       if (prepared.type === "config") {
         await this.removeOtherProjectConfigLocks(projectDir, prepared.name);
       }
-      await this.lockStore.upsertResource(projectDir, sourceInfo, {
+      await this.upsertProjectLockResource(projectDir, sourceInfo, {
         type: prepared.type,
         name: prepared.name,
         version: prepared.version,
@@ -2084,6 +2094,62 @@ export class ServiceFactory {
       ...sourceInfo,
       repoId: sourceInfo.repoId ?? toRepoId(sourceInfo.repo),
     };
+  }
+
+  private async upsertProjectLockResource(
+    projectDir: string,
+    sourceInfo: LockSourceInfo,
+    resource: {
+      type: ResourceType;
+      name: string;
+      version: string;
+      agents?: string[];
+      mode?: InstallMode;
+    },
+  ): Promise<void> {
+    await this.assertProjectLockSourceCompatible(projectDir, sourceInfo);
+    await this.lockStore.upsertResource(projectDir, sourceInfo, resource);
+  }
+
+  private async assertProjectLockSourceCompatible(
+    projectDir: string,
+    sourceInfo: LockSourceInfo,
+  ): Promise<void> {
+    const lock = await this.lockStore.load(projectDir);
+    if (!lock || lock.resources.length === 0) return;
+
+    const lockSource = this.normalizeLockSourceInfo(lock.source);
+    const selectedSource = this.normalizeLockSourceInfo(sourceInfo);
+    if (this.isSameLockSource(lockSource, selectedSource)) return;
+
+    throw new HimanError(
+      errorCodes.INVALID_INPUT,
+      `Project lock is bound to source ${this.formatLockSource(lockSource)}; cannot update it from source ${this.formatLockSource(selectedSource)}. Use the lock source, install globally with -g/--global, or start a new project lock.`,
+      {
+        lockSource,
+        selectedSource,
+        lockPath: this.lockStore.getLockPath(projectDir),
+      },
+    );
+  }
+
+  private isSameLockSource(a: LockSourceInfo, b: LockSourceInfo): boolean {
+    if (a.type !== b.type) return false;
+    if (a.type === "git") {
+      const leftRepoId = a.repoId ?? (a.repo ? toRepoId(a.repo) : undefined);
+      const rightRepoId = b.repoId ?? (b.repo ? toRepoId(b.repo) : undefined);
+      if (leftRepoId && rightRepoId) return leftRepoId === rightRepoId;
+      if (a.repo && b.repo) return a.repo === b.repo;
+    }
+    return true;
+  }
+
+  private formatLockSource(sourceInfo: LockSourceInfo): string {
+    const label = sourceInfo.name ?? sourceInfo.repo ?? sourceInfo.type;
+    if (sourceInfo.repo && sourceInfo.repo !== label) {
+      return `${label} (${sourceInfo.repo})`;
+    }
+    return label;
   }
 
   private async getLockedResource(projectDir: string, type: ResourceType, name: string) {

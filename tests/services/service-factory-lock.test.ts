@@ -97,6 +97,66 @@ describe("ServiceFactory lock restore", () => {
       }),
     );
   });
+
+  it("refuses to update a non-empty lock from a different source", async () => {
+    const lockedRemote = await createRemoteFixture("locked-mismatch", [
+      {
+        name: "code-review",
+        version: "1.0.0",
+        description: "locked source rule",
+        content: "from locked source",
+      },
+    ]);
+    const otherRemote = await createRemoteFixture("other-mismatch", [
+      {
+        name: "other-rule",
+        version: "1.0.0",
+        description: "other source rule",
+        content: "from other source",
+      },
+    ]);
+    const services = new ServiceFactory();
+
+    await services.initSource("git", lockedRemote);
+    await services.addSource("other-source", "git", otherRemote, "other");
+    await services.install("rule", "code-review", "1.0.0", projectDir, ["cursor"], "copy");
+
+    await expect(
+      services.install("rule", "other-rule", "1.0.0", projectDir, ["cursor"], "copy", {
+        source: "other",
+      }),
+    ).rejects.toMatchObject({
+      code: "E_INVALID_INPUT",
+      message: expect.stringContaining("Project lock is bound to source"),
+    });
+
+    const lock = JSON.parse(
+      await fs.readFile(path.join(projectDir, "himan.lock"), "utf8"),
+    ) as { source: { repo?: string }; resources: Array<{ name: string }> };
+    expect(lock.source).toEqual(expect.objectContaining({ repo: lockedRemote }));
+    expect(lock.resources).toEqual([
+      expect.objectContaining({ name: "code-review" }),
+    ]);
+    await expect(
+      fs.access(path.join(projectDir, ".cursor", "rules", "other-rule")),
+    ).rejects.toThrow();
+
+    await expect(
+      services.publish("rule", "other-rule", "patch", projectDir, {
+        source: "other",
+      }),
+    ).rejects.toMatchObject({
+      code: "E_INVALID_INPUT",
+      message: expect.stringContaining("Project lock is bound to source"),
+    });
+
+    const otherHistory = await services.history("rule", "other-rule", {
+      source: "other",
+    });
+    expect(otherHistory).toEqual([
+      expect.objectContaining({ version: "1.0.0" }),
+    ]);
+  });
 });
 
 async function createRemoteFixture(
