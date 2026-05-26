@@ -1,8 +1,10 @@
 # himan
 
-`himan` 是面向个人和团队的 AI 资产（Resource）管理工具，并以 CLI 的方式调用。它适合需要跨 agent、跨终端环境、跨项目复用和治理资产的场景。
+`himan` 是面向个人和团队的 AI 资产（Resource）管理工具，并以 CLI 的方式调用。
 
-它把 `rule`、`command`、`skill` 和 `config` 作为资产管理起来；每份资产都支持版本管理、安装和发布，资产存放在 Git source 中，并通过 `himan.lock` 在项目中实现可复现安装。
+适用场景是跨 agent、跨终端、跨项目复用和治理 AI 资产。
+
+它管理 `rule`、`command`、`skill` 和 `config`，资产存放在 Git source 中，支持版本发布、安装，并通过 `himan.lock` 固定项目安装结果。
 
 ## 适合谁使用
 
@@ -36,28 +38,35 @@ pnpm dlx @hi-man/himan --help
 
 ## 3 分钟入门
 
-以下示例假设你已有一个可访问、可 push 的 himan Git source。如果还没有 source，先创建一个空 Git 仓库即可。
+以下示例假设你已有一个可访问、可 push 的空 Git 仓库，用作 himan Git source。
 
 ```bash
-# 1. 初始化 source，设置当前项目默认 agent，并安装一个资产
+# 1. 初始化 source，并设置当前项目默认 agent
+himan init https://github.com/your-org/your-himan-source.git --agent codex
+
+# 2. 创建 skill 空壳，并在当前项目 agent 目录里完善和验证
+himan create skill api-review --description "Review API changes"
+
+# 3. 用 coding agent 编写内容，推荐结合 himan-skill-metadata 生成元数据
+
+# 4. 发布 patch 版本，写回 source，并安装回当前项目
+himan publish skill api-review
+
+# 5. 检查本机、source、agent、lock 和安装目标
+himan doctor
+```
+
+`himan create` 只负责创建资产空壳；编写 `SKILL.md` 和维护 `himan.yaml` 通常交给 coding agent 完成。
+
+如果 source 中已经有可用资产，也可以在初始化时直接安装：
+
+```bash
 himan init https://github.com/your-org/your-himan-source.git \
   --agent codex \
   --install skill/code-review
-
-# 2. 检查本机、source、agent、lock 和安装目标
-himan doctor
-
-# 3. 查看 source 中可用资产
-himan resource list
-
-# 4. 创建新 skill，在当前项目 agent 目录里直接编辑和验证
-himan create skill api-review --description "Review API changes"
-
-# 5. 发布 patch 版本，写回 source，并重新安装到当前项目
-himan publish skill api-review
 ```
 
-换一台机器或同事拉取项目后：
+换一台机器或同事拉取包含 `himan.lock` 的项目后：
 
 ```bash
 himan init https://github.com/your-org/your-himan-source.git --agent codex
@@ -78,31 +87,17 @@ himan install
 
 ## 常用工作流
 
-```bash
-# source
-himan source add team https://github.com/your-org/himan-source.git --alias team
-himan source use team
-himan source init-docs
-
-# agent
-himan agent use codex
-himan agent current
-
-# install
-himan install skill code-review
-himan install skill code-review -r --depth 2
-himan install rule secure-coding --mode link
-
-# 开发和发布
-himan dev skill code-review
-himan publish skill code-review --minor
-himan publish skill skill-a,skill-b
-himan publish --all
-
-# 资产生命周期
-himan resource archive skill old-workflow --reason "Replaced by new-workflow"
-himan resource restore skill old-workflow
-```
+| 场景 | 命令 |
+| --- | --- |
+| 添加 source | `himan source add team https://github.com/your-org/himan-source.git --alias team` |
+| 切换 source | `himan source use team` |
+| 设置默认 agent | `himan agent use codex` |
+| 安装资产 | `himan install skill code-review` |
+| 递归安装 skill 依赖 | `himan install skill code-review -r --depth 2` |
+| 进入开发态 | `himan dev skill code-review` |
+| 发布新版本 | `himan publish skill code-review --minor` |
+| 批量发布 | `himan publish skill skill-a,skill-b` |
+| 归档资产 | `himan resource archive skill old-workflow --reason "Replaced by new-workflow"` |
 
 完整命令表见 [docs/command-reference.md](./docs/command-reference.md)。
 
@@ -119,7 +114,7 @@ your-himan-source/
   archive/
 ```
 
-每个资产目录可以放一个 `himan.yaml` 描述名称、类型、版本、入口、默认 agent、分类、依赖和静态分析信息。没有 `himan.yaml` 时，`rule` / `command` 默认入口是 `content.md`，`skill` 默认入口是 `SKILL.md`，`config` 默认入口是 `config.toml`。
+每个资产目录可以放一个 `himan.yaml`，用于描述名称、类型、版本、入口、默认 agent、分类、依赖和静态分析信息。
 
 更多目录规范、安装目标、lock 行为、多 source、归档和发布细节见 [docs/user-guide.md](./docs/user-guide.md)。
 
@@ -150,10 +145,10 @@ himan-tracker server start --open
 
 ## 文档
 
-- [User Guide](./docs/user-guide.md)：概念、source 结构、安装目标、lock、发布、归档和 FAQ。
-- [Command Reference](./docs/command-reference.md)：完整命令速查。
-- [Error Codes](./docs/error-codes.md)：稳定错误码和处理建议。
-- [Development](./docs/development.md)：本仓库开发、测试和 npm 发布流程。
+- [用户指南](./docs/user-guide.md)：概念、source 结构、安装目标、lock、发布、归档和 FAQ。
+- [命令参考](./docs/command-reference.md)：完整命令速查。
+- [错误码](./docs/error-codes.md)：稳定错误码和处理建议。
+- [开发文档](./docs/development.md)：本仓库开发、测试和 npm 发布流程。
 
 ## 补充说明
 
