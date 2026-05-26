@@ -86,7 +86,7 @@ source 的配置名是本地内部 key，别名是日常命令使用的稳定引
 
 资源评价可通过 `himan comment <type> <name> <score> [text...]` 写入 source 元数据，也可使用完整形式 `himan resource comment ...`；`resource list` 默认展示评分，同分类内按评分从高到低排序，未评分资源排最后，传 `--comment` 时额外展示短评。
 
-无参数 `himan install` 会按 `himan.lock` 中记录的 source 恢复安装，不受当前 default source 切换影响。
+无参数 `himan install` 会按 `himan.lock` 中记录的 source 恢复安装，不受当前 default source 切换影响。lock 的顶层 `source` 是默认 source；通过 `--source <alias>` 安装或发布到其他 source 时，lock 会在 `sources` 中记录额外 source，并让对应资源条目用 `source` 引用它。
 
 ## Agent 与安装目标
 
@@ -127,7 +127,7 @@ himan install
 ```
 
 - 默认安装模式是 `copy`；可用 `--mode link` 创建软链。
-- 单资源安装会写入当前项目 `himan.lock`，记录 source、精确版本、agent 和安装模式。
+- 单资源安装会写入当前项目 `himan.lock`，记录 source、精确版本、agent 和安装模式；未显式记录 `source` 的资源使用 lock 顶层默认 source。
 - `himan install` 无参数时按 lock 批量恢复安装。
 - `install skill <name> -r` 会安装 `himan.yaml` 中声明的 skill 依赖；`--depth` 控制递归层数，默认 `1`。
 - 归档资源直接安装会失败；需要显式传 `--include-archived`，但 lock 中已有记录的归档资源仍可被无参数安装恢复。
