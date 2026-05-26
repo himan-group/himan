@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-26
+
 ### Added
 
 - Added `himan comment <type> <name> <score> [text...]` and `himan resource comment ...` for storing resource `comment.score` and optional `comment.text`, with list and source README score display.
