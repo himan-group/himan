@@ -77,28 +77,28 @@ himan install
 
 ## 核心概念
 
-| 概念 | 说明 |
-| --- | --- |
-| `source` | 存放资产的 Git 仓库，目录通常包含 `rules/`、`commands/`、`skills/`、`configs/`。 |
-| `resource` | himan 中的一份可复用、可安装资产，类型为 `rule`、`command`、`skill`、`config`。 |
-| `agent` | 资产安装目标，支持 `cursor`、`claude-code`、`codex`、`openclaw`。 |
+| 概念         | 说明                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------ |
+| `source`     | 存放资产的 Git 仓库，目录通常包含 `rules/`、`commands/`、`skills/`、`configs/`。     |
+| `resource`   | himan 中的一份可复用、可安装资产，类型为 `rule`、`command`、`skill`、`config`。      |
+| `agent`      | 资产安装目标，支持 `cursor`、`claude-code`、`codex`、`openclaw`。                    |
 | `himan.lock` | 项目级锁文件，记录已安装资产的默认 source、可选额外 source、版本、agent 和安装模式。 |
-| Git tag | 资产版本以 `<type>/<name>@<semver>` 标记，例如 `skill/code-review@1.2.0`。 |
+| Git tag      | 资产版本以 `<type>/<name>@<semver>` 标记，例如 `skill/code-review@1.2.0`。           |
 
 ## 常用工作流
 
-| 场景 | 命令 |
-| --- | --- |
-| 添加 source | `himan source add team https://github.com/your-org/himan-source.git --alias team` |
-| 切换 source | `himan source use team` |
-| 设置默认 agent | `himan agent use codex` |
-| 安装资产 | `himan install skill code-review` |
-| 递归安装 skill 依赖 | `himan install skill code-review -r --depth 2` |
-| 评价资产 | `himan comment skill code-review 9 "Stable team default"` |
-| 进入开发态 | `himan dev skill code-review` |
-| 发布新版本 | `himan publish skill code-review --minor` |
-| 批量发布 | `himan publish skill skill-a,skill-b` |
-| 归档资产 | `himan resource archive skill old-workflow --reason "Replaced by new-workflow"` |
+| 场景                | 命令                                                                              |
+| ------------------- | --------------------------------------------------------------------------------- |
+| 添加 source         | `himan source add team https://github.com/your-org/himan-source.git --alias team` |
+| 切换 source         | `himan source use team`                                                           |
+| 设置默认 agent      | `himan agent use codex`                                                           |
+| 安装资产            | `himan install skill code-review`                                                 |
+| 递归安装 skill 依赖 | `himan install skill code-review -r --depth 2`                                    |
+| 评价资产            | `himan comment skill code-review 9 "Stable team default"`                         |
+| 进入开发态          | `himan dev skill code-review`                                                     |
+| 发布新版本          | `himan publish skill code-review --minor`                                         |
+| 批量发布            | `himan publish skill skill-a,skill-b`                                             |
+| 归档资产            | `himan resource archive skill old-workflow --reason "Replaced by new-workflow"`   |
 
 完整命令表见 [docs/command-reference.md](./docs/command-reference.md)。
 
@@ -134,15 +134,15 @@ himan-tracker server start --open
 
 ## 功能支持
 
-| 能力 | 状态 |
-| --- | --- |
-| Git source | 已支持 |
-| Registry source | 预留，暂未开放 |
-| `rule` / `command` / `skill` 资产 | 已支持 |
-| `config` 资产 | 已支持 Codex；Cursor、Claude Code、OpenClaw 暂未支持 |
-| 项目级 `himan.lock` | 已支持 |
-| 多 agent 安装 | 已支持 Cursor、Claude Code、Codex、OpenClaw |
-| skill 依赖递归安装 | 已支持 |
+| 能力                              | 状态                                                 |
+| --------------------------------- | ---------------------------------------------------- |
+| Git source                        | 已支持                                               |
+| Registry source                   | 预留，暂未开放                                       |
+| `rule` / `command` / `skill` 资产 | 已支持                                               |
+| `config` 资产                     | 已支持 Codex；Cursor、Claude Code、OpenClaw 暂未支持 |
+| 项目级 `himan.lock`               | 已支持                                               |
+| 多 agent 安装                     | 已支持 Cursor、Claude Code、Codex、OpenClaw          |
+| skill 依赖递归安装                | 已支持                                               |
 
 ## 文档
 
