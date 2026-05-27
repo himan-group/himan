@@ -9,7 +9,7 @@ The format is based on Keep a Changelog, and this project follows semver for the
 ### Fixed
 
 - Fixed the GitHub Actions verify workflow so PRs into `dev` trigger CI checks again.
-- Fixed GitHub Actions setup failures by replacing the external `pnpm/action-setup` action with Corepack-based pnpm activation.
+- Fixed GitHub Actions setup failures by replacing the external `pnpm/action-setup` action with Corepack-based pnpm activation and removing setup-node pnpm cache initialization before pnpm exists.
 
 ## [0.8.2] - 2026-05-26
 
