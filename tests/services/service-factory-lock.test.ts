@@ -13,12 +13,17 @@ beforeEach(async () => {
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), "himan-service-lock-"));
   fakeHomeDir = path.join(tmpRoot, "home");
   projectDir = path.join(tmpRoot, "project");
+  const gitConfigPath = path.join(tmpRoot, "empty-gitconfig");
   await fs.mkdir(fakeHomeDir, { recursive: true });
   await fs.mkdir(projectDir, { recursive: true });
+  await fs.writeFile(gitConfigPath, "", "utf8");
   vi.spyOn(os, "homedir").mockReturnValue(fakeHomeDir);
+  vi.stubEnv("GIT_CONFIG_GLOBAL", gitConfigPath);
+  vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   if (tmpRoot) {
     await fs.rm(tmpRoot, { recursive: true, force: true });
