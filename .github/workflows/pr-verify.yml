@@ -3,6 +3,7 @@ name: PR verify
 on:
   pull_request:
     branches:
+      - dev
       - master
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
@@ -21,14 +22,15 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.1
-
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.1 --activate
+          pnpm --version
 
       - run: pnpm install --frozen-lockfile
 

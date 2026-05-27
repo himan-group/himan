@@ -311,8 +311,34 @@ export class RepoManager {
       return false;
     }
 
+    await this.ensureCommitIdentity(git);
     await git.commit(message, pathspecs);
     return true;
+  }
+
+  private async ensureCommitIdentity(git: SimpleGit): Promise<void> {
+    const [name, email] = await Promise.all([
+      this.getGitConfig(git, "user.name"),
+      this.getGitConfig(git, "user.email"),
+    ]);
+    if (!name) {
+      await git.raw(["config", "user.name", "Himan Bot"]);
+    }
+    if (!email) {
+      await git.raw(["config", "user.email", "himan@example.com"]);
+    }
+  }
+
+  private async getGitConfig(
+    git: SimpleGit,
+    key: "user.name" | "user.email",
+  ): Promise<string | undefined> {
+    try {
+      const value = await git.raw(["config", "--get", key]);
+      return value.trim() || undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private async prepareTargetWorktree(

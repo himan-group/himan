@@ -76,7 +76,7 @@ pnpm test
 
 | 工作流 | 文件 | 说明 |
 |--------|------|------|
-| **PR verify** | [`.github/workflows/pr-verify.yml`](https://github.com/himan-group/himan/blob/master/.github/workflows/pr-verify.yml) | 目标分支为 `master` 的 PR：安装依赖后依次运行 `pnpm run typecheck`、`pnpm run test`、`pnpm run build`。 |
+| **PR verify** | [`.github/workflows/pr-verify.yml`](https://github.com/himan-group/himan/blob/master/.github/workflows/pr-verify.yml) | 目标分支为 `dev` 或 `master` 的 PR：安装依赖后依次运行 `pnpm run typecheck`、`pnpm run test`、`pnpm run build`。 |
 | **PR version tag check** | [`.github/workflows/pr-master-version-tag.yml`](https://github.com/himan-group/himan/blob/master/.github/workflows/pr-master-version-tag.yml) | 目标分支为 `master` 的 PR：读取 **PR 头提交**上的 `package.json` 的 `version`，若远端已存在同名标签 **`v{version}`**，则 **检查失败**（用于在合并前拦截重复版本）。 |
 | **Tag version on master** | [`.github/workflows/push-master-version-tag.yml`](https://github.com/himan-group/himan/blob/master/.github/workflows/push-master-version-tag.yml) | 向 `master` **推送**后（含合并 PR）：在 **当前推送提交**上创建并推送注释标签 **`v{version}`**。若标签已存在、创建或 `git push` 失败，仅输出 **告警**（`::warning::`），**工作流仍成功**，不撤销已发生的 merge；请按日志提示在本机补打标签并 `git push origin v{x.y.z}`。 |
 
