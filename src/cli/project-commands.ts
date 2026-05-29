@@ -4,6 +4,7 @@ import type {
   PublishBatchItem,
   PublishFollowUp,
   ServiceFactory,
+  SkillDependencyStatus,
 } from "../services/index.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
 import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-configs.js";
@@ -180,6 +181,9 @@ export function registerProjectCommands(
               includeArchived: commandOptions.includeArchived,
               source: commandOptions.source,
             };
+            const dependencyStatusDepth = commandOptions.recursive
+              ? dependencyDepth ?? 1
+              : 1;
             const results = commandOptions.recursive
               ? commandOptions.global
                 ? await services.installGlobalWithDependencies(
@@ -226,6 +230,19 @@ export function registerProjectCommands(
               process.stdout.write(
                 `Installed ${commandOptions.global ? "global " : ""}${result.type}/${result.name}@${result.version}\n`,
               );
+            }
+
+            if (resourceType === "skill") {
+              const dependencyStatuses = await services.getSkillDependencyStatuses(
+                name,
+                version,
+                process.cwd(),
+                {
+                  ...installOptions,
+                  depth: dependencyStatusDepth,
+                },
+              );
+              writeSkillDependencyStatuses(name, dependencyStatuses);
             }
           });
         },
@@ -526,6 +543,64 @@ function resolveReleaseType(options: {
     );
   }
   return selected[0] ?? "patch";
+}
+
+function writeSkillDependencyStatuses(
+  rootSkillName: string,
+  dependencies: SkillDependencyStatus[],
+): void {
+  if (dependencies.length === 0) {
+    process.stdout.write(`Dependencies for skill/${rootSkillName}: none\n`);
+    return;
+  }
+
+  process.stdout.write(`Dependencies for skill/${rootSkillName}:\n`);
+  for (const dependency of dependencies) {
+    const label = dependency.optional ? `${dependency.name} (optional)` : dependency.name;
+    const status = formatSkillDependencyStatus(dependency);
+    const line = `- ${label}: ${status}`;
+    process.stdout.write(
+      `${dependency.installedInProject || dependency.installedGlobally ? line : styleDependencyTerminal(line, "missing")}\n`,
+    );
+  }
+}
+
+function formatSkillDependencyStatus(dependency: SkillDependencyStatus): string {
+  const locations: string[] = [];
+  if (dependency.installedInProject) {
+    locations.push(formatInstalledLocation("project", dependency.projectAgents));
+  }
+  if (dependency.installedGlobally) {
+    locations.push(formatInstalledLocation("global", dependency.globalAgents));
+  }
+  if (locations.length === 0) {
+    return "NOT INSTALLED";
+  }
+  return locations.join(", ");
+}
+
+function formatInstalledLocation(scope: "project" | "global", agents: string[]): string {
+  if (agents.length === 0) {
+    return `installed in ${scope}`;
+  }
+  return `installed in ${scope} [${agents.join(", ")}]`;
+}
+
+function styleDependencyTerminal(text: string, token: "missing"): string {
+  if (!shouldUseColor()) return text;
+  const codeMap: Record<"missing", string> = {
+    missing: "1;31",
+  };
+  return `\u001b[${codeMap[token]}m${text}\u001b[0m`;
+}
+
+function shouldUseColor(): boolean {
+  if (process.env.VITEST !== undefined) return false;
+  if (process.env.NO_COLOR !== undefined) return false;
+  const forceColor = process.env.FORCE_COLOR;
+  if (forceColor === "0") return false;
+  if (forceColor !== undefined && forceColor !== "") return true;
+  return Boolean(process.stdout.isTTY);
 }
 
 function parseInstallMode(input?: string): InstallMode | undefined {

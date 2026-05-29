@@ -1175,6 +1175,10 @@ describe("CLI commands with external git source", () => {
     expect(installResult.stdout).toContain("Installed skill/skill-shared@1.0.0");
     expect(installResult.stdout.match(/Installed skill\/skill-shared@1.0.0/g)?.length ?? 0).toBe(1);
     expect(installResult.stdout).not.toContain("Installed skill/skill-leaf@1.0.0");
+    expect(installResult.stdout).toContain("Dependencies for skill/skill-root:");
+    expect(installResult.stdout).toContain("skill-mid: installed in project [codex]");
+    expect(installResult.stdout).toContain("skill-shared: installed in project [codex]");
+    expect(installResult.stdout).not.toContain("skill-leaf:");
 
     for (const name of ["skill-root", "skill-mid", "skill-shared"]) {
       await expect(
@@ -1242,6 +1246,9 @@ describe("CLI commands with external git source", () => {
     expect(installResult.stdout).toContain("Installed skill/skill-root@1.0.0");
     expect(installResult.stdout).toContain("Installed skill/skill-mid@1.0.0");
     expect(installResult.stdout).toContain("Installed skill/skill-leaf@1.0.0");
+    expect(installResult.stdout).toContain("Dependencies for skill/skill-root:");
+    expect(installResult.stdout).toContain("skill-mid: installed in project [codex]");
+    expect(installResult.stdout).toContain("skill-leaf: installed in project [codex]");
 
     await expect(
       fs.readFile(
@@ -1249,6 +1256,93 @@ describe("CLI commands with external git source", () => {
         "utf8",
       ),
     ).resolves.toContain("# skill-leaf");
+  });
+
+  it("shows dependency status after install, including globally installed skills", async () => {
+    const dependencyHomeDir = path.join(tmpRoot, "skill-status-home");
+    const dependencyProjectDir = path.join(tmpRoot, "skill-status-project");
+    const dependencyRemote = await createSkillRemote("skill-status", [
+      {
+        name: "skill-root",
+        version: "1.0.0",
+        description: "root skill",
+        dependencies: ["skill-global", "skill-missing"],
+      },
+      {
+        name: "skill-global",
+        version: "1.0.0",
+        description: "global skill",
+      },
+    ]);
+
+    await fs.mkdir(dependencyHomeDir, { recursive: true });
+    await fs.mkdir(dependencyProjectDir, { recursive: true });
+
+    expect(runCli(["init", dependencyRemote], dependencyProjectDir, dependencyHomeDir).status).toBe(
+      0,
+    );
+    expect(
+      runCli(
+        ["install", "skill", "skill-global@1.0.0", "-g", "--agent", "codex"],
+        dependencyProjectDir,
+        dependencyHomeDir,
+      ).status,
+    ).toBe(0);
+
+    const installResult = runCli(
+      ["install", "skill", "skill-root@1.0.0", "--agent", "codex"],
+      dependencyProjectDir,
+      dependencyHomeDir,
+    );
+    expect(installResult.status).toBe(0);
+    expect(installResult.stdout).toContain("Installed skill/skill-root@1.0.0");
+    expect(installResult.stdout).toContain("Dependencies for skill/skill-root:");
+    expect(installResult.stdout).toContain("skill-global: installed in global [codex]");
+    expect(installResult.stdout).toContain("skill-missing: NOT INSTALLED");
+  });
+
+  it("shows globally installed dependency status for recursive global skill install", async () => {
+    const dependencyHomeDir = path.join(tmpRoot, "skill-global-recursive-home");
+    const dependencyProjectDir = path.join(tmpRoot, "skill-global-recursive-project");
+    const dependencyRemote = await createSkillRemote("skill-global-recursive", [
+      {
+        name: "skill-root",
+        version: "1.0.0",
+        description: "root skill",
+        dependencies: ["skill-mid"],
+      },
+      {
+        name: "skill-mid",
+        version: "1.0.0",
+        description: "mid skill",
+      },
+    ]);
+
+    await fs.mkdir(dependencyHomeDir, { recursive: true });
+    await fs.mkdir(dependencyProjectDir, { recursive: true });
+
+    expect(runCli(["init", dependencyRemote], dependencyProjectDir, dependencyHomeDir).status).toBe(
+      0,
+    );
+
+    const installResult = runCli(
+      ["install", "skill", "skill-root@1.0.0", "-g", "-r", "--agent", "codex"],
+      dependencyProjectDir,
+      dependencyHomeDir,
+    );
+    expect(installResult.status).toBe(0);
+    expect(installResult.stdout).toContain("Installed global skill/skill-mid@1.0.0");
+    expect(installResult.stdout).toContain("Installed global skill/skill-root@1.0.0");
+    expect(installResult.stdout).toContain("Dependencies for skill/skill-root:");
+    expect(installResult.stdout).toContain("skill-mid: installed in global [codex]");
+
+    await expect(
+      fs.readFile(
+        path.join(dependencyHomeDir, ".agents", "skills", "skill-mid", "SKILL.md"),
+        "utf8",
+      ),
+    ).resolves.toContain("# skill-mid");
+    await expect(fs.access(path.join(dependencyProjectDir, "himan.lock"))).rejects.toThrow();
   });
 
   it("rejects circular skill dependencies during recursive install", async () => {
