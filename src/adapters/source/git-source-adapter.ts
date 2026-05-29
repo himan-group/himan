@@ -57,6 +57,8 @@ interface PublishMetadataResult {
 }
 
 const RESOURCE_TYPES: ResourceType[] = ["rule", "command", "skill", "config"];
+const README_GUIDE_START = "<!-- himan:guide:start -->";
+const README_GUIDE_END = "<!-- himan:guide:end -->";
 const README_RESOURCES_START = "<!-- himan:resources:start -->";
 const README_RESOURCES_END = "<!-- himan:resources:end -->";
 const RESOURCE_TABLE_WIDTH = "100%";
@@ -1398,36 +1400,76 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     repoDir: string,
     versionOverrides = new Map<string, string>(),
   ): Promise<string> {
-    const resourceLines = await this.buildResourceIndex(repoDir, versionOverrides);
     const repo = this.sourceConfig?.repo ?? "<git_url>";
+    const guideSection = this.buildReadmeGuideSection(repo);
+    const resourceSection = await this.buildReadmeResourceSection(
+      repoDir,
+      versionOverrides,
+    );
     return [
       `# ${this.getSourceTitle()}`,
       "",
       "Himan source repository for reusable agent resources.",
       "",
+      "## Use With Himan",
+      "",
+      guideSection,
+      "",
       "## Resources",
       "",
-      README_RESOURCES_START,
-      ...resourceLines,
-      README_RESOURCES_END,
+      resourceSection,
       "",
-      "## Usage",
+    ].join("\n");
+  }
+
+  private buildReadmeGuideSection(repo: string): string {
+    return [
+      README_GUIDE_START,
+      "Use these resources with [@hi-man/himan](https://www.npmjs.com/package/@hi-man/himan). Install it with `npm install -g @hi-man/himan` or run it with `npx @hi-man/himan --help`.",
+      "",
+      "### 1. Bind source and set agent",
       "",
       "```bash",
       `himan source add team ${repo} --alias team`,
-      "himan source alias default primary  # only needed when current default has no alias",
       "himan source use team",
-      "himan list rule",
-      "himan install rule <name>",
+      "himan agent use codex",
       "```",
       "",
-      "## Maintenance",
+      "You can also bootstrap a new project in one step with `himan init <git_repo> --agent codex`.",
       "",
-      "- Add resources with `himan create <type> <name>`.",
-      "- Publish resource versions with `himan publish <type> <name>`.",
-      "- Record source-level changes in `CHANGELOG.md`.",
+      "### 2. View available resources",
+      "",
+      "```bash",
+      "himan list",
+      "himan list skill",
+      "himan list --installed",
+      "```",
+      "",
+      "### 3. Install and uninstall resources",
+      "",
+      "```bash",
+      "himan install skill <name>",
+      "himan install skill <name> -r --depth 2",
+      "himan install skill <name> -g",
+      "himan uninstall skill <name>",
+      "himan uninstall skill <name> -g",
+      "himan install",
+      "```",
+      "",
+      "### 4. Develop, publish, and archive resources",
+      "",
+      "```bash",
+      'himan create skill <name> --description "Describe the skill"',
+      "himan dev skill <name>",
+      "himan publish skill <name> --patch",
+      "himan publish skill <name> -g",
+      'himan resource archive skill <name> --reason "Replaced by another resource"',
+      "himan resource restore skill <name>",
+      "```",
+      "",
       "- Resource versions are tracked by Git tags such as `rule/code-review@1.0.0`.",
-      "",
+      "- Source maintainers can refresh this README and `CHANGELOG.md` with `himan source init-docs --repair-history`.",
+      README_GUIDE_END,
     ].join("\n");
   }
 
@@ -1741,12 +1783,12 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     changelogEntry: ChangelogEntry,
     versionOverrides = new Map<string, string>(),
   ): Promise<string[]> {
-    const readmePath = await this.updateReadmeResourceIndex(repoDir, versionOverrides);
+    const readmePath = await this.updateReadmeManagedSections(repoDir, versionOverrides);
     const changelogPath = await this.updateChangelog(repoDir, changelogEntry);
     return [readmePath, changelogPath];
   }
 
-  private async updateReadmeResourceIndex(
+  private async updateReadmeManagedSections(
     repoDir: string,
     versionOverrides = new Map<string, string>(),
   ): Promise<string> {
@@ -1761,14 +1803,26 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     }
 
     const current = await fs.readFile(readmePath, "utf8");
-    const resourceSection = [
-      README_RESOURCES_START,
-      ...(await this.buildResourceIndex(repoDir, versionOverrides)),
-      README_RESOURCES_END,
-    ].join("\n");
-    const updated = this.replaceOrAppendReadmeResourceSection(
-      current,
-      resourceSection,
+    const guideSection = this.buildReadmeGuideSection(
+      this.sourceConfig?.repo ?? "<git_url>",
+    );
+    const resourceSection = await this.buildReadmeResourceSection(
+      repoDir,
+      versionOverrides,
+    );
+    const updated = this.replaceOrAppendReadmeManagedSection(
+      this.replaceOrAppendReadmeManagedSection(current, {
+        heading: "## Use With Himan",
+        startMarker: README_GUIDE_START,
+        endMarker: README_GUIDE_END,
+        section: guideSection,
+      }),
+      {
+        heading: "## Resources",
+        startMarker: README_RESOURCES_START,
+        endMarker: README_RESOURCES_END,
+        section: resourceSection,
+      },
     );
     if (updated !== current) {
       await fs.writeFile(readmePath, updated, "utf8");
@@ -1776,34 +1830,62 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
     return readmePath;
   }
 
-  private replaceOrAppendReadmeResourceSection(
+  private replaceOrAppendReadmeManagedSection(
     content: string,
-    resourceSection: string,
+    options: {
+      heading: string;
+      startMarker: string;
+      endMarker: string;
+      section: string;
+    },
   ): string {
-    const startIndex = content.indexOf(README_RESOURCES_START);
-    const endIndex = content.indexOf(README_RESOURCES_END);
+    const startIndex = content.indexOf(options.startMarker);
+    const endIndex = content.indexOf(options.endMarker);
     if (startIndex >= 0 && endIndex > startIndex) {
       const before = content.slice(0, startIndex).replace(/\s*$/, "\n");
       const after = content
-        .slice(endIndex + README_RESOURCES_END.length)
+        .slice(endIndex + options.endMarker.length)
         .replace(/^\s*/, "\n\n");
-      return `${before}${resourceSection}${after}`.replace(/\s*$/, "\n");
+      return `${before}${options.section}${after}`.replace(/\s*$/, "\n");
     }
 
     const base = content.replace(/\s*$/, "");
-    return `${base}\n\n## Resources\n\n${resourceSection}\n`;
+    return `${base}\n\n${options.heading}\n\n${options.section}\n`;
   }
 
   private async buildRepairedReadmeContent(
     repoDir: string,
     current: string,
   ): Promise<string> {
-    const resourceSection = [
+    const guideSection = this.buildReadmeGuideSection(
+      this.sourceConfig?.repo ?? "<git_url>",
+    );
+    const resourceSection = await this.buildReadmeResourceSection(repoDir);
+    return this.replaceOrAppendReadmeManagedSection(
+      this.replaceOrAppendReadmeManagedSection(current, {
+        heading: "## Use With Himan",
+        startMarker: README_GUIDE_START,
+        endMarker: README_GUIDE_END,
+        section: guideSection,
+      }),
+      {
+        heading: "## Resources",
+        startMarker: README_RESOURCES_START,
+        endMarker: README_RESOURCES_END,
+        section: resourceSection,
+      },
+    );
+  }
+
+  private async buildReadmeResourceSection(
+    repoDir: string,
+    versionOverrides = new Map<string, string>(),
+  ): Promise<string> {
+    return [
       README_RESOURCES_START,
-      ...(await this.buildResourceIndex(repoDir)),
+      ...(await this.buildResourceIndex(repoDir, versionOverrides)),
       README_RESOURCES_END,
     ].join("\n");
-    return this.replaceOrAppendReadmeResourceSection(current, resourceSection);
   }
 
   private async updateChangelog(

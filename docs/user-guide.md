@@ -157,7 +157,7 @@ himan publish --all
 
 `publish` 会把项目目录里的资源同步回 source，创建或更新资源版本 tag，并自动维护 source 根目录文档：
 
-- `README.md`：更新 `<!-- himan:resources:start -->` 和 `<!-- himan:resources:end -->` 之间的资源索引；没有 marker 时会追加受控索引区。
+- `README.md`：更新受控区；其中 `<!-- himan:resources:start -->` 和 `<!-- himan:resources:end -->` 之间维护资源索引，没有 marker 时会追加受控索引区；同时也会维护带 `@hi-man/himan` npm 地址和常用命令的 `Use With Himan` 说明区。
 - `CHANGELOG.md`：按日期 release heading 记录发布、归档等 source 级变更。
 - 发布成功后默认把新版本安装回当前项目并更新 `himan.lock`；传 `-g` / `--global` 时安装到用户级目录且不写当前项目 lock。
 
@@ -172,7 +172,7 @@ himan source init-docs --force
 himan source init-docs --repair-history
 ```
 
-`source init-docs` 为当前 default source 生成仓库级 `README.md` 和 `CHANGELOG.md`。默认只创建缺失文件；`--force` 会覆盖已有文件并重建资源索引；`--repair-history` 会修复受控资源索引和历史 publish 记录。
+`source init-docs` 为当前 default source 生成仓库级 `README.md` 和 `CHANGELOG.md`。默认只创建缺失文件；`--force` 会覆盖已有文件，重建 README 里的 `Use With Himan` 说明区和资源索引；`--repair-history` 会修复这些受控 README 区块以及历史 publish 记录。
 
 ## 归档、恢复与重命名
 

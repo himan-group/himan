@@ -309,30 +309,18 @@ describe("GitSourceAdapter", () => {
       version: "0.1.0",
       tag: "rule/published-rule@0.1.0",
     });
+    const publishedReadme = await fs.readFile(path.join(targetDir, "README.md"), "utf8");
+    expectReadmeToContainManagedGuide(publishedReadme, remoteDir);
     await expect(
       fs.readFile(path.join(targetDir, "rules", "published-rule", "himan.yaml"), "utf8"),
     ).resolves.toContain("version: 0.1.0");
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "#### General",
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      '<table class="himan-resource-table"',
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      '<th width="288">Resource</th>',
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      '<th width="112">Version</th>',
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      '<td width="288"><code>published-rule</code></td>',
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      '<td width="112"><code>0.1.0</code></td>',
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "<td>valid publish</td>",
-    );
+    expect(publishedReadme).toContain("#### General");
+    expect(publishedReadme).toContain('<table class="himan-resource-table"');
+    expect(publishedReadme).toContain('<th width="288">Resource</th>');
+    expect(publishedReadme).toContain('<th width="112">Version</th>');
+    expect(publishedReadme).toContain('<td width="288"><code>published-rule</code></td>');
+    expect(publishedReadme).toContain('<td width="112"><code>0.1.0</code></td>');
+    expect(publishedReadme).toContain("<td>valid publish</td>");
     const changelog = await fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8");
     const today = formatLocalDate(new Date());
     expect(changelog).toContain(`## [${today}]`);
@@ -487,30 +475,18 @@ describe("GitSourceAdapter", () => {
       expect.objectContaining({ action: "updated", path: path.join(targetDir, "README.md") }),
       expect.objectContaining({ action: "updated", path: path.join(targetDir, "CHANGELOG.md") }),
     ]);
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "#### General",
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      '<td width="288"><code>code-review</code></td>',
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      '<td width="112"><code>-</code></td>',
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "<td>original description</td>",
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "#### Common",
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
+    const initializedReadme = await fs.readFile(path.join(targetDir, "README.md"), "utf8");
+    expectReadmeToContainManagedGuide(initializedReadme, remoteDir);
+    expect(initializedReadme).toContain("#### General");
+    expect(initializedReadme).toContain('<td width="288"><code>code-review</code></td>');
+    expect(initializedReadme).toContain('<td width="112"><code>-</code></td>');
+    expect(initializedReadme).toContain("<td>original description</td>");
+    expect(initializedReadme).toContain("#### Common");
+    expect(initializedReadme).toContain(
       '<td width="288"><code>common-dev-pattern</code></td>',
     );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      '<td width="112"><code>0.1.0</code></td>',
-    );
-    await expect(fs.readFile(path.join(targetDir, "README.md"), "utf8")).resolves.toContain(
-      "<td>Follow existing repository patterns.</td>",
-    );
+    expect(initializedReadme).toContain('<td width="112"><code>0.1.0</code></td>');
+    expect(initializedReadme).toContain("<td>Follow existing repository patterns.</td>");
     await expect(
       fs.readFile(path.join(targetDir, "CHANGELOG.md"), "utf8"),
     ).resolves.toContain("- Documented existing resource `rule/code-review`.");
@@ -653,6 +629,7 @@ describe("GitSourceAdapter", () => {
       expect.objectContaining({ action: "updated", path: path.join(targetDir, "CHANGELOG.md") }),
     ]);
     const readme = await fs.readFile(path.join(targetDir, "README.md"), "utf8");
+    expectReadmeToContainManagedGuide(readme, remoteDir);
     expect(readme).toContain("#### General");
     expect(readme).toContain('<table class="himan-resource-table"');
     expect(readme).toContain('<th width="288">Resource</th>');
@@ -1007,6 +984,21 @@ function formatLocalDate(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function expectReadmeToContainManagedGuide(readme: string, repo: string): void {
+  expect(readme).toContain("## Use With Himan");
+  expect(readme).toContain(
+    "[@hi-man/himan](https://www.npmjs.com/package/@hi-man/himan)",
+  );
+  expect(readme).toContain(`himan source add team ${repo} --alias team`);
+  expect(readme).toContain("himan agent use codex");
+  expect(readme).toContain("himan list --installed");
+  expect(readme).toContain("himan install skill <name> -r --depth 2");
+  expect(readme).toContain("himan publish skill <name> --patch");
+  expect(readme).toContain(
+    'himan resource archive skill <name> --reason "Replaced by another resource"',
+  );
 }
 
 function commitAll(cwd: string, message: string): void {

@@ -115,8 +115,10 @@ export interface SkillDependencyStatus {
   depth: number;
   installedInProject: boolean;
   installedGlobally: boolean;
+  availableAsSystemSkill: boolean;
   projectAgents: string[];
   globalAgents: string[];
+  systemAgents: string[];
 }
 
 export interface PublishBatchItem {
@@ -1072,12 +1074,15 @@ export class ServiceFactory {
         "skill",
         dependency.name,
       );
+      const systemTarget = await this.tryResolveSystemSkillTarget(dependency.name);
       statuses.push({
         ...dependency,
         installedInProject: Boolean(projectTarget),
         installedGlobally: Boolean(globalTarget),
+        availableAsSystemSkill: Boolean(systemTarget),
         projectAgents: projectTarget?.agents ?? [],
         globalAgents: globalTarget?.agents ?? [],
+        systemAgents: systemTarget?.agents ?? [],
       });
     }
 
@@ -2795,6 +2800,25 @@ export class ServiceFactory {
       linkPaths,
       agents,
       mode: await this.readPathMode(existingCandidates[0].path),
+    };
+  }
+
+  private async tryResolveSystemSkillTarget(
+    name: string,
+  ): Promise<{ agents: string[]; resourcePath: string } | undefined> {
+    const resourcePath = path.join(
+      this.paths.getHomeDir(),
+      ".codex",
+      "skills",
+      ".system",
+      name,
+    );
+    if (!(await this.exists(resourcePath))) {
+      return undefined;
+    }
+    return {
+      agents: ["codex"],
+      resourcePath,
     };
   }
 
