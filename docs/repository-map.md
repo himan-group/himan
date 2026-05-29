@@ -2,7 +2,7 @@
 
 ## Overview
 
-`@hi-man/himan` is an ESM TypeScript CLI for managing prompt and agent assets. It manages `rule`, `command`, `skill`, and Codex-only `config` resources from a Git-backed source, installs them into project-specific or user-level agent folders, supports in-place project development, publishes semver-tagged versions, and keeps a `himan.lock` for reproducible project installs.
+`@hi-man/himan` is an ESM TypeScript CLI for managing prompt and agent assets. It manages `rule`, `command`, `skill`, and Codex-specific `config` resources from a Git-backed source, installs them into project-specific or user-level agent folders, supports in-place project development, publishes semver-tagged versions, and keeps a `himan.lock` for reproducible project installs.
 
 The npm package exposes a single binary:
 
@@ -70,9 +70,9 @@ The project has no HTTP API. It integrates with local Git repositories and files
 - Resource list cache is stored in `~/.himan/index.json`.
 - Project lock state is stored in `<project>/himan.lock`; no-argument `install` restores each resource from its recorded lock source, not from the current default source. The top-level lock `source` is the default for resources without an explicit source, while additional named sources are stored under `sources` and referenced by `resources[].source`.
 - Project default agents are stored in `<project>/.himan/config.json`.
-- `create` and `dev` edit resources in the current project's agent target folders. For Codex, canonical paths are `.codex/rules/<name>`, `.agents/commands/<name>`, `.agents/skills/<name>`, and `.codex/configs/<name>`. `.codex/config.toml` is kept synchronized to the active installed config. Legacy `.himan/dev/<type>/<name>` folders are still recognized as publish sources and cleaned up after publish.
-- Project-installed resources are materialized under agent folders such as `.cursor/rules/<name>`, `.claude/commands/<name>`, and `.openclaw/...`; Codex uses `.codex/rules/<name>` for rules, `.agents/skills/<name>` for skills, and `.codex/configs/<name>` for config resources. Install mode controls whether each target is a symlink or a copy.
-- `install <type> <name[@version]> -g` / `--global` materializes the resource under the matching user-level agent folder below home, such as `~/.cursor/rules/<name>`, `~/.claude/commands/<name>`, and `~/.openclaw/...`. Codex uses `~/.codex/rules/<name>` for rules, `~/.agents/skills/<name>` for skills, and `~/.codex/configs/<name>` plus `~/.codex/config.toml` for config resources. Global installs prefer `--agent`, then the current project's lock entry for that resource, then the default install agent resolution, and do not write `<project>/himan.lock`.
+- `create` and `dev` edit resources in the current project's agent target folders. Codex-specific canonical paths are `.codex/rules/<name>`, `.agents/commands/<name>`, `.agents/skills/<name>`, and `.codex/configs/<name>`. `.codex/config.toml` is kept synchronized to the active installed config. Legacy `.himan/dev/<type>/<name>` folders are still recognized as publish sources and cleaned up after publish.
+- Project-installed resources are materialized under agent folders such as `.cursor/rules/<name>`, `.claude/commands/<name>`, and `.openclaw/...`; Codex-specific installs use `.codex/rules/<name>` for rules, `.agents/skills/<name>` for skills, and `.codex/configs/<name>` for config resources. Install mode controls whether each target is a symlink or a copy.
+- `install <type> <name[@version]> -g` / `--global` materializes the resource under the matching user-level agent folder below home, such as `~/.cursor/rules/<name>`, `~/.claude/commands/<name>`, and `~/.openclaw/...`. Codex-specific global installs use `~/.codex/rules/<name>` for rules, `~/.agents/skills/<name>` for skills, and `~/.codex/configs/<name>` plus `~/.codex/config.toml` for config resources. Global installs prefer `--agent`, then the current project's lock entry for that resource, then the default install agent resolution, and do not write `<project>/himan.lock`.
 - Source-level archived resources are stored under `archive/rules/<name>`, `archive/commands/<name>`, and `archive/skills/<name>` in the Git source. They are omitted from default source lists, README resource indexes, and source sync active snapshots unless a command explicitly asks for archived resources.
 - `doctor` checks Node.js, Git, Himan home directories, current source configuration, source resource scanning, effective agent settings, project lock state, archived lock references, and materialized project install targets; it exits non-zero when any check has `error` status.
 
@@ -118,7 +118,7 @@ There is no monorepo package sharing. Shared behavior is local to `src/`:
 - The codebase uses TypeScript `strict` mode with `module` and `moduleResolution` set to `NodeNext`.
 - Because the package is ESM, source imports include `.js` extensions even when importing `.ts` source files.
 - Keep bin files thin; command registration belongs in `src/cli/`, orchestration in `src/services/`, and Git/filesystem details in adapters or state stores.
-- Resource types are `rule`, `command`, `skill`, and `config`; `config` is currently implemented only for Codex, with Cursor and Claude Code config management reserved for future work.
+- Resource types are `rule`, `command`, `skill`, and `config`; Codex-specific `config` resources are currently implemented only for Codex, with Cursor and Claude Code config management reserved for future work.
 - Supported agent configs are `cursor`, `claude-code`, `codex`, and `openclaw`; aliases and base directories are normalized in `src/utils/agent-configs.ts`.
 - Default agents are configured with `himan agent use`; project config takes precedence over global config.
 - `himan init --agent <agent[,agent]>` writes the current project default agent, and `himan init --install <type/name[@version],...>` installs selected resources after source initialization.

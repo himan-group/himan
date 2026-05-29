@@ -1,10 +1,10 @@
-# Codex Instructions
+# Repository Guidelines
 
 ## Project Snapshot
 
-This repository is `@hi-man/himan`, an ESM TypeScript CLI for prompt and agent asset management. It manages `rule`, `command`, and `skill` resources from a Git source, installs them into agent-specific project folders, supports local dev mode, publishes semver-tagged versions, and maintains `himan.lock` for reproducible installs.
+This repository is `@hi-man/himan`, an ESM TypeScript CLI for prompt and agent asset management. It manages `rule`, `command`, `skill`, and Codex-specific `config` resources from a Git source, installs them into agent-specific project folders, supports local dev mode, publishes semver-tagged versions, and maintains `himan.lock` for reproducible installs.
 
-Use `docs/codex/repo-map.md` for the durable project map.
+Use `docs/repository-map.md` for the durable project map.
 
 ## Commands
 
@@ -36,7 +36,7 @@ The package is ESM with `moduleResolution: NodeNext`, so TypeScript source impor
 - Before nontrivial edits, inspect adjacent implementations and follow existing layering.
 - Preserve the CLI error pattern: business failures should use `HimanError` with `errorCodes`; command actions should run through `runAction()`.
 - Do not introduce new request layers, state systems, or command frameworks unless the existing architecture changes intentionally.
-- Keep resource type handling aligned with `rule`, `command`, and `skill`.
+- Keep resource type handling aligned with `rule`, `command`, `skill`, and Codex-specific `config`.
 - Default agent resolution is project config, then global config, then resource metadata or `cursor`.
 - Treat Registry source behavior as reserved unless the task explicitly implements it.
 
@@ -57,7 +57,8 @@ There is no HTTP API. The CLI works with Git and filesystem state:
 - `<project>/.himan/config.json` stores project default agents.
 - `<project>/.himan/dev/<type>/<name>` stores editable dev copies.
 - Source-level archived resources live under `archive/rules`, `archive/commands`, and `archive/skills`; default source lists and sync ignore them unless explicitly requested.
-- Installed resources are materialized under `.cursor`, `.claude`, `.agents` for Codex, or `.openclaw`; install mode controls whether targets are symlinks or copies.
+- Installed resources are materialized under agent folders such as `.cursor`, `.claude`, `.agents`, `.codex`, or `.openclaw`; install mode controls whether targets are symlinks or copies.
+- Codex-specific: `config` resources materialize under `.codex/configs/<name>` and synchronize `.codex/config.toml`.
 
 ## Generated Files
 
@@ -72,9 +73,14 @@ There is no HTTP API. The CLI works with Git and filesystem state:
 - CLI behavior changes should include or update Vitest coverage and run `pnpm test`.
 - Release work should use the package scripts rather than raw publish commands.
 
-## Skill Routing
+## Agent-Specific Notes
 
-- Use `common-project-startup` when refreshing project maps or Codex instructions.
+- Codex-specific: Codex project skills live under `.agents/skills/`; resource authoring and installs may also use `.codex` for rules and configs.
+- Cursor-specific rules, Claude Code instructions, GitHub Copilot instructions, Gemini files, or OpenHands microagents should be kept in their conventional dedicated files only when this repository adds those files intentionally.
+
+## Codex-Specific Skill Routing
+
+- Use `common-project-startup` when refreshing project maps or repository agent guidance.
 - Use `common-issue-spec` when a request needs scope, assumptions, acceptance criteria, or validation clarified before coding.
 - Use `common-dev-pattern` for nontrivial code edits and validation.
 - Use `common-project-changelog` for user-visible CLI behavior changes, new commands/options, direct `CHANGELOG.md` edits, package version bumps, release notes, or changelog placement fixes.

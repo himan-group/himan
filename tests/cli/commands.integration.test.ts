@@ -289,7 +289,7 @@ describe("CLI commands with external git source", () => {
       "[@hi-man/himan](https://www.npmjs.com/package/@hi-man/himan)",
     );
     await expect(fs.readFile(path.join(teamRepoDir, "README.md"), "utf8")).resolves.toContain(
-      `himan source add team ${teamRemote} --alias team`,
+      `himan source add team ${teamRemote}          # add the source to your local config`,
     );
     await expect(fs.access(path.join(primaryRepoDir, "CHANGELOG.md"))).rejects.toThrow();
 
@@ -933,8 +933,24 @@ describe("CLI commands with external git source", () => {
     expect(publishedReadme).toContain(
       "[@hi-man/himan](https://www.npmjs.com/package/@hi-man/himan)",
     );
-    expect(publishedReadme).toContain(`himan source add team ${TEST_REPO} --alias team`);
-    expect(publishedReadme).toContain("himan install skill <name> -r --depth 2");
+    expect(publishedReadme).toContain(
+      `himan source add team ${TEST_REPO}          # add the source to your local config`,
+    );
+    expect(publishedReadme).toContain(
+      "himan install skill <name> -r           # install a skill with one dependency layer",
+    );
+    expect(publishedReadme).toContain(
+      "himan install skill <name> -r --depth 2 # install a skill with deeper dependencies",
+    );
+    expect(publishedReadme).toContain(
+      "Create new skills with your coding agent and the `himan-skill-metadata` skill",
+    );
+    expect(publishedReadme).toContain(
+      "himan publish skill <name> --patch                                       # publish a new patch version",
+    );
+    expect(publishedReadme).not.toContain(
+      'himan create skill <name> --description "Describe the skill"',
+    );
     expect(publishedReadme).toContain("#### General");
     expect(publishedReadme).toContain('<td width="288"><code>release-note</code></td>');
     expect(publishedReadme).toContain('<td width="112"><code>0.1.0</code></td>');

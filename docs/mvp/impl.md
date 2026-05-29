@@ -2,7 +2,7 @@
 
 本文档从**行为与技术选型**说明 MVP 如何实现，不绑定具体源码文件或符号名。
 
-> 状态说明：本文是 MVP 设计落地说明；当前 CLI 行为以仓库根目录 [README.md](../../README.md) 和 [Codex repo map](../codex/repo-map.md) 为准。
+> 状态说明：本文是 MVP 设计落地说明；当前 CLI 行为以仓库根目录 [README.md](../../README.md) 和 [repository map](../repository-map.md) 为准。
 
 ---
 

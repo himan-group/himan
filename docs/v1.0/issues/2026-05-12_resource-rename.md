@@ -118,7 +118,7 @@ Out of scope:
    - Migrate current project state unless `--no-project` is set.
 6. Add `ProjectLockStore.renameResource` to update lock entries atomically.
 7. Register CLI commands in `resource-commands.ts` and top-level builders.
-8. Update README, `docs/codex/repo-map.md`, and changelog when implementation lands.
+8. Update README, `docs/repository-map.md`, and changelog when implementation lands.
 
 ## Acceptance Criteria
 

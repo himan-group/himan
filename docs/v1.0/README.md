@@ -4,7 +4,7 @@
 
 执行顺序与分工见 [impl.md](./impl.md)。
 
-> 状态说明：本文是 v1.0 规划与当前进展摘要；当前 CLI 行为以仓库根目录 [README.md](../../README.md) 和 [Codex repo map](../codex/repo-map.md) 为准。
+> 状态说明：本文是 v1.0 规划与当前进展摘要；当前 CLI 行为以仓库根目录 [README.md](../../README.md) 和 [repository map](../repository-map.md) 为准。
 
 ---
 

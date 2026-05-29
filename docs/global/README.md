@@ -1,6 +1,6 @@
 # himan 全周期版本规划与技术路线图
 
-> 状态说明：本文是长期路线图和历史阶段规划，不是当前 CLI 行为的完整事实源。当前实现请优先参考仓库根目录 [README.md](../../README.md)、[v1.0 当前进展](../v1.0/README.md) 和 [Codex repo map](../codex/repo-map.md)。
+> 状态说明：本文是长期路线图和历史阶段规划，不是当前 CLI 行为的完整事实源。当前实现请优先参考仓库根目录 [README.md](../../README.md)、[v1.0 当前进展](../v1.0/README.md) 和 [repository map](../repository-map.md)。
 
 ## 1. 产品长期目标
 

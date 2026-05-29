@@ -14,7 +14,7 @@
       "repoId": "https_github.com_himan-group_himan-resource"
     }
   },
-  "updatedAt": "2026-05-29T07:49:57.023Z",
+  "updatedAt": "2026-05-29T08:38:59.782Z",
   "resources": [
     {
       "type": "skill",
@@ -59,12 +59,12 @@
     {
       "type": "skill",
       "name": "common-project-startup",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-29T07:40:00.985Z"
+      "updatedAt": "2026-05-29T08:38:59.782Z"
     },
     {
       "type": "skill",

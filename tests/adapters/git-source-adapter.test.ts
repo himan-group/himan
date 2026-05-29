@@ -991,11 +991,25 @@ function expectReadmeToContainManagedGuide(readme: string, repo: string): void {
   expect(readme).toContain(
     "[@hi-man/himan](https://www.npmjs.com/package/@hi-man/himan)",
   );
-  expect(readme).toContain(`himan source add team ${repo} --alias team`);
-  expect(readme).toContain("himan agent use codex");
-  expect(readme).toContain("himan list --installed");
-  expect(readme).toContain("himan install skill <name> -r --depth 2");
-  expect(readme).toContain("himan publish skill <name> --patch");
+  expect(readme).toContain(
+    `himan source add team ${repo}          # add the source to your local config`,
+  );
+  expect(readme).toContain(
+    "himan list --installed # list resources installed in the current project",
+  );
+  expect(readme).toContain(
+    "himan install skill <name> -r           # install a skill with one dependency layer",
+  );
+  expect(readme).toContain(
+    "himan install skill <name> -r --depth 2 # install a skill with deeper dependencies",
+  );
+  expect(readme).toContain(
+    "Create new skills with your coding agent and the `himan-skill-metadata` skill",
+  );
+  expect(readme).toContain(
+    "himan publish skill <name> --patch                                       # publish a new patch version",
+  );
+  expect(readme).not.toContain('himan create skill <name> --description "Describe the skill"');
   expect(readme).toContain(
     'himan resource archive skill <name> --reason "Replaced by another resource"',
   );

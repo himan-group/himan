@@ -99,7 +99,7 @@
   - v1.0 文档的运行态安装路径只列 `.cursor`，README 已说明支持 cursor、claude-code、codex、openclaw。
   - MVP、v1.0、global roadmap 混合了历史规划与当前状态，但标识不够清晰。
 - 影响：读者难以判断哪个文档是当前事实来源。
-- 建议：给规划文档标注状态，根 README 和 `docs/codex/repo-map.md` 作为当前事实来源；修正明显过期内容。
+- 建议：给规划文档标注状态，根 README 和 `docs/repository-map.md` 作为当前事实来源；修正明显过期内容。
 
 ### 9. CI 缺少 PR 阶段的 typecheck/test/build 验证
 
