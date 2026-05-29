@@ -560,7 +560,13 @@ function writeSkillDependencyStatuses(
     const status = formatSkillDependencyStatus(dependency);
     const line = `- ${label}: ${status}`;
     process.stdout.write(
-      `${dependency.installedInProject || dependency.installedGlobally ? line : styleDependencyTerminal(line, "missing")}\n`,
+      `${
+        dependency.installedInProject
+        || dependency.installedGlobally
+        || dependency.availableAsSystemSkill
+          ? line
+          : styleDependencyTerminal(line, "missing")
+      }\n`,
     );
   }
 }
@@ -573,10 +579,13 @@ function formatSkillDependencyStatus(dependency: SkillDependencyStatus): string 
   if (dependency.installedGlobally) {
     locations.push(formatInstalledLocation("global", dependency.globalAgents));
   }
-  if (locations.length === 0) {
-    return "NOT INSTALLED";
+  if (locations.length > 0) {
+    return locations.join(", ");
   }
-  return locations.join(", ");
+  if (dependency.availableAsSystemSkill) {
+    return formatSystemSkillLocation(dependency.systemAgents);
+  }
+  return "NOT INSTALLED";
 }
 
 function formatInstalledLocation(scope: "project" | "global", agents: string[]): string {
@@ -584,6 +593,13 @@ function formatInstalledLocation(scope: "project" | "global", agents: string[]):
     return `installed in ${scope}`;
   }
   return `installed in ${scope} [${agents.join(", ")}]`;
+}
+
+function formatSystemSkillLocation(agents: string[]): string {
+  if (agents.length === 0) {
+    return "system built-in";
+  }
+  return `system built-in [${agents.join(", ")}]`;
 }
 
 function styleDependencyTerminal(text: string, token: "missing"): string {

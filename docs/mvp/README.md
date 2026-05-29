@@ -1,6 +1,6 @@
 # himan MVP 功能点与技术设计
 
-> 状态说明：本文记录 MVP 设计和当前实现范围的收敛版。当前 CLI 行为以仓库根目录 [README.md](../../README.md) 和 [Codex repo map](../codex/repo-map.md) 为准。
+> 状态说明：本文记录 MVP 设计和当前实现范围的收敛版。当前 CLI 行为以仓库根目录 [README.md](../../README.md) 和 [repository map](../repository-map.md) 为准。
 
 ## 1. MVP 目标
 

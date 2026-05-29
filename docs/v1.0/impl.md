@@ -2,7 +2,7 @@
 
 本文档基于当前实现现状与 `docs/mvp/impl.md` 的设计原则，给出 v1.0 的架构、数据约定与关键流程方案。本文档中的“状态”按当前仓库实现同步维护。
 
-> 当前行为事实源：仓库根目录 [README.md](../../README.md) 和 [Codex repo map](../codex/repo-map.md)。本文保留 v1.0 目标和缺口说明。
+> 当前行为事实源：仓库根目录 [README.md](../../README.md) 和 [repository map](../repository-map.md)。本文保留 v1.0 目标和缺口说明。
 
 ---
 

@@ -285,6 +285,12 @@ describe("CLI commands with external git source", () => {
     );
     await expect(fs.access(path.join(teamRepoDir, "README.md"))).resolves.toBeUndefined();
     await expect(fs.access(path.join(teamRepoDir, "CHANGELOG.md"))).resolves.toBeUndefined();
+    await expect(fs.readFile(path.join(teamRepoDir, "README.md"), "utf8")).resolves.toContain(
+      "[@hi-man/himan](https://www.npmjs.com/package/@hi-man/himan)",
+    );
+    await expect(fs.readFile(path.join(teamRepoDir, "README.md"), "utf8")).resolves.toContain(
+      `himan source add team ${teamRemote}          # add the source to your local config`,
+    );
     await expect(fs.access(path.join(primaryRepoDir, "CHANGELOG.md"))).rejects.toThrow();
 
     const sources = runCli(["source", "list", "--json"], scopedProjectDir, scopedHomeDir);
@@ -922,18 +928,33 @@ describe("CLI commands with external git source", () => {
       "utf8",
     );
     expect(storeContent).toContain("Publish from create artifact.");
-    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
-      "#### General",
+    const publishedReadme = await fs.readFile(path.join(repoDir, "README.md"), "utf8");
+    expect(publishedReadme).toContain("## Use With Himan");
+    expect(publishedReadme).toContain(
+      "[@hi-man/himan](https://www.npmjs.com/package/@hi-man/himan)",
     );
-    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
-      '<td width="288"><code>release-note</code></td>',
+    expect(publishedReadme).toContain(
+      `himan source add team ${TEST_REPO}          # add the source to your local config`,
     );
-    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
-      '<td width="112"><code>0.1.0</code></td>',
+    expect(publishedReadme).toContain(
+      "himan install skill <name> -r           # install a skill with one dependency layer",
     );
-    await expect(fs.readFile(path.join(repoDir, "README.md"), "utf8")).resolves.toContain(
-      "<td>release note command</td>",
+    expect(publishedReadme).toContain(
+      "himan install skill <name> -r --depth 2 # install a skill with deeper dependencies",
     );
+    expect(publishedReadme).toContain(
+      "Create new skills with your coding agent and the `himan-skill-metadata` skill",
+    );
+    expect(publishedReadme).toContain(
+      "himan publish skill <name> --patch                                       # publish a new patch version",
+    );
+    expect(publishedReadme).not.toContain(
+      'himan create skill <name> --description "Describe the skill"',
+    );
+    expect(publishedReadme).toContain("#### General");
+    expect(publishedReadme).toContain('<td width="288"><code>release-note</code></td>');
+    expect(publishedReadme).toContain('<td width="112"><code>0.1.0</code></td>');
+    expect(publishedReadme).toContain("<td>release note command</td>");
     await expect(
       fs.readFile(path.join(repoDir, "CHANGELOG.md"), "utf8"),
     ).resolves.toContain("- Published `command/release-note@0.1.0`.");
@@ -1299,6 +1320,53 @@ describe("CLI commands with external git source", () => {
     expect(installResult.stdout).toContain("Dependencies for skill/skill-root:");
     expect(installResult.stdout).toContain("skill-global: installed in global [codex]");
     expect(installResult.stdout).toContain("skill-missing: NOT INSTALLED");
+  });
+
+  it("shows system built-in status for Codex bundled skill dependencies", async () => {
+    const dependencyHomeDir = path.join(tmpRoot, "skill-system-home");
+    const dependencyProjectDir = path.join(tmpRoot, "skill-system-project");
+    const dependencyRemote = await createSkillRemote("skill-system", [
+      {
+        name: "skill-root",
+        version: "1.0.0",
+        description: "root skill",
+        dependencies: ["skill-creator"],
+      },
+    ]);
+
+    await fs.mkdir(dependencyHomeDir, { recursive: true });
+    await fs.mkdir(dependencyProjectDir, { recursive: true });
+    await fs.mkdir(
+      path.join(dependencyHomeDir, ".codex", "skills", ".system", "skill-creator"),
+      { recursive: true },
+    );
+    await fs.writeFile(
+      path.join(
+        dependencyHomeDir,
+        ".codex",
+        "skills",
+        ".system",
+        "skill-creator",
+        "SKILL.md",
+      ),
+      "# skill-creator\n",
+      "utf8",
+    );
+
+    expect(runCli(["init", dependencyRemote], dependencyProjectDir, dependencyHomeDir).status).toBe(
+      0,
+    );
+
+    const installResult = runCli(
+      ["install", "skill", "skill-root@1.0.0", "--agent", "codex"],
+      dependencyProjectDir,
+      dependencyHomeDir,
+    );
+    expect(installResult.status).toBe(0);
+    expect(installResult.stdout).toContain("Installed skill/skill-root@1.0.0");
+    expect(installResult.stdout).toContain("Dependencies for skill/skill-root:");
+    expect(installResult.stdout).toContain("skill-creator: system built-in [codex]");
+    expect(installResult.stdout).not.toContain("skill-creator: NOT INSTALLED");
   });
 
   it("shows globally installed dependency status for recursive global skill install", async () => {

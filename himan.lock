@@ -14,27 +14,57 @@
       "repoId": "https_github.com_himan-group_himan-resource"
     }
   },
-  "updatedAt": "2026-05-26T11:29:21.866Z",
+  "updatedAt": "2026-05-29T08:38:59.782Z",
   "resources": [
     {
       "type": "skill",
       "name": "common-dev-pattern",
-      "version": "0.0.3",
+      "version": "0.0.7",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-11T08:37:10.348Z"
+      "updatedAt": "2026-05-29T07:39:10.488Z"
+    },
+    {
+      "type": "skill",
+      "name": "common-git-commit",
+      "version": "0.0.4",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-29T07:47:59.593Z"
+    },
+    {
+      "type": "skill",
+      "name": "common-issue-spec",
+      "version": "0.0.1",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-29T07:49:57.023Z"
     },
     {
       "type": "skill",
       "name": "common-project-changelog",
-      "version": "0.0.2",
+      "version": "0.0.5",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-11T08:36:35.621Z"
+      "updatedAt": "2026-05-29T07:39:48.448Z"
+    },
+    {
+      "type": "skill",
+      "name": "common-project-startup",
+      "version": "0.0.6",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-29T08:38:59.782Z"
     },
     {
       "type": "skill",
@@ -44,18 +74,18 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-26T11:29:21.866Z",
+      "updatedAt": "2026-05-29T07:40:20.978Z",
       "source": "himan"
     },
     {
       "type": "skill",
       "name": "github-npm-publish",
-      "version": "0.0.1",
+      "version": "0.0.3",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-13T06:02:07.311Z"
+      "updatedAt": "2026-05-29T07:40:54.149Z"
     },
     {
       "type": "skill",
@@ -65,7 +95,7 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-14T07:49:39.100Z"
+      "updatedAt": "2026-05-29T07:41:14.440Z"
     },
     {
       "type": "skill",
@@ -75,7 +105,7 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-26T10:35:35.839Z"
+      "updatedAt": "2026-05-29T07:42:11.749Z"
     }
   ]
 }

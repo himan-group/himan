@@ -6,6 +6,14 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-05-29
+
+### Changed
+
+- Changed source README scaffolding and publish-time README maintenance so managed docs now include the `@hi-man/himan` npm link plus common commands for source binding, agent setup, resource discovery, install/uninstall, dependency install, publish, and archive/restore workflows.
+- Changed skill dependency status output after install so Codex system skills under `~/.codex/skills/.system/<name>` are shown as `system built-in [codex]` instead of `NOT INSTALLED`.
+- Changed the generated source README command examples to include short inline usage notes, drop the redundant `source add --alias team` example flag, recommend `coding agent + himan-skill-metadata` instead of `himan create skill` for new skills, and split recursive install examples into separate `-r` and `-r --depth 2` lines.
+
 ## [0.8.3] - 2026-05-29
 
 ### Changed
