@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-05-29
+
 ### Changed
 
 - Changed source README scaffolding and publish-time README maintenance so managed docs now include the `@hi-man/himan` npm link plus common commands for source binding, agent setup, resource discovery, install/uninstall, dependency install, publish, and archive/restore workflows.
