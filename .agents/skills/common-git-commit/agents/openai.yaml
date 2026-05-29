@@ -1,0 +1,4 @@
+interface:
+  display_name: "Common Git Commit"
+  short_description: "Create clean local commits with fast targeted diff inspection."
+  default_prompt: "Quickly inspect the current project changes, split only when clearly needed, and create the local commit(s) without pushing."

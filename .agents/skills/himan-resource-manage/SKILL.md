@@ -54,18 +54,6 @@ If the project may be incomplete or newly onboarded, run:
 himan doctor
 ```
 
-If source-level docs look stale (for example legacy README bullet lists, or historical publish records still accumulated under `CHANGELOG.md` `[Unreleased]`), repair them with:
-
-```bash
-himan source init-docs --repair-history
-```
-
-Use `--dry-run` first when you want a no-write preview:
-
-```bash
-himan source init-docs --repair-history --dry-run --json
-```
-
 If there is no source configured, initialize one:
 
 ```bash
@@ -99,8 +87,7 @@ openclaw     -> .openclaw/{rules|commands|skills}/<name>
 ```
 
 4. Validate the resource in the consuming agent/project context when possible.
-5. Optional metadata: add `category` in `himan.yaml` (or skill front matter) so source README tables can group resources by function.
-6. Publish after validation:
+5. Publish after validation:
 
 ```bash
 himan publish <type> <name> --patch
