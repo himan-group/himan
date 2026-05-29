@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-05-29
+
 ### Changed
 
 - Changed `himan install` skill output to show dependency status after successful installs, including project/global install detection for `-g` and recursive `-r` installs, with missing dependencies highlighted in terminal output.
