@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Changed
+
+- Changed `himan install` skill output to show dependency status after successful installs, including project/global install detection for `-g` and recursive `-r` installs, with missing dependencies highlighted in terminal output.
+
 ### Fixed
 
 - Fixed the GitHub Actions verify workflow so PRs into `dev` trigger CI checks again.

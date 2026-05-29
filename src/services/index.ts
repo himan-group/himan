@@ -109,6 +109,16 @@ export interface PublishRequest {
   name: string;
 }
 
+export interface SkillDependencyStatus {
+  name: string;
+  optional: boolean;
+  depth: number;
+  installedInProject: boolean;
+  installedGlobally: boolean;
+  projectAgents: string[];
+  globalAgents: string[];
+}
+
 export interface PublishBatchItem {
   type: ResourceType;
   name: string;
@@ -1031,6 +1041,49 @@ export class ServiceFactory {
     );
   }
 
+  async getSkillDependencyStatuses(
+    name: string,
+    version: string | undefined,
+    projectDir: string,
+    options: InstallOptions & { depth?: number } = {},
+  ): Promise<SkillDependencyStatus[]> {
+    const source = await this.loadSourceFromConfig(options.source);
+    const { storePath } = await this.ensureStoredResource(
+      source,
+      "skill",
+      name,
+      version,
+    );
+    const dependencies = await this.collectSkillDependencyRefs(
+      source,
+      storePath,
+      options.depth ?? 1,
+    );
+
+    const statuses: SkillDependencyStatus[] = [];
+    for (const dependency of dependencies) {
+      const projectTarget = await this.tryResolveInstalledResource(
+        projectDir,
+        "skill",
+        dependency.name,
+      );
+      const globalTarget = await this.tryResolveGlobalResourceTarget(
+        projectDir,
+        "skill",
+        dependency.name,
+      );
+      statuses.push({
+        ...dependency,
+        installedInProject: Boolean(projectTarget),
+        installedGlobally: Boolean(globalTarget),
+        projectAgents: projectTarget?.agents ?? [],
+        globalAgents: globalTarget?.agents ?? [],
+      });
+    }
+
+    return statuses;
+  }
+
   async dev(
     type: ResourceType,
     name: string,
@@ -1659,6 +1712,95 @@ export class ServiceFactory {
     return results;
   }
 
+  private async collectSkillDependencyRefs(
+    source: ResourceSourceAdapter,
+    storePath: string,
+    maxDepth: number,
+  ): Promise<Array<{ name: string; optional: boolean; depth: number }>> {
+    if (maxDepth <= 0) {
+      return [];
+    }
+
+    const collected = new Map<string, { name: string; optional: boolean; depth: number }>();
+    const storeCache = new Map<string, string | null>();
+    await this.collectSkillDependencyRefsFromStore(
+      source,
+      storePath,
+      0,
+      maxDepth,
+      collected,
+      [],
+      storeCache,
+    );
+    return [...collected.values()];
+  }
+
+  private async collectSkillDependencyRefsFromStore(
+    source: ResourceSourceAdapter,
+    storePath: string,
+    currentDepth: number,
+    maxDepth: number,
+    collected: Map<string, { name: string; optional: boolean; depth: number }>,
+    visiting: string[],
+    storeCache: Map<string, string | null>,
+  ): Promise<void> {
+    if (currentDepth >= maxDepth) {
+      return;
+    }
+
+    const dependencies = await this.readSkillDependenciesFromDir(storePath);
+    for (const dependency of dependencies) {
+      const existing = collected.get(dependency.name);
+      if (existing) {
+        existing.optional = existing.optional && dependency.optional;
+        existing.depth = Math.min(existing.depth, currentDepth + 1);
+      } else {
+        collected.set(dependency.name, {
+          name: dependency.name,
+          optional: dependency.optional,
+          depth: currentDepth + 1,
+        });
+      }
+
+      if (currentDepth + 1 >= maxDepth) {
+        continue;
+      }
+
+      const dependencyKey = `skill/${dependency.name}`;
+      if (visiting.includes(dependencyKey)) {
+        continue;
+      }
+
+      const dependencyStorePath = await this.tryResolveStoredResource(
+        source,
+        "skill",
+        dependency.name,
+        undefined,
+        storeCache,
+      );
+      if (!dependencyStorePath) {
+        continue;
+      }
+
+      visiting.push(dependencyKey);
+      try {
+        await this.collectSkillDependencyRefsFromStore(
+          source,
+          dependencyStorePath,
+          currentDepth + 1,
+          maxDepth,
+          collected,
+          visiting,
+          storeCache,
+        );
+      } finally {
+        if (visiting[visiting.length - 1] === dependencyKey) {
+          visiting.pop();
+        }
+      }
+    }
+  }
+
   private async installSkillDependencyNode(
     source: ResourceSourceAdapter,
     sourceInfo: LockSourceInfo | undefined,
@@ -1760,19 +1902,12 @@ export class ServiceFactory {
       );
     }
 
-    const history = await source.history(type, name);
-    if (history.length === 0) {
-      throw new HimanError(
-        errorCodes.RESOURCE_NOT_FOUND,
-        `Resource not found: ${type}/${name}`,
-      );
-    }
-
-    const resolvedVersion = this.resolveVersion(history, version);
-    const storePath = this.getStorePath(type, name, resolvedVersion);
-    if (!(await this.exists(storePath))) {
-      await source.pull(type, name, resolvedVersion, storePath);
-    }
+    const { version: resolvedVersion, storePath } = await this.ensureStoredResource(
+      source,
+      type,
+      name,
+      version,
+    );
     const resourceMeta = await this.readResourceMetaFromDir(storePath, type);
     const effectiveTargets =
       scope === "global"
@@ -2381,6 +2516,61 @@ export class ServiceFactory {
       );
     }
     return found.version;
+  }
+
+  private async ensureStoredResource(
+    source: ResourceSourceAdapter,
+    type: ResourceType,
+    name: string,
+    version: string | undefined,
+  ): Promise<{ version: string; storePath: string }> {
+    const history = await source.history(type, name);
+    if (history.length === 0) {
+      throw new HimanError(
+        errorCodes.RESOURCE_NOT_FOUND,
+        `Resource not found: ${type}/${name}`,
+      );
+    }
+
+    const resolvedVersion = this.resolveVersion(history, version);
+    const storePath = this.getStorePath(type, name, resolvedVersion);
+    if (!(await this.exists(storePath))) {
+      await source.pull(type, name, resolvedVersion, storePath);
+    }
+    return {
+      version: resolvedVersion,
+      storePath,
+    };
+  }
+
+  private async tryResolveStoredResource(
+    source: ResourceSourceAdapter,
+    type: ResourceType,
+    name: string,
+    version: string | undefined,
+    cache: Map<string, string | null>,
+  ): Promise<string | undefined> {
+    const cacheKey = `${type}/${name}@${version ?? "latest"}`;
+    const cached = cache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached ?? undefined;
+    }
+
+    try {
+      const { storePath } = await this.ensureStoredResource(source, type, name, version);
+      cache.set(cacheKey, storePath);
+      return storePath;
+    } catch (error) {
+      if (
+        error instanceof HimanError &&
+        (error.code === errorCodes.RESOURCE_NOT_FOUND
+          || error.code === errorCodes.VERSION_NOT_FOUND)
+      ) {
+        cache.set(cacheKey, null);
+        return undefined;
+      }
+      throw error;
+    }
   }
 
   private getStorePath(type: ResourceType, name: string, version: string): string {
