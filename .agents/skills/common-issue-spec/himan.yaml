@@ -1,6 +1,6 @@
 name: common-issue-spec
 type: skill
-version: 0.0.2
+version: 0.0.4
 entry: SKILL.md
 description: Turn vague issues, product requests, bug reports, or engineering
   tasks into a concise implementation spec before coding. Use when the request

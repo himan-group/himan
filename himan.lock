@@ -14,7 +14,7 @@
       "repoId": "https_github.com_himan-group_himan-resource"
     }
   },
-  "updatedAt": "2026-05-30T02:58:04.178Z",
+  "updatedAt": "2026-05-30T03:01:53.838Z",
   "resources": [
     {
       "type": "skill",
@@ -41,12 +41,12 @@
     {
       "type": "skill",
       "name": "common-issue-spec",
-      "version": "0.0.2",
+      "version": "0.0.4",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T02:58:04.178Z",
+      "updatedAt": "2026-05-30T03:01:53.838Z",
       "source": "himan"
     },
     {
