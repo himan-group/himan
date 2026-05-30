@@ -26,6 +26,12 @@ const AGENT_CONFIGS = [
     baseDir: ".openclaw",
     legacyBaseDirs: [],
   },
+  {
+    name: "copilot",
+    aliases: ["copilot", "github-copilot", "vs-code-copilot"],
+    baseDir: ".github/copilot",
+    legacyBaseDirs: [],
+  },
 ] as const;
 
 type AgentConfig = (typeof AGENT_CONFIGS)[number];

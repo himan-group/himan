@@ -621,6 +621,7 @@ describe("CLI commands with external git source", () => {
       "claude-code",
       "codex",
       "openclaw",
+      "copilot",
     ]);
 
     const globalUse = runCli(
@@ -3062,11 +3063,11 @@ async function createRuleCatalogRemote(
         description: rule.description,
         ...(rule.score !== undefined
           ? {
-              comment: {
-                score: rule.score,
-                ...(rule.text ? { text: rule.text } : {}),
-              },
-            }
+            comment: {
+              score: rule.score,
+              ...(rule.text ? { text: rule.text } : {}),
+            },
+          }
           : {}),
         agents: ["cursor"],
       }),

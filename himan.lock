@@ -14,7 +14,7 @@
       "repoId": "https_github.com_himan-group_himan-resource"
     }
   },
-  "updatedAt": "2026-05-30T03:05:32.412Z",
+  "updatedAt": "2026-05-30T03:13:39.810Z",
   "resources": [
     {
       "type": "skill",
@@ -24,7 +24,7 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T02:52:27.843Z",
+      "updatedAt": "2026-05-30T03:13:39.766Z",
       "source": "himan"
     },
     {
@@ -35,7 +35,7 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T02:52:34.399Z",
+      "updatedAt": "2026-05-30T03:13:39.793Z",
       "source": "himan"
     },
     {
@@ -68,7 +68,7 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T02:52:47.320Z",
+      "updatedAt": "2026-05-30T03:13:39.808Z",
       "source": "himan"
     },
     {
@@ -114,6 +114,17 @@
       "mode": "copy",
       "updatedAt": "2026-05-29T07:40:20.978Z",
       "source": "himan"
+    },
+    {
+      "type": "skill",
+      "name": "common-sprint-autopilot",
+      "version": "0.0.1",
+      "source": "himan",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-30T03:13:39.810Z"
     },
     {
       "type": "skill",

@@ -57,8 +57,9 @@ There is no HTTP API. The CLI works with Git and filesystem state:
 - `<project>/.himan/config.json` stores project default agents.
 - `<project>/.himan/dev/<type>/<name>` stores editable dev copies.
 - Source-level archived resources live under `archive/rules`, `archive/commands`, and `archive/skills`; default source lists and sync ignore them unless explicitly requested.
-- Installed resources are materialized under agent folders such as `.cursor`, `.claude`, `.agents`, `.codex`, or `.openclaw`; install mode controls whether targets are symlinks or copies.
+- Installed resources are materialized under agent folders such as `.cursor`, `.claude`, `.agents`, `.codex`, `.openclaw`, or `.github/copilot`; install mode controls whether targets are symlinks or copies.
 - Codex-specific: `config` resources materialize under `.codex/configs/<name>` and synchronize `.codex/config.toml`.
+- Copilot-specific: `rule` resources are concatenated into `.github/copilot-instructions.md`; `skill` resources are mapped to `.github/prompts/<name>.prompt.md`.
 
 ## Generated Files
 
@@ -76,6 +77,7 @@ There is no HTTP API. The CLI works with Git and filesystem state:
 ## Agent-Specific Notes
 
 - Codex-specific: Codex project skills live under `.agents/skills/`; resource authoring and installs may also use `.codex` for rules and configs.
+- Copilot-specific: Copilot rules are written to `.github/copilot-instructions.md` (single concatenated file); Copilot skills are written to `.github/prompts/<name>.prompt.md` (one file per skill).
 - Cursor-specific rules, Claude Code instructions, GitHub Copilot instructions, Gemini files, or OpenHands microagents should be kept in their conventional dedicated files only when this repository adds those files intentionally.
 
 ## Codex-Specific Skill Routing

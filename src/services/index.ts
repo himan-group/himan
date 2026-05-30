@@ -73,13 +73,13 @@ export type PublishInstallScope = "project" | "global";
 
 export interface PublishProgress {
   stage:
-    | "prepare"
-    | "resolve-version"
-    | "publish-source"
-    | "sync-store"
-    | "install"
-    | "cleanup"
-    | "done";
+  | "prepare"
+  | "resolve-version"
+  | "publish-source"
+  | "sync-store"
+  | "install"
+  | "cleanup"
+  | "done";
   message: string;
 }
 
@@ -315,9 +315,9 @@ export class ServiceFactory {
 
     const renamedSource = nextAlias
       ? {
-          ...resolved.source,
-          alias: nextAlias,
-        }
+        ...resolved.source,
+        alias: nextAlias,
+      }
       : resolved.source;
     const items = { ...config.sources.items };
     delete items[resolved.name];
@@ -382,9 +382,9 @@ export class ServiceFactory {
     }
     const nextSource = nextAlias
       ? {
-          ...resolved.source,
-          alias,
-        }
+        ...resolved.source,
+        alias,
+      }
       : resolved.source;
     const items = {
       ...config.sources.items,
@@ -785,9 +785,8 @@ export class ServiceFactory {
       return {
         name: "archive",
         status: "warn",
-        message: `Cannot check archived resources. ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        message: `Cannot check archived resources. ${error instanceof Error ? error.message : String(error)
+          }`,
       };
     }
   }
@@ -1175,6 +1174,16 @@ export class ServiceFactory {
     if (type === "config") {
       await this.reactivateProjectConfig(projectDir);
     }
+    if (
+      installInfo.agents.includes("copilot") &&
+      (type === "rule" || type === "skill")
+    ) {
+      if (type === "rule") {
+        await this.syncCopilotInstructions(projectDir);
+      } else {
+        await this.removeCopilotSkill(projectDir, name);
+      }
+    }
     return { type, name, linkPath: installInfo.linkPaths[0] };
   }
 
@@ -1202,6 +1211,17 @@ export class ServiceFactory {
       await fs.rm(this.getCodexActiveConfigPath(this.paths.getHomeDir()), {
         force: true,
       });
+    }
+    if (
+      globalTarget.agents.includes("copilot") &&
+      (type === "rule" || type === "skill")
+    ) {
+      const homeDir = this.paths.getHomeDir();
+      if (type === "rule") {
+        await this.syncCopilotInstructions(homeDir);
+      } else {
+        await this.removeCopilotSkill(homeDir, name);
+      }
     }
     return { type, name, linkPath: globalTarget.linkPaths[0] };
   }
@@ -1917,18 +1937,18 @@ export class ServiceFactory {
     const effectiveTargets =
       scope === "global"
         ? await this.resolveGlobalInstallAgents(
-            projectDir,
-            type,
-            name,
-            agents,
-            resourceMeta?.agents,
-          )
+          projectDir,
+          type,
+          name,
+          agents,
+          resourceMeta?.agents,
+        )
         : await this.resolveEffectiveAgents(
-            projectDir,
-            type,
-            agents,
-            resourceMeta?.agents,
-          );
+          projectDir,
+          type,
+          agents,
+          resourceMeta?.agents,
+        );
     this.validateResourceAgents(type, effectiveTargets);
     const linkPaths =
       scope === "global"
@@ -1977,6 +1997,16 @@ export class ServiceFactory {
         prepared.scope === "global" ? this.paths.getHomeDir() : projectDir,
         prepared.linkPaths[0],
       );
+    }
+    if (
+      prepared.effectiveTargets.includes("copilot") &&
+      (prepared.type === "rule" || prepared.type === "skill")
+    ) {
+      const syncRootDir =
+        prepared.scope === "global" ? this.paths.getHomeDir() : projectDir;
+      await this.syncCopilotTargets(syncRootDir, prepared.type, [
+        prepared.name,
+      ]);
     }
     if (prepared.scope === "project") {
       if (!sourceInfo) {
@@ -2380,11 +2410,11 @@ export class ServiceFactory {
     locked: Awaited<ReturnType<ServiceFactory["getLockedResource"]>>,
     installInfo:
       | {
-          installedPath: string;
-          linkPaths: string[];
-          agents: string[];
-          mode: InstallMode;
-        }
+        installedPath: string;
+        linkPaths: string[];
+        agents: string[];
+        mode: InstallMode;
+      }
       | undefined,
   ): Promise<void> {
     const lockedNewName = await this.getLockedResource(projectDir, type, newName);
@@ -2428,11 +2458,11 @@ export class ServiceFactory {
     locked: Awaited<ReturnType<ServiceFactory["getLockedResource"]>>,
     installInfo:
       | {
-          installedPath: string;
-          linkPaths: string[];
-          agents: string[];
-          mode: InstallMode;
-        }
+        installedPath: string;
+        linkPaths: string[];
+        agents: string[];
+        mode: InstallMode;
+      }
       | undefined,
   ): Promise<boolean> {
     const oldDevPath = this.getProjectDevPath(projectDir, type, oldName);
@@ -2724,6 +2754,96 @@ export class ServiceFactory {
     return mode === "link" ? "link" : "copy";
   }
 
+  // ── copilot agent helpers ──
+
+  private getCopilotInstructionsPath(rootDir: string): string {
+    return path.join(rootDir, ".github", "copilot-instructions.md");
+  }
+
+  private getCopilotPromptPath(rootDir: string, name: string): string {
+    return path.join(rootDir, ".github", "prompts", `${name}.prompt.md`);
+  }
+
+  private async syncCopilotInstructions(rootDir: string): Promise<void> {
+    const rulesDir = path.join(rootDir, ".github", "copilot", "rules");
+    const targetPath = this.getCopilotInstructionsPath(rootDir);
+
+    const sections: string[] = [];
+    try {
+      const entries = await fs.readdir(rulesDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const contentPath = path.join(rulesDir, entry.name, "content.md");
+        try {
+          const content = await fs.readFile(contentPath, "utf-8");
+          sections.push(
+            `<!-- himan:rule:${entry.name} -->\n\n${content.trim()}\n`,
+          );
+        } catch {
+          // skip rules with unreadable content
+          continue;
+        }
+      }
+    } catch {
+      // rules dir does not exist — target will be removed below
+    }
+
+    if (sections.length === 0) {
+      await fs.rm(targetPath, { force: true });
+      return;
+    }
+
+    const tmpPath = `${targetPath}.tmp`;
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.writeFile(tmpPath, sections.join("\n"));
+    await fs.rename(tmpPath, targetPath);
+  }
+
+  private async syncCopilotSkill(
+    rootDir: string,
+    name: string,
+  ): Promise<void> {
+    const sourcePath = path.join(
+      rootDir,
+      ".github",
+      "copilot",
+      "skills",
+      name,
+      "SKILL.md",
+    );
+    const targetPath = this.getCopilotPromptPath(rootDir, name);
+
+    try {
+      await fs.access(sourcePath);
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      await fs.copyFile(sourcePath, targetPath);
+    } catch {
+      // source does not exist — remove stale target
+      await fs.rm(targetPath, { force: true });
+    }
+  }
+
+  private async removeCopilotSkill(
+    rootDir: string,
+    name: string,
+  ): Promise<void> {
+    await fs.rm(this.getCopilotPromptPath(rootDir, name), { force: true });
+  }
+
+  private async syncCopilotTargets(
+    rootDir: string,
+    type: ResourceType,
+    names?: string[],
+  ): Promise<void> {
+    if (type === "rule") {
+      await this.syncCopilotInstructions(rootDir);
+    } else if (type === "skill" && names) {
+      for (const name of names) {
+        await this.syncCopilotSkill(rootDir, name);
+      }
+    }
+  }
+
   private reportPublishProgress(
     options: PublishOptions,
     stage: PublishProgress["stage"],
@@ -2932,11 +3052,11 @@ export class ServiceFactory {
     name: string,
   ): Promise<
     | {
-        installedPath: string;
-        linkPaths: string[];
-        agents: string[];
-        mode: InstallMode;
-      }
+      installedPath: string;
+      linkPaths: string[];
+      agents: string[];
+      mode: InstallMode;
+    }
     | undefined
   > {
     try {
