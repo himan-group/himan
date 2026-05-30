@@ -15,6 +15,8 @@ describe("agent configs", () => {
     expect(normalizeAgent("Claude Code")).toBe("claude-code");
     expect(normalizeAgent("claude_code")).toBe("claude-code");
     expect(normalizeAgent("open-claw")).toBe("openclaw");
+    expect(normalizeAgent("github-copilot")).toBe("copilot");
+    expect(normalizeAgent("vs-code-copilot")).toBe("copilot");
     expect(normalizeAgent("unknown")).toBeUndefined();
   });
 
@@ -23,6 +25,7 @@ describe("agent configs", () => {
       "codex",
       "claude-code",
     ]);
+    expect(normalizeAgents(["copilot", "github-copilot"])).toEqual(["copilot"]);
     expect(normalizeAgents(["unknown"])).toEqual(["cursor"]);
     expect(normalizeAgents()).toEqual(["cursor"]);
   });
@@ -35,11 +38,13 @@ describe("agent configs", () => {
         "claude",
         "codex",
         "open-claw",
+        "copilot",
       ]),
     ).toEqual([
       path.join(projectDir, ".claude", "skills", "risk-check"),
       path.join(projectDir, ".agents", "skills", "risk-check"),
       path.join(projectDir, ".openclaw", "skills", "risk-check"),
+      path.join(projectDir, ".github", "copilot", "skills", "risk-check"),
     ]);
   });
 
@@ -109,6 +114,41 @@ describe("agent configs", () => {
       "claude-code",
       "codex",
       "openclaw",
+      "copilot",
     ]);
+  });
+
+  it("builds copilot rule paths under .github/copilot", () => {
+    const projectDir = path.join("tmp", "project");
+    expect(
+      getProjectResourcePaths(projectDir, "rule", "code-review", ["copilot"]),
+    ).toEqual([path.join(projectDir, ".github", "copilot", "rules", "code-review")]);
+  });
+
+  it("builds copilot skill paths under .github/copilot", () => {
+    const projectDir = path.join("tmp", "project");
+    expect(
+      getProjectResourcePaths(projectDir, "skill", "my-skill", ["copilot"]),
+    ).toEqual([path.join(projectDir, ".github", "copilot", "skills", "my-skill")]);
+  });
+
+  it("builds copilot global resource paths", () => {
+    const homeDir = path.join("tmp", "home");
+    expect(
+      getGlobalResourcePaths(homeDir, "rule", "code-review", ["copilot"]),
+    ).toEqual([path.join(homeDir, ".github", "copilot", "rules", "code-review")]);
+    expect(
+      getGlobalResourcePaths(homeDir, "skill", "my-skill", ["copilot"]),
+    ).toEqual([path.join(homeDir, ".github", "copilot", "skills", "my-skill")]);
+  });
+
+  it("uses only .github/copilot for copilot path candidates", () => {
+    const projectDir = path.join("tmp", "project");
+    expect(
+      getResourcePathCandidatesForAgent(projectDir, "rule", "code-review", "copilot"),
+    ).toEqual([path.join(projectDir, ".github", "copilot", "rules", "code-review")]);
+    expect(
+      getResourcePathCandidatesForAgent(projectDir, "skill", "my-skill", "copilot"),
+    ).toEqual([path.join(projectDir, ".github", "copilot", "skills", "my-skill")]);
   });
 });

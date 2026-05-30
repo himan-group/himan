@@ -9,12 +9,12 @@
 
 ## 资源类型
 
-| 类型 | 默认入口 | 用途 |
-| --- | --- | --- |
-| `rule` | `content.md` | Agent 规则或长期约束。 |
-| `command` | `content.md` | 可复用命令模板。 |
-| `skill` | `SKILL.md` | 带工作流说明、依赖和上下文约束的能力包。 |
-| `config` | `config.toml` | Codex 配置资源；当前仅支持 Codex。 |
+| 类型      | 默认入口      | 用途                                     |
+| --------- | ------------- | ---------------------------------------- |
+| `rule`    | `content.md`  | Agent 规则或长期约束。                   |
+| `command` | `content.md`  | 可复用命令模板。                         |
+| `skill`   | `SKILL.md`    | 带工作流说明、依赖和上下文约束的能力包。 |
+| `config`  | `config.toml` | Codex 配置资源；当前仅支持 Codex。       |
 
 ## Source 仓库结构
 
@@ -96,6 +96,7 @@ source 的配置名是本地内部 key，别名是日常命令使用的稳定引
 - `claude-code`
 - `codex`
 - `openclaw`
+- `copilot`
 
 默认 agent 解析顺序：当前项目 `.himan/config.json`、全局 `~/.himan/config.json`、资源 metadata、内置默认 `cursor`。
 
@@ -107,14 +108,15 @@ himan agent current
 
 项目级安装目标：
 
-| Agent | `rule` | `command` | `skill` | `config` |
-| --- | --- | --- | --- | --- |
-| `cursor` | `.cursor/rules/<name>` | `.cursor/commands/<name>` | `.cursor/skills/<name>` | 不支持 |
-| `claude-code` | `.claude/rules/<name>` | `.claude/commands/<name>` | `.claude/skills/<name>` | 不支持 |
-| `codex` | `.codex/rules/<name>` | `.agents/commands/<name>` | `.agents/skills/<name>` | `.codex/configs/<name>` 并激活 `.codex/config.toml` |
-| `openclaw` | `.openclaw/rules/<name>` | `.openclaw/commands/<name>` | `.openclaw/skills/<name>` | 不支持 |
+| Agent         | `rule`                                                             | `command`                   | `skill`                                                              | `config`                                            |
+| ------------- | ------------------------------------------------------------------ | --------------------------- | -------------------------------------------------------------------- | --------------------------------------------------- |
+| `cursor`      | `.cursor/rules/<name>`                                             | `.cursor/commands/<name>`   | `.cursor/skills/<name>`                                              | 不支持                                              |
+| `claude-code` | `.claude/rules/<name>`                                             | `.claude/commands/<name>`   | `.claude/skills/<name>`                                              | 不支持                                              |
+| `codex`       | `.codex/rules/<name>`                                              | `.agents/commands/<name>`   | `.agents/skills/<name>`                                              | `.codex/configs/<name>` 并激活 `.codex/config.toml` |
+| `openclaw`    | `.openclaw/rules/<name>`                                           | `.openclaw/commands/<name>` | `.openclaw/skills/<name>`                                            | 不支持                                              |
+| `copilot`     | `.github/copilot/rules/<name>` → `.github/copilot-instructions.md` | 不支持                      | `.github/copilot/skills/<name>` → `.github/prompts/<name>.prompt.md` | 不支持                                              |
 
-加 `-g` / `--global` 时安装到用户 home 下对应目录，例如 `~/.cursor/...`、`~/.claude/...`、`~/.agents/...`、`~/.codex/...`、`~/.openclaw/...`。全局安装不写当前项目的 `himan.lock`。
+加 `-g` / `--global` 时安装到用户 home 下对应目录，例如 `~/.cursor/...`、`~/.claude/...`、`~/.agents/...`、`~/.codex/...`、`~/.openclaw/...`、`~/.github/copilot/...`。全局安装不写当前项目的 `himan.lock`。
 
 ## 安装、lock 与恢复
 
@@ -190,14 +192,14 @@ himan resource rename skill old-name new-name --dry-run
 
 ## 本地状态与数据
 
-| 路径 | 说明 |
-| --- | --- |
-| `~/.himan/config.json` | source 配置和全局默认 agent。 |
-| `~/.himan/repos/` | Git source 缓存。 |
-| `~/.himan/store/<type>/<name>/<version>/` | 不可变资源快照。 |
-| `~/.himan/index.json` | source 扫描缓存。 |
-| `<project>/himan.lock` | 当前项目已安装资源锁。 |
-| `<project>/.himan/config.json` | 当前项目默认 agent。 |
+| 路径                                      | 说明                          |
+| ----------------------------------------- | ----------------------------- |
+| `~/.himan/config.json`                    | source 配置和全局默认 agent。 |
+| `~/.himan/repos/`                         | Git source 缓存。             |
+| `~/.himan/store/<type>/<name>/<version>/` | 不可变资源快照。              |
+| `~/.himan/index.json`                     | source 扫描缓存。             |
+| `<project>/himan.lock`                    | 当前项目已安装资源锁。        |
+| `<project>/.himan/config.json`            | 当前项目默认 agent。          |
 
 ## FAQ
 

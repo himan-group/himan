@@ -1,6 +1,6 @@
 name: common-dev-pattern
 type: skill
-version: 0.0.7
+version: 0.0.1
 entry: SKILL.md
 description: Follow existing repository patterns for code changes and validate
   them before the final response. Use for nontrivial edits across pages,
