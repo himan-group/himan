@@ -649,7 +649,7 @@ describe("CLI commands with external git source", () => {
       global: ["codex"],
       project: ["openclaw"],
       effective: ["openclaw"],
-      supported: ["cursor", "claude-code", "codex", "openclaw"],
+      supported: ["cursor", "claude-code", "codex", "openclaw", "copilot"],
     });
 
     const createResult = runCli(
