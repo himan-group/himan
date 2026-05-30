@@ -1,6 +1,6 @@
 name: common-git-commit
 type: skill
-version: 0.0.4
+version: 0.0.1
 entry: SKILL.md
 description: Create clean local Git commits quickly from the current project
   changes without pushing. Use when the user asks Codex to commit code, generate

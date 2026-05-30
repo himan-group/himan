@@ -1,6 +1,6 @@
 name: common-project-startup
 type: skill
-version: 0.0.6
+version: 0.0.1
 entry: SKILL.md
 description: Onboard coding agents to an existing repository by inspecting
   structure, commands, rules, generated files, and validation workflow; create

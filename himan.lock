@@ -14,57 +14,62 @@
       "repoId": "https_github.com_himan-group_himan-resource"
     }
   },
-  "updatedAt": "2026-05-29T08:38:59.782Z",
+  "updatedAt": "2026-05-30T02:58:04.178Z",
   "resources": [
     {
       "type": "skill",
       "name": "common-dev-pattern",
-      "version": "0.0.7",
-      "agents": [
-        "codex"
-      ],
-      "mode": "copy",
-      "updatedAt": "2026-05-29T07:39:10.488Z"
-    },
-    {
-      "type": "skill",
-      "name": "common-git-commit",
-      "version": "0.0.4",
-      "agents": [
-        "codex"
-      ],
-      "mode": "copy",
-      "updatedAt": "2026-05-29T07:47:59.593Z"
-    },
-    {
-      "type": "skill",
-      "name": "common-issue-spec",
       "version": "0.0.1",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-29T07:49:57.023Z"
+      "updatedAt": "2026-05-30T02:52:27.843Z",
+      "source": "himan"
+    },
+    {
+      "type": "skill",
+      "name": "common-git-commit",
+      "version": "0.0.1",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-30T02:52:34.399Z",
+      "source": "himan"
+    },
+    {
+      "type": "skill",
+      "name": "common-issue-spec",
+      "version": "0.0.2",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-30T02:58:04.178Z",
+      "source": "himan"
     },
     {
       "type": "skill",
       "name": "common-project-changelog",
-      "version": "0.0.5",
+      "version": "0.0.1",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-29T07:39:48.448Z"
+      "updatedAt": "2026-05-30T02:52:47.320Z",
+      "source": "himan"
     },
     {
       "type": "skill",
       "name": "common-project-startup",
-      "version": "0.0.6",
+      "version": "0.0.1",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-29T08:38:59.782Z"
+      "updatedAt": "2026-05-30T02:52:53.754Z",
+      "source": "himan"
     },
     {
       "type": "skill",
@@ -80,12 +85,13 @@
     {
       "type": "skill",
       "name": "github-npm-publish",
-      "version": "0.0.3",
+      "version": "0.0.1",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-29T07:40:54.149Z"
+      "updatedAt": "2026-05-30T02:53:01.534Z",
+      "source": "himan"
     },
     {
       "type": "skill",

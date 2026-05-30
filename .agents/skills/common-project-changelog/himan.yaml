@@ -1,6 +1,6 @@
 name: common-project-changelog
 type: skill
-version: 0.0.5
+version: 0.0.1
 entry: SKILL.md
 description: Maintain project CHANGELOG.md and package version history
   correctly. Use for user-visible CLI behavior changes, new commands/options,
