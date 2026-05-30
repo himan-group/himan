@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-05-30
+
 ### Added
 
 - Added `copilot` agent support for VS Code Copilot. Rules are concatenated into `.github/copilot-instructions.md`; skills are mapped to `.github/prompts/<name>.prompt.md`. Aliases include `github-copilot` and `vs-code-copilot`.
