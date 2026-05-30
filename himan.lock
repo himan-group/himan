@@ -14,7 +14,7 @@
       "repoId": "https_github.com_himan-group_himan-resource"
     }
   },
-  "updatedAt": "2026-05-30T03:01:53.838Z",
+  "updatedAt": "2026-05-30T03:05:32.412Z",
   "resources": [
     {
       "type": "skill",
@@ -51,6 +51,17 @@
     },
     {
       "type": "skill",
+      "name": "common-project-blueprint",
+      "version": "0.0.1",
+      "source": "himan",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-30T03:05:32.388Z"
+    },
+    {
+      "type": "skill",
       "name": "common-project-changelog",
       "version": "0.0.1",
       "agents": [
@@ -62,6 +73,17 @@
     },
     {
       "type": "skill",
+      "name": "common-project-mvp",
+      "version": "0.0.1",
+      "source": "himan",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-30T03:05:32.411Z"
+    },
+    {
+      "type": "skill",
       "name": "common-project-startup",
       "version": "0.0.1",
       "agents": [
@@ -70,6 +92,17 @@
       "mode": "copy",
       "updatedAt": "2026-05-30T02:52:53.754Z",
       "source": "himan"
+    },
+    {
+      "type": "skill",
+      "name": "common-project-tech-design",
+      "version": "0.0.1",
+      "source": "himan",
+      "agents": [
+        "codex"
+      ],
+      "mode": "copy",
+      "updatedAt": "2026-05-30T03:05:32.412Z"
     },
     {
       "type": "skill",
