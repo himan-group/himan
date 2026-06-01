@@ -6,6 +6,15 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Added
+
+- Added bundled project skills `common-project-blueprint`, `common-project-mvp`, and `common-project-tech-design` to the default local skill set used in this repository.
+
+### Changed
+
+- Changed agent/type validation so `command` resources now reject `copilot` as an install/create target with `E_INVALID_INPUT`, matching documented Copilot support scope.
+- Changed Copilot rule instruction sync to write `.github/copilot-instructions.md` in stable alphabetical rule order, reducing non-deterministic diffs across runs.
+
 ## [0.8.5] - 2026-05-30
 
 ### Added
