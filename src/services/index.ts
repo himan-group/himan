@@ -602,7 +602,7 @@ export class ServiceFactory {
   private checkNodeVersion(): DoctorCheck {
     const version = process.versions.node;
     const major = Number(version.split(".")[0]);
-    if (major === 22) {
+    if (major >= 20 && major !== 23) {
       return {
         name: "node",
         status: "ok",
@@ -613,7 +613,7 @@ export class ServiceFactory {
     return {
       name: "node",
       status: "error",
-      message: `Node.js ${version} is unsupported. Use Node.js 22.x.`,
+      message: `Node.js ${version} is unsupported. Use Node.js >=20 <23 or >=24.`,
     };
   }
 
