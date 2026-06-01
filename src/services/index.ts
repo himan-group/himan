@@ -602,7 +602,7 @@ export class ServiceFactory {
   private checkNodeVersion(): DoctorCheck {
     const version = process.versions.node;
     const major = Number(version.split(".")[0]);
-    if (major === 22) {
+    if (major >= 20 && major !== 23) {
       return {
         name: "node",
         status: "ok",
@@ -613,7 +613,7 @@ export class ServiceFactory {
     return {
       name: "node",
       status: "error",
-      message: `Node.js ${version} is unsupported. Use Node.js 22.x.`,
+      message: `Node.js ${version} is unsupported. Use Node.js >=20 <23 or >=24.`,
     };
   }
 
@@ -2635,14 +2635,28 @@ export class ServiceFactory {
   }
 
   private validateResourceAgents(type: ResourceType, agents: string[]): void {
-    if (type !== "config") return;
-    const invalidAgents = normalizeAgents(agents).filter((agent) => agent !== "codex");
-    if (invalidAgents.length > 0) {
-      throw new HimanError(
-        errorCodes.INVALID_INPUT,
-        `Resource type ${type} currently only supports codex.`,
-        { type, agents, invalidAgents },
-      );
+    const normalizedAgents = normalizeAgents(agents);
+    if (type === "config") {
+      const invalidAgents = normalizedAgents.filter((agent) => agent !== "codex");
+      if (invalidAgents.length > 0) {
+        throw new HimanError(
+          errorCodes.INVALID_INPUT,
+          `Resource type ${type} currently only supports codex.`,
+          { type, agents, invalidAgents },
+        );
+      }
+      return;
+    }
+
+    if (type === "command") {
+      const invalidAgents = normalizedAgents.filter((agent) => agent === "copilot");
+      if (invalidAgents.length > 0) {
+        throw new HimanError(
+          errorCodes.INVALID_INPUT,
+          `Resource type ${type} currently does not support copilot.`,
+          { type, agents, invalidAgents },
+        );
+      }
     }
   }
 
@@ -2771,13 +2785,16 @@ export class ServiceFactory {
     const sections: string[] = [];
     try {
       const entries = await fs.readdir(rulesDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const contentPath = path.join(rulesDir, entry.name, "content.md");
+      const ruleNames = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort((a, b) => a.localeCompare(b));
+      for (const ruleName of ruleNames) {
+        const contentPath = path.join(rulesDir, ruleName, "content.md");
         try {
           const content = await fs.readFile(contentPath, "utf-8");
           sections.push(
-            `<!-- himan:rule:${entry.name} -->\n\n${content.trim()}\n`,
+            `<!-- himan:rule:${ruleName} -->\n\n${content.trim()}\n`,
           );
         } catch {
           // skip rules with unreadable content

@@ -4,7 +4,7 @@
 
 ## 环境要求
 
-- Node.js 22.x；本仓库开发环境由 [.nvmrc](../.nvmrc) 固定为 `22.22.1`。
+- Node.js `>=20 <23 || >=24`；本仓库开发环境由 [.nvmrc](../.nvmrc) 固定为 `22.22.1`。
 - pnpm 10.32.1；包管理器版本由 [package.json](../package.json) 固定。
 - Git；测试和发布流程会使用本地 Git。
 

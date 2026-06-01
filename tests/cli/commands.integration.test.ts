@@ -1098,6 +1098,145 @@ describe("CLI commands with external git source", () => {
     ).toEqual([{ version: "0.0.1", raw: "skill/skill-c@0.0.1" }]);
   }, 20000);
 
+  it("rejects copilot as command target", async () => {
+    const copilotCommandHomeDir = path.join(tmpRoot, "copilot-command-home");
+    const copilotCommandProjectDir = path.join(tmpRoot, "copilot-command-project");
+    await fs.mkdir(copilotCommandHomeDir, { recursive: true });
+    await fs.mkdir(copilotCommandProjectDir, { recursive: true });
+    expect(runCli(["init", TEST_REPO], copilotCommandProjectDir, copilotCommandHomeDir).status).toBe(
+      0,
+    );
+
+    const createCommandForCopilot = runCli(
+      ["create", "command", "copilot-command", "--agent", "copilot"],
+      copilotCommandProjectDir,
+      copilotCommandHomeDir,
+    );
+    expect(createCommandForCopilot.status).toBe(1);
+    expect(createCommandForCopilot.stderr).toContain("[E_INVALID_INPUT]");
+    expect(createCommandForCopilot.stderr).toContain(
+      "Resource type command currently does not support copilot.",
+    );
+  });
+
+  it("syncs copilot instruction and prompt files on project install/uninstall", async () => {
+    const copilotHomeDir = path.join(tmpRoot, "copilot-sync-home");
+    const copilotProjectDir = path.join(tmpRoot, "copilot-sync-project");
+    const copilotRemote = await createCopilotResourceRemote("copilot-sync");
+    await fs.mkdir(copilotHomeDir, { recursive: true });
+    await fs.mkdir(copilotProjectDir, { recursive: true });
+
+    expect(runCli(["init", copilotRemote], copilotProjectDir, copilotHomeDir).status).toBe(0);
+
+    const installRule = runCli(
+      ["install", "rule", "copilot-rule@1.0.0", "--agent", "copilot"],
+      copilotProjectDir,
+      copilotHomeDir,
+    );
+    expect(installRule.status).toBe(0);
+    const instructionsPath = path.join(copilotProjectDir, ".github", "copilot-instructions.md");
+    await expect(fs.readFile(instructionsPath, "utf8")).resolves.toContain(
+      "Copilot rule instructions.",
+    );
+    await expect(fs.readFile(instructionsPath, "utf8")).resolves.toContain(
+      "<!-- himan:rule:copilot-rule -->",
+    );
+
+    const installSkill = runCli(
+      ["install", "skill", "copilot-skill@1.0.0", "--agent", "copilot"],
+      copilotProjectDir,
+      copilotHomeDir,
+    );
+    expect(installSkill.status).toBe(0);
+    const promptPath = path.join(
+      copilotProjectDir,
+      ".github",
+      "prompts",
+      "copilot-skill.prompt.md",
+    );
+    await expect(fs.readFile(promptPath, "utf8")).resolves.toContain("# copilot-skill");
+
+    const uninstallSkill = runCli(
+      ["uninstall", "skill", "copilot-skill"],
+      copilotProjectDir,
+      copilotHomeDir,
+    );
+    expect(uninstallSkill.status).toBe(0);
+    await expect(fs.access(promptPath)).rejects.toThrow();
+
+    const uninstallRule = runCli(
+      ["uninstall", "rule", "copilot-rule"],
+      copilotProjectDir,
+      copilotHomeDir,
+    );
+    expect(uninstallRule.status).toBe(0);
+    await expect(fs.access(instructionsPath)).rejects.toThrow();
+  });
+
+  it("syncs copilot instruction file on global install/uninstall", async () => {
+    const copilotHomeDir = path.join(tmpRoot, "copilot-global-home");
+    const copilotProjectDir = path.join(tmpRoot, "copilot-global-project");
+    const copilotRemote = await createCopilotResourceRemote("copilot-global-sync");
+    await fs.mkdir(copilotHomeDir, { recursive: true });
+    await fs.mkdir(copilotProjectDir, { recursive: true });
+
+    expect(runCli(["init", copilotRemote], copilotProjectDir, copilotHomeDir).status).toBe(0);
+
+    const installRuleGlobal = runCli(
+      ["install", "rule", "copilot-rule@1.0.0", "-g", "--agent", "copilot"],
+      copilotProjectDir,
+      copilotHomeDir,
+    );
+    expect(installRuleGlobal.status).toBe(0);
+    const globalInstructionsPath = path.join(copilotHomeDir, ".github", "copilot-instructions.md");
+    await expect(fs.readFile(globalInstructionsPath, "utf8")).resolves.toContain(
+      "Copilot rule instructions.",
+    );
+
+    const uninstallRuleGlobal = runCli(
+      ["uninstall", "rule", "copilot-rule", "-g"],
+      copilotProjectDir,
+      copilotHomeDir,
+    );
+    expect(uninstallRuleGlobal.status).toBe(0);
+    await expect(fs.access(globalInstructionsPath)).rejects.toThrow();
+  });
+
+  it("writes copilot instructions in stable alphabetical rule order", async () => {
+    const copilotHomeDir = path.join(tmpRoot, "copilot-order-home");
+    const copilotProjectDir = path.join(tmpRoot, "copilot-order-project");
+    const copilotRemote = await createRuleCatalogRemote("copilot-order", [
+      { name: "z-rule", version: "1.0.0", description: "z rule" },
+      { name: "a-rule", version: "1.0.0", description: "a rule" },
+    ]);
+    await fs.mkdir(copilotHomeDir, { recursive: true });
+    await fs.mkdir(copilotProjectDir, { recursive: true });
+
+    expect(runCli(["init", copilotRemote], copilotProjectDir, copilotHomeDir).status).toBe(0);
+    expect(
+      runCli(
+        ["install", "rule", "z-rule@1.0.0", "--agent", "copilot"],
+        copilotProjectDir,
+        copilotHomeDir,
+      ).status,
+    ).toBe(0);
+    expect(
+      runCli(
+        ["install", "rule", "a-rule@1.0.0", "--agent", "copilot"],
+        copilotProjectDir,
+        copilotHomeDir,
+      ).status,
+    ).toBe(0);
+
+    const instructionsPath = path.join(copilotProjectDir, ".github", "copilot-instructions.md");
+    const instructions = await fs.readFile(instructionsPath, "utf8");
+    const aIndex = instructions.indexOf("<!-- himan:rule:a-rule -->");
+    const zIndex = instructions.indexOf("<!-- himan:rule:z-rule -->");
+    expect(aIndex).toBeGreaterThanOrEqual(0);
+    expect(zIndex).toBeGreaterThanOrEqual(0);
+    expect(aIndex).toBeLessThan(zIndex);
+  });
+
   it("supports install and dev for command and skill", async () => {
     const installCommand = runCli(
       ["install", "command", "release-note@0.1.0"],
@@ -3182,6 +3321,93 @@ async function createSkillRemote(
   for (const skill of skills) {
     runGit(["tag", `skill/${skill.name}@${skill.version}`], seedDir);
   }
+  runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
+  runGit(["remote", "add", "origin", remoteDir], seedDir);
+  runGit(["push", "-u", "origin", "main"], seedDir);
+  runGit(["push", "--tags"], seedDir);
+
+  return remoteDir;
+}
+
+async function createCopilotResourceRemote(label: string): Promise<string> {
+  const seedDir = path.join(tmpRoot, `${label}-seed`);
+  const remoteDir = path.join(tmpRoot, `${label}.git`);
+  const ruleDir = path.join(seedDir, "rules", "copilot-rule");
+  const skillDir = path.join(seedDir, "skills", "copilot-skill");
+
+  await fs.mkdir(ruleDir, { recursive: true });
+  await fs.mkdir(skillDir, { recursive: true });
+  await fs.mkdir(remoteDir, { recursive: true });
+
+  await fs.writeFile(
+    path.join(ruleDir, "himan.yaml"),
+    YAML.stringify({
+      name: "copilot-rule",
+      type: "rule",
+      version: "1.0.0",
+      entry: "content.md",
+      description: "copilot test rule",
+      agents: ["copilot"],
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(ruleDir, "content.md"),
+    "Copilot rule instructions.\n",
+    "utf8",
+  );
+
+  await fs.writeFile(
+    path.join(skillDir, "himan.yaml"),
+    YAML.stringify({
+      name: "copilot-skill",
+      type: "skill",
+      version: "1.0.0",
+      entry: "SKILL.md",
+      description: "copilot test skill",
+      agents: ["copilot"],
+      analysis: {
+        dependencies: {
+          skills: [],
+          scripts: [],
+          mcpTools: [],
+        },
+      },
+    }),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(skillDir, "SKILL.md"),
+    "---\nname: copilot-skill\ndescription: copilot test skill\n---\n# copilot-skill\n",
+    "utf8",
+  );
+
+  runGit(["init", "--initial-branch=main"], seedDir);
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "add",
+      ".",
+    ],
+    seedDir,
+  );
+  runGit(
+    [
+      "-c",
+      "user.name=Himan Bot",
+      "-c",
+      "user.email=himan@example.com",
+      "commit",
+      "-m",
+      `Add ${label} copilot fixtures`,
+    ],
+    seedDir,
+  );
+  runGit(["tag", "rule/copilot-rule@1.0.0"], seedDir);
+  runGit(["tag", "skill/copilot-skill@1.0.0"], seedDir);
   runGit(["init", "--bare", "--initial-branch=main"], remoteDir);
   runGit(["remote", "add", "origin", remoteDir], seedDir);
   runGit(["push", "-u", "origin", "main"], seedDir);

@@ -72,6 +72,7 @@ There is no HTTP API. The CLI works with Git and filesystem state:
 - Documentation-only changes can usually be validated by inspection.
 - TypeScript changes should run `pnpm run typecheck`; broader or release-sensitive changes should run `pnpm run verify`.
 - CLI behavior changes should include or update Vitest coverage and run `pnpm test`.
+- User-visible default skill set changes in this repository (for example updates to `.agents/skills/` entries tracked by `himan.lock`) should be recorded in `CHANGELOG.md` under `[Unreleased]`.
 - Release work should use the package scripts rather than raw publish commands.
 
 ## Agent-Specific Notes

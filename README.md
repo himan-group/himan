@@ -22,7 +22,7 @@
 
 ## 安装
 
-要求 Node.js `>=22 <23` 和 Git。
+要求 Node.js `>=20 <23 || >=24` 和 Git。
 
 ```bash
 npm install -g @hi-man/himan
