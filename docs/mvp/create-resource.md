@@ -25,7 +25,7 @@ himan create <type> <name> [options]
 **常用选项：**
 
 - `--description`：描述
-- `--agent`：目标 Agent，逗号分隔；未指定时使用当前项目默认 agent、全局默认 agent，最终回退到 `cursor`
+- `--agent`：目标 Agent，逗号分隔；未指定时使用当前项目默认 agent、全局默认 agent，最终回退到 `codex`
 - `--entry`：入口文件名（各类型有默认值）
 - `--template`：模板名；MVP 仅内置 **basic**，其它名称会报错
 - `--force`：目录已存在时覆盖

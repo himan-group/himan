@@ -75,7 +75,7 @@
 - `himan agent use <agent[,agent]>` 设置当前项目默认 agent；加 `-g` / `--global` 设置全局默认 agent。
 - `himan agent current` 查看当前项目、全局和最终生效的默认 agent。
 - `himan agent clear` 清除默认 agent 配置；默认清除当前项目，加 `-g` / `--global` 清除全局配置。
-- 默认 agent 解析顺序：显式 `--agent` > 当前项目配置 > 全局配置 > 资源 metadata > `cursor`。
+- 默认 agent 解析顺序：显式 `--agent` > 当前项目配置 > 全局配置 > 资源 metadata > `codex`。
 
 ---
 

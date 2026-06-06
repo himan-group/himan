@@ -71,7 +71,7 @@
 - 命令层支持 `agent list|use|current|clear`
 - 当前项目默认 agent 写入 `.himan/config.json`
 - 全局默认 agent 写入 `~/.himan/config.json`
-- 默认 agent 生效顺序：显式 `--agent` > 当前项目配置 > 全局配置 > 资源 metadata > `cursor`
+- 默认 agent 生效顺序：显式 `--agent` > 当前项目配置 > 全局配置 > 资源 metadata > `codex`
 
 ---
 

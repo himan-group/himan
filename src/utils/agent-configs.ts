@@ -37,7 +37,7 @@ const AGENT_CONFIGS = [
 type AgentConfig = (typeof AGENT_CONFIGS)[number];
 type SupportedAgent = AgentConfig["name"];
 
-const DEFAULT_AGENT: SupportedAgent = "cursor";
+const DEFAULT_AGENT: SupportedAgent = "codex";
 const AGENT_ALIASES = buildAgentAliases();
 
 function getTypeDir(type: ResourceType): string {
