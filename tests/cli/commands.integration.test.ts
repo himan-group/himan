@@ -26,6 +26,12 @@ beforeAll(async () => {
   seedRepoDir = path.join(tmpRoot, "seed-remote");
 
   await fs.mkdir(homeDir, { recursive: true });
+  await fs.mkdir(path.join(homeDir, ".himan"), { recursive: true });
+  await fs.writeFile(
+    path.join(homeDir, ".himan", "config.json"),
+    JSON.stringify({ agents: ["cursor"] }),
+    "utf8",
+  );
   await fs.mkdir(projectDir, { recursive: true });
   await fs.mkdir(seedRepoDir, { recursive: true });
   await fs.mkdir(mockedRemoteDir, { recursive: true });
@@ -469,7 +475,7 @@ describe("CLI commands with external git source", () => {
     );
 
     const createPublish = runCli(
-      ["create", "rule", "team-publish"],
+      ["create", "rule", "team-publish", "--agent", "cursor"],
       aliasProjectDir,
       aliasHomeDir,
     );
@@ -713,12 +719,12 @@ describe("CLI commands with external git source", () => {
     await expect(fs.access(path.join(projectDir, ".claude", "commands", "sync-docs", "content.md"))).resolves
       .toBeUndefined();
 
-    const createAgain = runCli(["create", "command", "sync-docs"], projectDir, homeDir);
+    const createAgain = runCli(["create", "command", "sync-docs", "--agent", "cursor"], projectDir, homeDir);
     expect(createAgain.status).toBe(1);
     expect(createAgain.stderr).toContain("Resource already exists");
 
     const createAgainJson = runCli(
-      ["create", "command", "sync-docs", "--json"],
+      ["create", "command", "sync-docs", "--agent", "cursor", "--json"],
       projectDir,
       homeDir,
     );
@@ -732,7 +738,7 @@ describe("CLI commands with external git source", () => {
     expect(errorPayload.error.message).toContain("Resource already exists");
 
     const createForce = runCli(
-      ["create", "command", "sync-docs", "--force"],
+      ["create", "command", "sync-docs", "--force", "--agent", "cursor"],
       projectDir,
       homeDir,
     );
@@ -743,7 +749,7 @@ describe("CLI commands with external git source", () => {
 
   it("supports dry-run for skill create", async () => {
     const dryRun = runCli(
-      ["create", "skill", "bug-analysis", "--dry-run", "--json"],
+      ["create", "skill", "bug-analysis", "--dry-run", "--agent", "cursor", "--json"],
       projectDir,
       homeDir,
     );
@@ -753,7 +759,7 @@ describe("CLI commands with external git source", () => {
 
     await expect(fs.access(path.join(projectDir, ".cursor", "skills", "bug-analysis"))).rejects.toThrow();
 
-    const createSkill = runCli(["create", "skill", "bug-analysis"], projectDir, homeDir);
+    const createSkill = runCli(["create", "skill", "bug-analysis", "--agent", "cursor"], projectDir, homeDir);
     expect(createSkill.status).toBe(0);
 
     await expect(fs.access(path.join(projectDir, ".cursor", "skills", "bug-analysis", "SKILL.md"))).resolves.toBeUndefined();
@@ -883,6 +889,8 @@ describe("CLI commands with external git source", () => {
         "release-note",
         "--description",
         "release note command",
+        "--agent",
+        "cursor",
       ],
       projectDir,
       homeDir,
@@ -963,7 +971,7 @@ describe("CLI commands with external git source", () => {
 
   it("publishes skill create artifact without dev workflow", async () => {
     const createResult = runCli(
-      ["create", "skill", "risk-check", "--description", "risk check skill"],
+      ["create", "skill", "risk-check", "--description", "risk check skill", "--agent", "cursor"],
       projectDir,
       homeDir,
     );
@@ -1239,7 +1247,7 @@ describe("CLI commands with external git source", () => {
 
   it("supports install and dev for command and skill", async () => {
     const installCommand = runCli(
-      ["install", "command", "release-note@0.1.0"],
+      ["install", "command", "release-note@0.1.0", "--agent", "cursor"],
       projectDir,
       homeDir,
     );
@@ -1268,7 +1276,7 @@ describe("CLI commands with external git source", () => {
       fs.access(path.join(projectDir, ".himan", "dev", "command", "release-note")),
     ).rejects.toThrow();
 
-    const installSkill = runCli(["install", "skill", "risk-check@0.0.1"], projectDir, homeDir);
+    const installSkill = runCli(["install", "skill", "risk-check@0.0.1", "--agent", "cursor"], projectDir, homeDir);
     expect(installSkill.status).toBe(0);
     expect(installSkill.stdout).toContain("Installed skill/risk-check@0.0.1");
 

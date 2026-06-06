@@ -20,14 +20,14 @@ describe("agent configs", () => {
     expect(normalizeAgent("unknown")).toBeUndefined();
   });
 
-  it("deduplicates supported agents and defaults to cursor", () => {
+  it("deduplicates supported agents and defaults to codex", () => {
     expect(normalizeAgents(["codex", "CODEX", "claude"])).toEqual([
       "codex",
       "claude-code",
     ]);
     expect(normalizeAgents(["copilot", "github-copilot"])).toEqual(["copilot"]);
-    expect(normalizeAgents(["unknown"])).toEqual(["cursor"]);
-    expect(normalizeAgents()).toEqual(["cursor"]);
+    expect(normalizeAgents(["unknown"])).toEqual(["codex"]);
+    expect(normalizeAgents()).toEqual(["codex"]);
   });
 
   it("builds project resource paths from agent config", () => {

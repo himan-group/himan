@@ -257,7 +257,7 @@ export class GitSourceAdapter implements ResourceSourceAdapter {
       ? options.agents
       : type === "config"
         ? ["codex"]
-        : ["cursor"];
+        : ["codex"];
     const resourceExists = await this.exists(resourceDir);
 
     if (resourceExists && !options.force) {

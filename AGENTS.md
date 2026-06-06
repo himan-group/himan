@@ -37,7 +37,7 @@ The package is ESM with `moduleResolution: NodeNext`, so TypeScript source impor
 - Preserve the CLI error pattern: business failures should use `HimanError` with `errorCodes`; command actions should run through `runAction()`.
 - Do not introduce new request layers, state systems, or command frameworks unless the existing architecture changes intentionally.
 - Keep resource type handling aligned with `rule`, `command`, `skill`, and Codex-specific `config`.
-- Default agent resolution is project config, then global config, then resource metadata or `cursor`.
+- Default agent resolution is project config, then global config, then resource metadata or `codex`.
 - Treat Registry source behavior as reserved unless the task explicitly implements it.
 
 ## Entry Points And Routing

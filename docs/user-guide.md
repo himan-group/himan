@@ -98,7 +98,7 @@ source 的配置名是本地内部 key，别名是日常命令使用的稳定引
 - `openclaw`
 - `copilot`
 
-默认 agent 解析顺序：当前项目 `.himan/config.json`、全局 `~/.himan/config.json`、资源 metadata、内置默认 `cursor`。
+默认 agent 解析顺序：当前项目 `.himan/config.json`、全局 `~/.himan/config.json`、资源 metadata、内置默认 `codex`。
 
 ```bash
 himan agent use codex

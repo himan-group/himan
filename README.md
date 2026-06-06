@@ -146,6 +146,7 @@ himan-tracker server start --open
 
 ## 文档
 
+- [产品 Roadmap](./docs/roadmap.md)：当前 `P0 / P1 / P2` 优先级与近期排期方向。
 - [用户指南](./docs/user-guide.md)：概念、source 结构、安装目标、lock、发布、归档和 FAQ。
 - [命令参考](./docs/command-reference.md)：完整命令速查。
 - [错误码](./docs/error-codes.md)：稳定错误码和处理建议。
