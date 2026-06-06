@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-06-06
+
 ### Changed
 
 - Changed the built-in default agent from `cursor` to `codex`. When no agent is configured (project, global, or resource metadata), `himan` now resolves to `codex` instead of `cursor`. This affects `create`, `install`, and other commands that rely on default agent resolution.
