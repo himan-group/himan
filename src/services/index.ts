@@ -2541,13 +2541,19 @@ export class ServiceFactory {
     };
   }
 
-  private resolveVersion(history: VersionInfo[], version?: string): string {
+  private resolveVersion(
+    history: VersionInfo[],
+    type: ResourceType,
+    name: string,
+    version?: string,
+  ): string {
     if (!version) return history[0].version;
     const found = history.find((item) => item.version === version);
     if (!found) {
+      const available = history.map((item) => item.version).join(", ");
       throw new HimanError(
         errorCodes.VERSION_NOT_FOUND,
-        `Version not found: ${version}`,
+        `Version not found: ${type}/${name}@${version}. Available versions: ${available || "(none)"}`,
       );
     }
     return found.version;
@@ -2567,7 +2573,7 @@ export class ServiceFactory {
       );
     }
 
-    const resolvedVersion = this.resolveVersion(history, version);
+    const resolvedVersion = this.resolveVersion(history, type, name, version);
     const storePath = this.getStorePath(type, name, resolvedVersion);
     if (!(await this.exists(storePath))) {
       await source.pull(type, name, resolvedVersion, storePath);

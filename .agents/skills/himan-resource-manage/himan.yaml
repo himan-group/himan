@@ -1,6 +1,6 @@
 name: himan-resource-manage
 type: skill
-version: 0.0.2
+version: 0.0.1
 entry: SKILL.md
 description: Create, edit, validate, and publish Himan rule, command, or skill
   resources from project agent folders. Use when Codex needs to manage Himan
