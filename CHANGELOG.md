@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [0.8.8] - 2026-06-09
+
+### Changed
+
+- Changed default source from shopee to himan in `himan.lock`, and removed redundant `sources` block.
+- Changed `E_VERSION_NOT_FOUND` error message to include resource type, name, and all available versions, making install failures easier to diagnose.
+
 ## [0.8.7] - 2026-06-06
 
 ### Changed

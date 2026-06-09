@@ -363,21 +363,21 @@ describe("CLI commands with external git source", () => {
     expect(useByNameResult.stdout).toContain("Using source: himan (mirror)");
 
     const switchBack = runCli(
-      ["source", "use", "default", "--alias", "garena"],
+      ["source", "use", "default", "--alias", "home"],
       projectDir,
       homeDir,
     );
     expect(switchBack.status).toBe(0);
-    expect(switchBack.stdout).toContain("Using source: garena (default)");
+    expect(switchBack.stdout).toContain("Using source: home (default)");
 
     const renameCurrent = runCli(
-      ["source", "rename", "default", "shopee", "--alias", "shopee"],
+      ["source", "rename", "default", "upstream", "--alias", "upstream"],
       projectDir,
       homeDir,
     );
     expect(renameCurrent.status).toBe(0);
     expect(renameCurrent.stdout).toContain(
-      "Renamed source default to shopee as shopee (current)",
+      "Renamed source default to upstream as upstream (current)",
     );
 
     const useOldName = runCli(["source", "use", "default"], projectDir, homeDir);
@@ -393,15 +393,15 @@ describe("CLI commands with external git source", () => {
     }>;
     expect(sourcesAfterUse).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "shopee", alias: "shopee", isDefault: true }),
+        expect.objectContaining({ name: "upstream", alias: "upstream", isDefault: true }),
         expect.objectContaining({ name: "mirror", alias: "himan", isDefault: false }),
       ]),
     );
     expect(sourcesAfterUse.some((source) => source.name === "default")).toBe(false);
 
-    const useRenamed = runCli(["source", "use", "shopee"], projectDir, homeDir);
+    const useRenamed = runCli(["source", "use", "upstream"], projectDir, homeDir);
     expect(useRenamed.status).toBe(0);
-    expect(useRenamed.stdout).toContain("Using source: shopee (shopee)");
+    expect(useRenamed.stdout).toContain("Using source: upstream (upstream)");
   });
 
   it("uses source aliases for explicit resource commands", async () => {
@@ -2942,7 +2942,7 @@ describe("CLI commands with external git source", () => {
         version: "1.2.3",
       },
     ]);
-    expect(runGitOutput(["tag", "--list", "rule/clone-me@1.2.3"], cloneTargetRemote)).toBe(
+    expect(runGitOutput(["-c", "safe.bareRepository=all", "tag", "--list", "rule/clone-me@1.2.3"], cloneTargetRemote)).toBe(
       "rule/clone-me@1.2.3",
     );
   });
@@ -3009,7 +3009,7 @@ describe("CLI commands with external git source", () => {
         version: "2.3.4",
       },
     ]);
-    expect(runGitOutput(["show", "main:rules/sync-me/content.md"], syncTargetRemote)).toContain(
+    expect(runGitOutput(["-c", "safe.bareRepository=all", "show", "main:rules/sync-me/content.md"], syncTargetRemote)).toContain(
       "Sync me content.",
     );
   });

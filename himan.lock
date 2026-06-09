@@ -1,20 +1,12 @@
 {
   "version": 1,
   "source": {
-    "name": "shopee",
+    "name": "himan",
     "type": "git",
-    "repo": "https://git.garena.com/detao.li/himan-resource.git",
-    "repoId": "https_git.garena.com_detao.li_himan-resource"
+    "repo": "https://github.com/himan-group/himan-resource.git",
+    "repoId": "https_github.com_himan-group_himan-resource"
   },
-  "sources": {
-    "himan": {
-      "name": "himan",
-      "type": "git",
-      "repo": "https://github.com/himan-group/himan-resource.git",
-      "repoId": "https_github.com_himan-group_himan-resource"
-    }
-  },
-  "updatedAt": "2026-05-30T03:13:39.810Z",
+  "updatedAt": "2026-06-09T08:42:14.299Z",
   "resources": [
     {
       "type": "skill",
@@ -24,8 +16,7 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T03:13:39.766Z",
-      "source": "himan"
+      "updatedAt": "2026-06-09T08:41:55.614Z"
     },
     {
       "type": "skill",
@@ -35,8 +26,7 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T03:13:39.793Z",
-      "source": "himan"
+      "updatedAt": "2026-06-09T08:41:55.644Z"
     },
     {
       "type": "skill",
@@ -46,19 +36,17 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T03:01:53.838Z",
-      "source": "himan"
+      "updatedAt": "2026-06-09T08:41:55.662Z"
     },
     {
       "type": "skill",
       "name": "common-project-blueprint",
       "version": "0.0.1",
-      "source": "himan",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T03:05:32.388Z"
+      "updatedAt": "2026-06-09T08:41:55.682Z"
     },
     {
       "type": "skill",
@@ -68,19 +56,17 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T03:13:39.808Z",
-      "source": "himan"
+      "updatedAt": "2026-06-09T08:41:55.701Z"
     },
     {
       "type": "skill",
       "name": "common-project-mvp",
       "version": "0.0.1",
-      "source": "himan",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T03:05:32.411Z"
+      "updatedAt": "2026-06-09T08:41:55.722Z"
     },
     {
       "type": "skill",
@@ -90,19 +76,17 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T02:52:53.754Z",
-      "source": "himan"
+      "updatedAt": "2026-06-09T08:41:55.740Z"
     },
     {
       "type": "skill",
       "name": "common-project-tech-design",
       "version": "0.0.1",
-      "source": "himan",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T03:05:32.412Z"
+      "updatedAt": "2026-06-09T08:41:55.760Z"
     },
     {
       "type": "skill",
@@ -112,19 +96,17 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-29T07:40:20.978Z",
-      "source": "himan"
+      "updatedAt": "2026-06-09T08:41:55.779Z"
     },
     {
       "type": "skill",
       "name": "common-sprint-autopilot",
       "version": "0.0.1",
-      "source": "himan",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T03:13:39.810Z"
+      "updatedAt": "2026-06-09T08:41:55.797Z"
     },
     {
       "type": "skill",
@@ -134,18 +116,17 @@
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-30T02:53:01.534Z",
-      "source": "himan"
+      "updatedAt": "2026-06-09T08:41:55.816Z"
     },
     {
       "type": "skill",
       "name": "himan-resource-manage",
-      "version": "0.0.2",
+      "version": "0.0.1",
       "agents": [
         "codex"
       ],
       "mode": "copy",
-      "updatedAt": "2026-05-29T07:41:14.440Z"
+      "updatedAt": "2026-06-09T08:42:14.299Z"
     },
     {
       "type": "skill",
