@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-25
+
 ### Added
 
 - Added `himan setup` and `himan system setup` as the environment setup wizard, replacing `himan init`; `himan init` remains as a legacy alias.

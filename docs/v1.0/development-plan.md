@@ -11,6 +11,7 @@
 - 阶段 3（`migrate`）：已实现（私有本地 source 落点），待审查。
 - 阶段 4（`cleanup`）：已实现（dry-run 预览 + 移入系统废纸篓），待审查。
 - 阶段 5（agent 落位引导）：已实现（`create` 落位指引 + placement 指南 + 审计标记语义），待审查。
+- 发布收尾：已完成（版本升至 1.0.0，`CHANGELOG.md` 归档为 `[1.0.0] - 2026-08-25`，`release:dry` 验证通过；实际 `npm publish` 由 CI 在 master 合并后执行）。
 
 ## 执行方式
 
