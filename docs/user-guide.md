@@ -90,6 +90,27 @@ source 的配置名是本地内部 key，别名是日常命令使用的稳定引
 
 无参数 `himan install` 会按 `himan.lock` 中记录的 source 恢复安装，不受当前 default source 切换影响。lock 的顶层 `source` 是默认 source；通过 `--source <alias>` 安装或发布到其他 source 时，lock 会在 `sources` 中记录额外 source，并让对应资源条目用 `source` 引用它。
 
+## 系统盘点（system audit）
+
+`himan system audit` 提供只读的机器级资源盘点，统一查看用户级（全局）agent 目录与当前项目的资源，并区分是否被 himan 管理：
+
+```bash
+himan system audit            # 统计视图（默认）
+himan system audit list       # 明细：scope/agent/type/name/version/status/mode/path
+himan system audit issues     # 只看异常，带 warn/error 级别
+himan system audit list --scope project --agent codex --json
+```
+
+资源分类：
+
+- **managed**：有中央安装登记（`~/.himan/installed.json`）或 `himan.lock` 登记，且内容与 store 一致。
+- **drifted**：有登记但文件被修改、删除或版本不对。
+- **unmanaged**：存在于 agent 目录但没有登记（影子资源）。
+- **redundant**：同名资源跨 agent / 跨 scope 重复或存在不同版本。
+- **orphan store cache**：`~/.himan/store` 中没有任何安装引用的版本缓存。
+
+`system doctor` 与 `system audit` 共用同一份 lock target 缺失检查；`system doctor` 关注环境健康，`system audit` 关注资源盘点与漂移/重复。
+
 ## Agent 与安装目标
 
 支持的 agent：

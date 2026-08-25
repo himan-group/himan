@@ -1,9 +1,11 @@
 import { GitSourceAdapter } from "../adapters/source/git-source-adapter.js";
 import { RegistrySourceAdapter } from "../adapters/source/registry-source-adapter.js";
+import { SystemAuditor } from "../adapters/audit/system-auditor.js";
 import type {
   ResourceSourceAdapter,
   SourceConfig,
 } from "../adapters/source/resource-source-adapter.js";
+import type { AuditResult } from "../domain/audit.js";
 import type { DoctorCheck, DoctorResult } from "../domain/doctor.js";
 import type {
   ArchiveOptions,
@@ -38,7 +40,13 @@ import {
   type LockSourceInfo,
   type ProjectLock,
 } from "../state/project-lock-store.js";
+import {
+  InstalledRegistryStore,
+  type InstallScope,
+  type InstalledRegistryEntry,
+} from "../state/installed-registry-store.js";
 import type { SourceState } from "../state/state-store.js";
+import { findMissingLockTargets } from "../utils/lock-target-check.js";
 import { PathResolver } from "../utils/path-resolver.js";
 import { toRepoId } from "../utils/repo-id.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
@@ -180,6 +188,7 @@ export class ServiceFactory {
   private readonly stateStore = new StateStore();
   private readonly projectConfigStore = new ProjectConfigStore();
   private readonly lockStore = new ProjectLockStore();
+  private readonly registryStore = new InstalledRegistryStore();
   private readonly paths = new PathResolver();
   private readonly versions = new VersionResolver();
 
@@ -582,6 +591,21 @@ export class ServiceFactory {
     };
   }
 
+  async systemAudit(
+    options: { scope?: "global" | "project" | "all"; agent?: string } = {},
+  ): Promise<AuditResult> {
+    const auditor = new SystemAuditor({
+      registryStore: this.registryStore,
+      lockStore: this.lockStore,
+    });
+    return auditor.run({
+      projectDir: process.cwd(),
+      homeDir: this.paths.getHomeDir(),
+      scope: options.scope ?? "all",
+      agent: options.agent,
+    });
+  }
+
   async clearAgents(
     scope: "global" | "project",
     projectDir: string,
@@ -803,24 +827,7 @@ export class ServiceFactory {
       };
     }
 
-    const missing: Array<{ resource: string; path: string }> = [];
-    for (const resource of lock.resources) {
-      const agents = normalizeAgents(resource.agents);
-      const targets = getProjectResourcePaths(
-        projectDir,
-        resource.type,
-        resource.name,
-        agents,
-      );
-      for (const targetPath of targets) {
-        if (!(await this.exists(targetPath))) {
-          missing.push({
-            resource: `${resource.type}/${resource.name}@${resource.version}`,
-            path: targetPath,
-          });
-        }
-      }
-    }
+    const missing = await findMissingLockTargets(projectDir, lock);
 
     if (missing.length > 0) {
       return {
@@ -1171,6 +1178,7 @@ export class ServiceFactory {
       await fs.rm(linkPath, { recursive: true, force: true });
     }
     await this.lockStore.removeResource(projectDir, { type, name });
+    await this.registryStore.remove({ scope: "project", projectDir, type, name });
     if (type === "config") {
       await this.reactivateProjectConfig(projectDir);
     }
@@ -1207,6 +1215,7 @@ export class ServiceFactory {
     for (const linkPath of globalTarget.linkPaths) {
       await fs.rm(linkPath, { recursive: true, force: true });
     }
+    await this.registryStore.remove({ scope: "global", type, name });
     if (type === "config") {
       await fs.rm(this.getCodexActiveConfigPath(this.paths.getHomeDir()), {
         force: true,
@@ -1345,6 +1354,17 @@ export class ServiceFactory {
         mode: installMode,
       });
     }
+    await this.registerInstalledTargets({
+      scope: installScope,
+      projectDir,
+      type,
+      name,
+      version: nextVersion,
+      source: lockResourceSource ?? sourceInfo?.name ?? sourceInfo?.repo,
+      agents: nextAgents,
+      mode: installMode,
+      linkPaths,
+    });
     this.reportPublishProgress(options, "cleanup", `Cleaning up legacy dev copy if present.`);
     await fs.rm(this.getProjectDevPath(projectDir, type, name), {
       recursive: true,
@@ -2024,6 +2044,17 @@ export class ServiceFactory {
         mode: prepared.mode,
       });
     }
+    await this.registerInstalledTargets({
+      scope: prepared.scope,
+      projectDir,
+      type: prepared.type,
+      name: prepared.name,
+      version: prepared.version,
+      source: lockResourceSource ?? sourceInfo?.name ?? sourceInfo?.repo,
+      agents: prepared.effectiveTargets,
+      mode: prepared.mode,
+      linkPaths: prepared.linkPaths,
+    });
 
     return {
       type: prepared.type,
@@ -2634,6 +2665,35 @@ export class ServiceFactory {
       return;
     }
     await fs.symlink(sourcePath, targetPath, "dir");
+  }
+
+  private async registerInstalledTargets(params: {
+    scope: InstallScope;
+    projectDir: string;
+    type: ResourceType;
+    name: string;
+    version: string;
+    source?: string;
+    agents: string[];
+    mode: InstallMode;
+    linkPaths: string[];
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    const entries: InstalledRegistryEntry[] = params.agents.map((agent, index) => ({
+      scope: params.scope,
+      projectDir: params.scope === "project" ? params.projectDir : undefined,
+      agent,
+      type: params.type,
+      name: params.name,
+      version: params.version,
+      source: params.source,
+      mode: params.mode,
+      targetPath:
+        params.linkPaths[index]
+        ?? params.linkPaths[params.linkPaths.length - 1],
+      updatedAt: now,
+    }));
+    await this.registryStore.upsertMany(entries);
   }
 
   private getDefaultAgentsForType(type: ResourceType): string[] {

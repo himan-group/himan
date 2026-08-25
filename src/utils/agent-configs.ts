@@ -58,8 +58,10 @@ function getAgentBaseDir(agent: SupportedAgent, type?: ResourceType): string {
   return config.baseDir;
 }
 
-function getAgentBaseDirCandidates(agent: SupportedAgent): string[] {
-  const config = getAgentConfig(agent);
+export function getAgentBaseDirCandidates(agent: string): string[] {
+  const normalized = normalizeAgent(agent);
+  if (!normalized) return [];
+  const config = getAgentConfig(normalized);
   const candidates = [config.baseDir, ...(config.legacyBaseDirs ?? [])];
   return [...new Set(candidates)];
 }

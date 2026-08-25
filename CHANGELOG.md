@@ -10,6 +10,8 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 - Added `himan setup` and `himan system setup` as the environment setup wizard, replacing `himan init`; `himan init` remains as a legacy alias.
 - Added the `system` command group with `system setup` and `system doctor`.
+- Added the machine-level install registry at `~/.himan/installed.json`, recording project and global installs so global resources can be listed and versioned.
+- Added `himan system audit stats|list|issues` for machine-level resource inventory with managed / unmanaged / drifted classification, duplicate and version-drift detection, lock target checks, and orphan store cache reporting.
 
 ### Changed
 

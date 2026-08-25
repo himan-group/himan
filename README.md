@@ -18,7 +18,7 @@
 - **不绑定单一 agent**：同一套资产可安装到 Cursor、Claude Code、Codex、OpenClaw、Copilot，不受某个 agent 目录结构限制。
 - **安装结果可复现**：项目内写入 `himan.lock`，记录默认 source、可选额外 source、精确版本、目标 agent 和安装模式；换机器后 `himan install` 即可恢复。
 - **在真实项目中开发和验证**：`create` / `dev` 直接在当前项目的 agent 目录工作，验证后用 `publish` 回写 source、发布新版本并更新文档索引。
-- **适合团队治理**：支持多 source、别名、归档、恢复、批量发布、递归安装 skill 依赖，以及 `doctor` 本地健康检查。
+- **适合团队治理**：支持多 source、别名、归档、恢复、批量发布、递归安装 skill 依赖，`doctor` 本地健康检查，以及 `system audit` 机器级资源盘点（区分托管/未托管/漂移，识别重复与孤儿缓存）。
 
 ## 安装
 

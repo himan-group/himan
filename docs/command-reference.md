@@ -26,8 +26,9 @@ himan agent --help
 | --- | --- |
 | `himan system setup [git_repo] [--agent a,b] [--install refs] [--mode link\|copy] [--json]` | 本机环境设置向导；顶层 `himan setup` 等价，`himan init` 为 legacy 别名。TTY 下缺少参数时逐项提示并在执行前确认；非 TTY 缺失必填参数时报错；`--json` 不进入交互。 |
 | `himan system doctor [--json]` | 检查 Himan 运行时与项目健康；顶层 `himan doctor` 等价。 |
+| `himan system audit [stats\|list\|issues] [--scope global\|project\|all] [--agent agent] [--json]` | 机器级资源盘点：`stats` 输出统计（不带子命令时默认）、`list` 输出每条资源明细、`issues` 只列异常（warn/error 级别，存在 error 时退出码非 0）。扫描用户级 agent 目录与当前项目，区分 managed / unmanaged / drifted，并检查重复、版本漂移、lock target 缺失、store 孤儿缓存。 |
 
-`system audit` / `system migrate` / `system cleanup` 属于规划中的系统盘点能力，尚未实现。
+`system migrate` / `system cleanup` 属于规划中的系统治理能力，尚未实现。
 
 ## Repo（原 Source）
 

@@ -4,6 +4,12 @@
 > 状态：进行中（阶段 1 已开始）
 > 当前包版本：0.8.8，目标发布版本：1.0.0
 
+## 实现状态
+
+- 阶段 1（CLI 分组重构）：已完成并提交（`refactor(cli): regroup source into repo and add system group`）。
+- 阶段 2.0（中央安装登记）与阶段 2（`system audit`）：已实现，待审查。
+- 阶段 3（`migrate`）、阶段 4（`cleanup`）、阶段 5（agent 落位引导）：未开始。
+
 ## 执行方式
 
 - 每个阶段独立分支 + PR，跑绿 `pnpm run verify` 后交付审查。

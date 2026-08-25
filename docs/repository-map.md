@@ -51,7 +51,7 @@ Runtime agent configuration commands:
 - Top-level `setup` (legacy alias `init`), including optional `--agent`, `--install type/name[@version],...`, `--mode`, and `--json` quick-start setup; `himan system setup` is the grouped form
 - Top-level `doctor [--json]`, equivalent to `himan system doctor`
 - `repo add|alias|rename|use|list|init-docs|clone|sync`, with `source` kept as a compatibility alias; `repo rename` changes the local config name and may also update alias with `--alias`, including for the current source; `repo use` switches by source name or alias, and can set the target alias with `--alias`; old current sources without aliases must still be aliased before switching away; `repo list` marks the selected source as `(current)`
-- `system setup|doctor`; the `system` group will later carry `audit`, `migrate`, and `cleanup`
+- `system setup|doctor|audit stats|list|issues`; `migrate` and `cleanup` are planned for the `system` group
 - `resource list|history|create|comment|dev|publish|archive|restore|rename`; `rename` is currently marked not recommended; `resource list` without a type groups all active source resources, sorts resources within each category by descending `comment.score` with unrated resources last, `--source` selects a source alias for source lists, `--brief` hides descriptions, `--comment` shows comment text, `--archived` lists archived resources, and `--include-archived` includes archived resources; `resource list --installed` is deprecated in favor of `project list`; `resource publish` can use `--source <alias>`
 - `project list|install|uninstall`; direct installs require `--include-archived` for archived resources, can use `--source <alias>` for explicit source selection, and support `install skill <name[@version]> -r [--depth <n>]` for skill dependency installs declared in `himan.yaml` (default depth `1` when `-r/--recursive` is present); lock-file installs can restore archived resources already recorded in `himan.lock`; `uninstall -g` removes user-level global install targets without changing project lock
 - `agent list|use|current|clear`
@@ -66,6 +66,7 @@ The project has no HTTP API. It integrates with local Git repositories and files
 - Global state lives under `~/.himan`.
 - Source repositories are cached under `~/.himan/repos/<repoId>`.
 - Versioned installed resources are stored under `~/.himan/store/<type>/<name>/<version>/`.
+- Machine-level install registry lives at `~/.himan/installed.json`; it records project and global installs (scope, projectDir, agent, type/name/version, source, mode, targetPath, updatedAt) and is the authoritative source for `system audit` managed/drifted classification and global versions. Project `himan.lock` remains the commit-friendly reproducible project manifest.
 - Source config is stored in `~/.himan/config.json`; source item keys are local config names, while optional `alias` values are the user-facing references accepted by `source use` and resource `--source` options.
 - Global default agents are stored in `~/.himan/config.json`.
 - Resource list cache is stored in `~/.himan/index.json`.

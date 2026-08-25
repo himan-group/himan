@@ -3571,3 +3571,178 @@ describe("CLI command group refactor (phase 1)", () => {
     });
   });
 });
+
+describe("system audit (phase 2)", () => {
+  it("writes the install registry on install and removes entries on uninstall", async () => {
+    const auditHome = path.join(tmpRoot, "phase2-registry-home");
+    const auditProject = path.join(tmpRoot, "phase2-registry-project");
+    const remote = await createSingleRuleRemote(
+      "phase2-registry",
+      "audit-rule",
+      "1.0.0",
+      "audit rule",
+      "from audit source",
+    );
+    await fs.mkdir(auditHome, { recursive: true });
+    await fs.mkdir(auditProject, { recursive: true });
+    const auditProjectReal = await fs.realpath(auditProject);
+
+    expect(runCli(["init", remote], auditProject, auditHome).status).toBe(0);
+    const installResult = runCli(
+      ["install", "rule", "audit-rule@1.0.0", "--agent", "codex"],
+      auditProject,
+      auditHome,
+    );
+    expect(installResult.status).toBe(0);
+
+    const registryPath = path.join(auditHome, ".himan", "installed.json");
+    const registry = JSON.parse(
+      await fs.readFile(registryPath, "utf8"),
+    ) as { entries: Array<Record<string, unknown>> };
+    expect(registry.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "project",
+          projectDir: auditProjectReal,
+          agent: "codex",
+          type: "rule",
+          name: "audit-rule",
+          version: "1.0.0",
+          mode: "copy",
+          targetPath: path.join(auditProjectReal, ".codex", "rules", "audit-rule"),
+        }),
+      ]),
+    );
+
+    expect(
+      runCli(["uninstall", "rule", "audit-rule"], auditProject, auditHome).status,
+    ).toBe(0);
+    const afterUninstall = JSON.parse(
+      await fs.readFile(registryPath, "utf8"),
+    ) as { entries: Array<{ name: string }> };
+    expect(afterUninstall.entries.some((entry) => entry.name === "audit-rule")).toBe(false);
+  });
+
+  it("lists unmanaged resources and defaults to stats without a subcommand", async () => {
+    const auditHome = path.join(tmpRoot, "phase2-audit-home");
+    const auditProject = path.join(tmpRoot, "phase2-audit-project");
+    await fs.mkdir(auditHome, { recursive: true });
+    await fs.mkdir(auditProject, { recursive: true });
+    await fs.mkdir(path.join(auditProject, ".agents", "skills", "shadow-skill"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(auditProject, ".agents", "skills", "shadow-skill", "SKILL.md"),
+      "# shadow-skill\n",
+      "utf8",
+    );
+
+    const listResult = runCli(
+      ["system", "audit", "list", "--json"],
+      auditProject,
+      auditHome,
+    );
+    expect(listResult.status).toBe(0);
+    const resources = JSON.parse(listResult.stdout) as Array<{
+      name: string;
+      status: string;
+    }>;
+    expect(resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "project",
+          agent: "codex",
+          type: "skill",
+          name: "shadow-skill",
+          status: "unmanaged",
+        }),
+      ]),
+    );
+
+    const defaultResult = runCli(
+      ["system", "audit", "--json"],
+      auditProject,
+      auditHome,
+    );
+    expect(defaultResult.status).toBe(0);
+    const stats = JSON.parse(defaultResult.stdout) as {
+      totals: { resources: number; unmanaged: number };
+    };
+    expect(stats.totals.resources).toBeGreaterThanOrEqual(1);
+    expect(stats.totals.unmanaged).toBeGreaterThanOrEqual(1);
+
+    const issuesResult = runCli(
+      ["system", "audit", "issues", "--json"],
+      auditProject,
+      auditHome,
+    );
+    expect(issuesResult.status).toBe(0);
+    const issues = JSON.parse(issuesResult.stdout) as Array<{
+      category: string;
+      level: string;
+    }>;
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: "unmanaged", level: "warn" }),
+      ]),
+    );
+  });
+
+  it("exits non-zero when issues include error-level lock targets", async () => {
+    const auditHome = path.join(tmpRoot, "phase2-issues-home");
+    const auditProject = path.join(tmpRoot, "phase2-issues-project");
+    await fs.mkdir(auditHome, { recursive: true });
+    await fs.mkdir(auditProject, { recursive: true });
+    await fs.writeFile(
+      path.join(auditProject, "himan.lock"),
+      JSON.stringify({
+        version: 1,
+        source: { type: "git", repo: "https://example.com/source.git" },
+        updatedAt: "2026-08-25T00:00:00.000Z",
+        resources: [
+          {
+            type: "rule",
+            name: "ghost-rule",
+            version: "1.0.0",
+            agents: ["codex"],
+            mode: "copy",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const result = runCli(
+      ["system", "audit", "issues", "--json"],
+      auditProject,
+      auditHome,
+    );
+    expect(result.status).toBe(1);
+    const issues = JSON.parse(result.stdout) as Array<{
+      category: string;
+      level: string;
+    }>;
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: "lock-missing-target",
+          level: "error",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects an invalid scope option", () => {
+    const result = runCli(
+      ["system", "audit", "stats", "--scope", "workspace", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(1);
+    const payload = JSON.parse(result.stderr) as {
+      error: { code: string; message: string };
+    };
+    expect(payload.error.code).toBe("E_CLI_USAGE");
+    expect(payload.error.message).toContain("Invalid scope");
+  });
+});

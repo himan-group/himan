@@ -6,6 +6,7 @@ import { registerProjectCommands } from "./project-commands.js";
 import { registerResourceCommands } from "./resource-commands.js";
 import { registerSetupCommand } from "./setup-command.js";
 import { registerSourceCommands } from "./source-commands.js";
+import { registerAuditCommands } from "./system-commands.js";
 import { createBaseProgram } from "./shared.js";
 
 export function buildCli(): Command {
@@ -30,6 +31,7 @@ export function buildCli(): Command {
     .description("Manage Himan environment setup, health, and audits");
   registerSetupCommand(systemCmd, services);
   registerDoctorCommand(systemCmd, services);
+  registerAuditCommands(systemCmd, services);
 
   const resourceCmd = program
     .command("resource")
@@ -84,7 +86,7 @@ Command groups:
   agent    Default agent configuration
            agent list, agent use, agent current, agent clear
   system   Himan environment setup and health checks
-           system setup, system doctor
+           system setup, system doctor, system audit stats|list|issues
   setup    Environment setup wizard (top-level alias; legacy alias: init)
   doctor   Runtime and project health checks
            doctor (top-level alias of system doctor)
