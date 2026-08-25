@@ -28,8 +28,8 @@ himan agent --help
 | `himan system doctor [--json]` | 检查 Himan 运行时与项目健康；顶层 `himan doctor` 等价。 |
 | `himan system audit [stats\|list\|issues] [--scope global\|project\|all] [--agent agent] [--json]` | 机器级资源盘点：`stats` 输出统计（不带子命令时默认）、`list` 输出每条资源明细、`issues` 只列异常（warn/error 级别，存在 error 时退出码非 0）。扫描用户级 agent 目录与当前项目，区分 managed / unmanaged / drifted，并检查重复、版本漂移、lock target 缺失、store 孤儿缓存。 |
 | `himan system migrate <path> [--type rule\|command\|skill\|config] [--agent a,b] [--dry-run] [--json]` | 把未托管的本地资源目录迁移为 himan 托管：识别类型、生成 `himan.yaml`（含静态分析）、写入私有本地 source 并同步 store；原目录保留不动。迁移后可 `himan install <type> <name> --source local`。 |
+| `himan system cleanup [--scope global\|project\|all] [--agent agent] [--dry-run] [--yes] [--json]` | 按 audit 结果安全清理：默认 dry-run 预览；传 `--yes` 把孤儿 store 缓存与未托管（影子）资源移入系统废纸篓而非硬删。`--scope project` 只处理项目内未托管资源。 |
 
-`system cleanup` 属于规划中的系统治理能力，尚未实现。
 
 ## Repo（原 Source）
 

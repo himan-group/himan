@@ -128,6 +128,23 @@ himan system migrate .cursor/rules/code-review --dry-run
 
 迁移后资源可通过 `himan resource list --source local` 查看，并可安装：`himan install <type> <name> --source local`。`--dry-run` 只预览不写盘。本地 source 不提供 publish / archive 等需要 Git 的能力，正式发布请把资源迁到 Git source。
 
+## 安全清理（system cleanup）
+
+`himan system cleanup` 基于 `system audit` 的结果，把可安全清理的冗余项移入系统废纸篓（不是硬删除）：
+
+```bash
+himan system cleanup            # 默认 dry-run 预览
+himan system cleanup --yes      # 确认后移入废纸篓
+himan system cleanup --scope project
+```
+
+第一版清理对象：
+
+- **孤儿 store 缓存**（`~/.himan/store/` 中无任何安装引用的版本目录；可随时从 source 重新拉取）；
+- **未托管（影子）资源**：agent 目录里没有登记的资源目录；保留原目录有需要时请先用 `himan system migrate`，确认不需要再清理。
+
+重复安装与版本漂移属于已安装资源，请用 `himan uninstall` 或 `himan install <type> <name>@<版本>` 收敛，cleanup 第一版不会自动删除它们。
+
 ## Agent 与安装目标
 
 支持的 agent：

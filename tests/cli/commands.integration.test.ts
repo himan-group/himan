@@ -3920,3 +3920,91 @@ describe("system migrate (phase 3)", () => {
     expect(payload.error.message).toContain("Migrate path not found");
   });
 });
+
+describe("system cleanup (phase 4)", () => {
+  async function seedCleanupEnv(label: string): Promise<{
+    home: string;
+    project: string;
+  }> {
+    const home = path.join(tmpRoot, `${label}-home`);
+    const project = path.join(tmpRoot, `${label}-project`);
+    await fs.mkdir(home, { recursive: true });
+    await fs.mkdir(project, { recursive: true });
+    await fs.mkdir(path.join(project, ".agents", "skills", "shadow-skill"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(project, ".agents", "skills", "shadow-skill", "SKILL.md"),
+      "# shadow\n",
+      "utf8",
+    );
+    await fs.mkdir(
+      path.join(home, ".himan", "store", "skill", "old-skill", "0.1.0"),
+      { recursive: true },
+    );
+    await fs.writeFile(
+      path.join(home, ".himan", "store", "skill", "old-skill", "0.1.0", "SKILL.md"),
+      "# old\n",
+      "utf8",
+    );
+    return { home, project };
+  }
+
+  it("previews candidates without moving anything by default", async () => {
+    const { home, project } = await seedCleanupEnv("phase4-preview");
+
+    const result = runCli(["system", "cleanup", "--json"], project, home);
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      dryRun: boolean;
+      candidates: Array<{ category: string }>;
+    };
+    expect(payload.dryRun).toBe(true);
+    expect(payload.candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: "orphan-store-cache" }),
+        expect.objectContaining({ category: "unmanaged" }),
+      ]),
+    );
+    await expect(
+      fs.access(path.join(project, ".agents", "skills", "shadow-skill")),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(home, ".himan", "store", "skill", "old-skill", "0.1.0")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("moves candidates to the system trash with --yes", async () => {
+    const { home, project } = await seedCleanupEnv("phase4-execute");
+
+    const result = runCli(["system", "cleanup", "--yes", "--json"], project, home);
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      dryRun: boolean;
+      moved: Array<{ path: string; trashPath: string }>;
+    };
+    expect(payload.dryRun).toBe(false);
+    expect(payload.moved).toHaveLength(2);
+    for (const item of payload.moved) {
+      await expect(fs.access(item.path)).rejects.toThrow();
+      await expect(fs.access(item.trashPath)).resolves.toBeUndefined();
+    }
+  });
+
+  it("excludes orphan store cache for project scope", async () => {
+    const { home, project } = await seedCleanupEnv("phase4-scope");
+
+    const result = runCli(
+      ["system", "cleanup", "--scope", "project", "--json"],
+      project,
+      home,
+    );
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      candidates: Array<{ category: string }>;
+    };
+    expect(
+      payload.candidates.every((candidate) => candidate.category === "unmanaged"),
+    ).toBe(true);
+  });
+});

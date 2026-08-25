@@ -9,7 +9,8 @@
 - 阶段 1（CLI 分组重构）：已完成并提交（`refactor(cli): regroup source into repo and add system group`）。
 - 阶段 2.0（中央安装登记）与阶段 2（`system audit`）：已实现，待审查。
 - 阶段 3（`migrate`）：已实现（私有本地 source 落点），待审查。
-- 阶段 4（`cleanup`）、阶段 5（agent 落位引导）：未开始。
+- 阶段 4（`cleanup`）：已实现（dry-run 预览 + 移入系统废纸篓），待审查。
+- 阶段 5（agent 落位引导）：未开始。
 
 ## 执行方式
 

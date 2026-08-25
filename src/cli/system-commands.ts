@@ -93,6 +93,59 @@ export function registerMigrateCommand(
     );
 }
 
+export function registerCleanupCommand(
+  command: Command,
+  services: ServiceFactory,
+): void {
+  command
+    .command("cleanup")
+    .option("--scope <scope>", "scan scope: global, project, or all (default: all)")
+    .option("--agent <agent>", "filter by agent")
+    .option("--dry-run", "preview candidates without moving anything (default)")
+    .option("--yes", "confirm moving candidates to the system trash")
+    .option("--json", "output json format")
+    .description(
+      "Preview or move audit-flagged redundant resources to the system trash",
+    )
+    .action(
+      async (options: {
+        scope?: string;
+        agent?: string;
+        dryRun?: boolean;
+        yes?: boolean;
+        json?: boolean;
+      }) => {
+        await runAction(async () => {
+          const scope = parseScopeOption(options.scope);
+          const dryRun = Boolean(options.dryRun) || !options.yes;
+          const result = await services.systemCleanup({
+            scope,
+            agent: options.agent,
+            dryRun,
+          });
+          if (options.json) {
+            process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+            return;
+          }
+          if (result.dryRun) {
+            process.stdout.write(
+              `Cleanup dry run: ${result.candidates.length} candidate(s). `
+              + "Pass --yes to move them to the system trash.\n",
+            );
+          } else {
+            process.stdout.write(
+              `Moved ${result.moved?.length ?? 0} item(s) to trash.\n`,
+            );
+          }
+          for (const candidate of result.candidates) {
+            process.stdout.write(`- [${candidate.category}] ${candidate.path}\n`);
+            process.stdout.write(`  ${candidate.reason}\n`);
+          }
+        });
+      },
+    );
+}
+
 function parseAgentList(input?: string): string[] | undefined {
   if (!input) return undefined;
   const agents = input

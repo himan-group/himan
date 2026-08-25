@@ -62,3 +62,15 @@ export interface AuditResult {
   issues: AuditIssue[];
   stats: AuditStats;
 }
+
+export interface CleanupCandidate {
+  category: "orphan-store-cache" | "unmanaged";
+  path: string;
+  reason: string;
+}
+
+export interface CleanupResult {
+  dryRun: boolean;
+  candidates: CleanupCandidate[];
+  moved?: Array<{ path: string; trashPath: string }>;
+}

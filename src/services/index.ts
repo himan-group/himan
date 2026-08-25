@@ -6,7 +6,7 @@ import type {
   ResourceSourceAdapter,
   SourceConfig,
 } from "../adapters/source/resource-source-adapter.js";
-import type { AuditResult } from "../domain/audit.js";
+import type { AuditResult, CleanupCandidate, CleanupResult } from "../domain/audit.js";
 import type { DoctorCheck, DoctorResult } from "../domain/doctor.js";
 import type {
   ArchiveOptions,
@@ -50,6 +50,7 @@ import {
 } from "../state/installed-registry-store.js";
 import type { SourceState } from "../state/state-store.js";
 import { findMissingLockTargets } from "../utils/lock-target-check.js";
+import { moveToTrash } from "../utils/trash.js";
 import { PathResolver } from "../utils/path-resolver.js";
 import { toRepoId } from "../utils/repo-id.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
@@ -611,6 +612,57 @@ export class ServiceFactory {
       scope: options.scope ?? "all",
       agent: options.agent,
     });
+  }
+
+  async systemCleanup(
+    options: {
+      scope?: "global" | "project" | "all";
+      agent?: string;
+      dryRun?: boolean;
+    } = {},
+  ): Promise<CleanupResult> {
+    const scope = options.scope ?? "all";
+    const audit = await this.systemAudit({ scope, agent: options.agent });
+    const candidates: CleanupCandidate[] = [];
+
+    for (const issue of audit.issues) {
+      if (issue.category !== "orphan-store-cache") continue;
+      if (scope === "project") continue;
+      if (!issue.path) continue;
+      candidates.push({
+        category: "orphan-store-cache",
+        path: issue.path,
+        reason: issue.message,
+      });
+    }
+    for (const resource of audit.resources) {
+      if (resource.status !== "unmanaged") continue;
+      candidates.push({
+        category: "unmanaged",
+        path: resource.path,
+        reason: `Unmanaged ${resource.type}/${resource.name} in ${resource.scope} scope.`,
+      });
+    }
+
+    const uniqueCandidates = [
+      ...new Map(
+        candidates.map((candidate) => [candidate.path, candidate]),
+      ).values(),
+    ];
+    if (options.dryRun) {
+      return { dryRun: true, candidates: uniqueCandidates };
+    }
+
+    const moved: Array<{ path: string; trashPath: string }> = [];
+    for (const candidate of uniqueCandidates) {
+      if (!(await this.exists(candidate.path))) continue;
+      const trashPath = await moveToTrash(
+        candidate.path,
+        this.paths.getHomeDir(),
+      );
+      moved.push({ path: candidate.path, trashPath });
+    }
+    return { dryRun: false, candidates: uniqueCandidates, moved };
   }
 
   async migrate(

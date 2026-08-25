@@ -443,7 +443,6 @@ export class SystemAuditor {
       ...(await this.findOrphanStoreIssues(
         registry,
         lock,
-        scopes,
         homeDir,
       )),
     );
@@ -453,7 +452,6 @@ export class SystemAuditor {
   private async findOrphanStoreIssues(
     registry: InstalledRegistry,
     lock: ProjectLock | null,
-    scopes: AuditScope[],
     homeDir: string,
   ): Promise<AuditIssue[]> {
     const issues: AuditIssue[] = [];
@@ -475,8 +473,7 @@ export class SystemAuditor {
           const referenced =
             registry.entries.some(
               (entry) =>
-                scopes.includes(entry.scope)
-                && entry.type === type
+                entry.type === type
                 && entry.name === nameEntry.name
                 && entry.version === version,
             )
