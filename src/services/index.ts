@@ -626,21 +626,21 @@ export class ServiceFactory {
     const candidates: CleanupCandidate[] = [];
 
     for (const issue of audit.issues) {
+      if (!issue.path) continue;
+      if (issue.category === "unmanaged") {
+        candidates.push({
+          category: "unmanaged",
+          path: issue.path,
+          reason: issue.message,
+        });
+        continue;
+      }
       if (issue.category !== "orphan-store-cache") continue;
       if (scope === "project") continue;
-      if (!issue.path) continue;
       candidates.push({
         category: "orphan-store-cache",
         path: issue.path,
         reason: issue.message,
-      });
-    }
-    for (const resource of audit.resources) {
-      if (resource.status !== "unmanaged") continue;
-      candidates.push({
-        category: "unmanaged",
-        path: resource.path,
-        reason: `Unmanaged ${resource.type}/${resource.name} in ${resource.scope} scope.`,
       });
     }
 

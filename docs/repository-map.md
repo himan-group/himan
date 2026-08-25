@@ -43,6 +43,7 @@ Runtime agent configuration commands:
 - `src/utils/` contains path, repo id, agent config, version, and error helpers.
 - `tests/` mirrors major units and includes a CLI integration suite with temporary Git remotes and homes.
 - `docs/` contains product and implementation notes for MVP, v1.0, global source behavior, blueprints, and error codes.
+- `docs/resource-placement.md` defines canonical resource locations and `himan.yaml` marker requirements; `himan create` prints placement guidance pointing to it.
 
 ## Entry Points And Routing
 

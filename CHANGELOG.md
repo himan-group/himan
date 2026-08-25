@@ -14,6 +14,7 @@ The format is based on Keep a Changelog, and this project follows semver for the
 - Added `himan system audit stats|list|issues` for machine-level resource inventory with managed / unmanaged / drifted classification, duplicate and version-drift detection, lock target checks, and orphan store cache reporting.
 - Added `himan system migrate <path>` to onboard unmanaged local resources into a private local source (`~/.himan/local-source/`) with generated `himan.yaml` metadata and static analysis, making them installable via `--source local`.
 - Added `himan system cleanup` with dry-run preview by default and `--yes` execution that moves orphan store cache and unmanaged shadow resources to the system trash instead of hard-deleting them.
+- Added placement guidance after `himan create` and a resource placement guide (`docs/resource-placement.md`) covering canonical per-agent paths and `himan.yaml` markers; `system audit` now reports unmanaged issues only for unmarked shadow resources, and `system cleanup` skips marked dev scaffolds.
 
 ### Changed
 

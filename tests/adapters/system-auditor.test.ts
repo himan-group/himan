@@ -154,6 +154,24 @@ describe("SystemAuditor", () => {
     expect(result.stats.totals.unmanaged).toBe(1);
   });
 
+  it("keeps marked resources out of unmanaged issues", async () => {
+    await writeFiles(path.join(projectDir, ".agents", "skills", "marked-skill"), {
+      "SKILL.md": "# marked-skill\n",
+      "himan.yaml": "name: marked-skill\ntype: skill\nentry: SKILL.md\nversion: 0.1.0\n",
+    });
+
+    const result = await runAuditor();
+    expect(result.resources).toEqual([
+      expect.objectContaining({
+        name: "marked-skill",
+        status: "unmanaged",
+      }),
+    ]);
+    expect(
+      result.issues.some((issue) => issue.category === "unmanaged"),
+    ).toBe(false);
+  });
+
   it("reports missing lock targets", async () => {
     await lockStore.upsertResource(projectDir, {
       type: "git",

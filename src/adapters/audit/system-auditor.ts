@@ -333,6 +333,11 @@ export class SystemAuditor {
 
     for (const resource of resources) {
       if (resource.status !== "unmanaged") continue;
+      // A resource with a himan.yaml marker is a dev scaffold or a resource
+      // awaiting registration, not an unmarked shadow resource.
+      if (await this.exists(path.join(resource.path, "himan.yaml"))) {
+        continue;
+      }
       issues.push({
         level: "warn",
         category: "unmanaged",

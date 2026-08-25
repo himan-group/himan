@@ -214,6 +214,8 @@ himan publish --all
 
 `create` 默认在当前项目的 agent 目标目录创建资源脚手架，供你直接在真实 agent 环境里验证。`dev` 会优先编辑项目内已有资源；如果资源只存在于用户级全局安装目录，会先复制到当前项目目标目录。
 
+`create` 会自动写入 `himan.yaml` 管理标记并输出落位指引；规范位置（`agent × 类型` 目录）与标记要求见 [resource-placement.md](./resource-placement.md)。有标记但未登记的资源是“开发态”，`system audit` 不会把它当影子资源报警；登记入口为 `himan resource publish`（Git source）或 `himan system migrate`（私有本地 source）。
+
 `publish` 会把项目目录里的资源同步回 source，创建或更新资源版本 tag，并自动维护 source 根目录文档：
 
 - `README.md`：更新受控区；其中 `<!-- himan:resources:start -->` 和 `<!-- himan:resources:end -->` 之间维护资源索引，没有 marker 时会追加受控索引区；同时也会维护带 `@hi-man/himan` npm 地址和常用命令的 `Use With Himan` 说明区。

@@ -52,7 +52,7 @@ himan agent --help
 | --- | --- |
 | `himan resource list [type] [--source alias] [--agent a,b] [--brief] [--comment] [--archived] [--include-archived] [--json]` | 默认列出当前 source 的 active 资源和评分；同分类内按评分从高到低排序，未评分资源排最后；未传 `type` 时按类型分组；`--comment` 额外展示短评。 |
 | `himan resource history <type> <name> [--source alias] [--json]` | 按 Git tag 查看资源版本历史。 |
-| `himan resource create <type> <name> [--description text] [--agent a,b] [--entry file] [--template name] [--force] [--dry-run] [--json]` | 在当前项目 agent 目标目录创建资源脚手架。 |
+| `himan resource create <type> <name> [--description text] [--agent a,b] [--entry file] [--template name] [--force] [--dry-run] [--json]` | 在当前项目 agent 目标目录创建资源脚手架，自动写入 `himan.yaml` 管理标记；成功后输出落位指引与下一步（publish / migrate）。规范位置见 [resource-placement.md](./resource-placement.md)。 |
 | `himan resource comment <type> <name> <score> [text...] [--source alias] [--clear-text] [--dry-run] [--json]` | 写入或修改资源 `comment.score` 和可选 `comment.text`；评分为 1-10，短评最多 64 个单词或汉字。 |
 | `himan resource dev <type> <name>` | 切换到开发态；项目资源原地编辑，全局资源先复制到当前项目目标目录。 |
 | `himan resource publish [type] [name[,name...]] [--patch\|--minor\|--major] [--source alias] [-g\|--global] [--all]` | 发布单个、多个或全部当前项目资源；默认 patch。 |

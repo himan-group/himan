@@ -4007,4 +4007,60 @@ describe("system cleanup (phase 4)", () => {
       payload.candidates.every((candidate) => candidate.category === "unmanaged"),
     ).toBe(true);
   });
+
+  it("skips marked resources that are not shadows", async () => {
+    const home = path.join(tmpRoot, "phase4-marked-home");
+    const project = path.join(tmpRoot, "phase4-marked-project");
+    await fs.mkdir(home, { recursive: true });
+    await fs.mkdir(project, { recursive: true });
+    await fs.mkdir(path.join(project, ".agents", "skills", "shadow-skill"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(project, ".agents", "skills", "shadow-skill", "SKILL.md"),
+      "# shadow\n",
+      "utf8",
+    );
+    await fs.mkdir(path.join(project, ".agents", "skills", "marked-skill"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(project, ".agents", "skills", "marked-skill", "SKILL.md"),
+      "# marked\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(project, ".agents", "skills", "marked-skill", "himan.yaml"),
+      "name: marked-skill\ntype: skill\nentry: SKILL.md\nversion: 0.1.0\n",
+      "utf8",
+    );
+
+    const result = runCli(["system", "cleanup", "--json"], project, home);
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      candidates: Array<{ path: string }>;
+    };
+    expect(payload.candidates).toHaveLength(1);
+    expect(payload.candidates[0].path).toContain("shadow-skill");
+  });
+});
+
+describe("resource placement guidance (phase 5)", () => {
+  it("prints placement guidance after create", async () => {
+    const home = path.join(tmpRoot, "phase5-create-home");
+    const project = path.join(tmpRoot, "phase5-create-project");
+    await fs.mkdir(home, { recursive: true });
+    await fs.mkdir(project, { recursive: true });
+    expect(runCli(["init", TEST_REPO], project, home).status).toBe(0);
+
+    const result = runCli(
+      ["create", "skill", "placed-skill", "--agent", "codex"],
+      project,
+      home,
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Placement:");
+    expect(result.stdout).toContain("himan resource publish");
+    expect(result.stdout).toContain("himan system migrate");
+  });
 });

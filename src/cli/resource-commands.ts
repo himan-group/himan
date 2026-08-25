@@ -200,6 +200,7 @@ export function registerResourceCommands(command: Command, services: ServiceFact
               result.dryRun ? " (dry-run)" : ""
             }\n`,
           );
+          writeCreatePlacementGuidance(result.dryRun);
         });
       },
     );
@@ -611,4 +612,15 @@ function parseAgents(input?: string): string[] | undefined {
     }
   }
   return agents;
+}
+
+function writeCreatePlacementGuidance(dryRun: boolean): void {
+  if (dryRun) return;
+  process.stdout.write(
+    "Placement: resources live in canonical agent dirs with a himan.yaml marker.\n"
+    + "Next: edit the entry file, then register it with\n"
+    + "  himan resource publish <type> <name>   # Git source\n"
+    + "  himan system migrate <path>            # private local source\n"
+    + "See docs/resource-placement.md for canonical paths per agent.\n",
+  );
 }
