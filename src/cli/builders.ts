@@ -4,7 +4,8 @@ import { registerAgentCommands } from "./agent-commands.js";
 import { registerDoctorCommand } from "./doctor-command.js";
 import { registerProjectCommands } from "./project-commands.js";
 import { registerResourceCommands } from "./resource-commands.js";
-import { registerInitCommand, registerSourceCommands } from "./source-commands.js";
+import { registerSetupCommand } from "./setup-command.js";
+import { registerSourceCommands } from "./source-commands.js";
 import { createBaseProgram } from "./shared.js";
 
 export function buildCli(): Command {
@@ -15,11 +16,20 @@ export function buildCli(): Command {
   const services = new ServiceFactory();
   appendCommandGroupsHelp(program);
 
-  registerInitCommand(program, services);
+  registerSetupCommand(program, services, { legacyAlias: "init" });
   registerDoctorCommand(program, services);
 
-  const sourceCmd = program.command("source").description("Manage source repositories");
-  registerSourceCommands(sourceCmd, services, { includeInit: true });
+  const repoCmd = program
+    .command("repo")
+    .alias("source")
+    .description("Manage source repositories");
+  registerSourceCommands(repoCmd, services);
+
+  const systemCmd = program
+    .command("system")
+    .description("Manage Himan environment setup, health, and audits");
+  registerSetupCommand(systemCmd, services);
+  registerDoctorCommand(systemCmd, services);
 
   const resourceCmd = program
     .command("resource")
@@ -56,23 +66,31 @@ function appendCommandGroupsHelp(program: Command): void {
     "after",
     `
 Command groups:
-  source   Data source management (git now, registry reserved)
-           init, source init, source add, source alias, source rename,
-           source use, source list, source init-docs, source clone, source sync
+  repo     Data source management (git now, registry reserved)
+           repo add, repo alias, repo rename, repo use, repo list,
+           repo init-docs, repo clone, repo sync
+           (legacy alias: source)
   resource Source resource discovery and metadata
-           list, list --source, list --archived, list --installed, history,
+           list, list --source, list --archived, history,
            history --source, create, comment, dev, publish,
            archive, restore, rename (not recommended yet),
            resource list, resource history, resource create,
            resource comment, resource dev, resource publish,
            resource archive, resource restore, resource rename
+           (resource list --installed is deprecated; use project list)
   project  Installed resource state in current project or user-level agent dirs
            list, install, install --source, install --include-archived, uninstall,
            project list, project install, project uninstall
   agent    Default agent configuration
            agent list, agent use, agent current, agent clear
+  system   Himan environment setup and health checks
+           system setup, system doctor
+  setup    Environment setup wizard (top-level alias; legacy alias: init)
   doctor   Runtime and project health checks
-           doctor
+           doctor (top-level alias of system doctor)
+
+Legacy top-level lifecycle commands (list, create, install, publish, ...)
+remain available for backward compatibility.
 `,
   );
 }

@@ -42,7 +42,7 @@ pnpm dlx @hi-man/himan --help
 
 ```bash
 # 1. 初始化 source，并设置当前项目默认 agent
-himan init https://github.com/your-org/your-himan-source.git --agent codex
+himan system setup https://github.com/your-org/your-himan-source.git --agent codex
 
 # 2. 创建 skill 空壳，并在当前项目 agent 目录里完善和验证
 himan create skill api-review --description "Review API changes"
@@ -53,7 +53,7 @@ himan create skill api-review --description "Review API changes"
 himan publish skill api-review
 
 # 5. 检查本机、source、agent、lock 和安装目标
-himan doctor
+himan system doctor
 ```
 
 `himan create` 只负责创建资产空壳；编写 `SKILL.md` 和维护 `himan.yaml` 通常交给 coding agent 完成。
@@ -61,7 +61,7 @@ himan doctor
 如果 source 中已经有可用资产，也可以在初始化时直接安装：
 
 ```bash
-himan init https://github.com/your-org/your-himan-source.git \
+himan system setup https://github.com/your-org/your-himan-source.git \
   --agent codex \
   --install skill/code-review
 ```
@@ -69,11 +69,13 @@ himan init https://github.com/your-org/your-himan-source.git \
 换一台机器或同事拉取包含 `himan.lock` 的项目后：
 
 ```bash
-himan init https://github.com/your-org/your-himan-source.git --agent codex
+himan system setup https://github.com/your-org/your-himan-source.git --agent codex
 himan install
 ```
 
 `himan install` 无参数时会按当前项目的 `himan.lock` 恢复安装，而不是盲目使用最新版本；资源条目未指定 `source` 时使用 lock 顶层默认 source。
+
+> 兼容说明：`himan setup` / `himan doctor` 是顶层简写（等价 `himan system setup` / `himan system doctor`）；`himan init` 保留为 legacy 别名；`source` 是 `repo` 命令组的兼容别名。
 
 ## 核心概念
 
@@ -89,8 +91,8 @@ himan install
 
 | 场景                | 命令                                                                              |
 | ------------------- | --------------------------------------------------------------------------------- |
-| 添加 source         | `himan source add team https://github.com/your-org/himan-source.git --alias team` |
-| 切换 source         | `himan source use team`                                                           |
+| 添加 source         | `himan repo add team https://github.com/your-org/himan-source.git --alias team`   |
+| 切换 source         | `himan repo use team`                                                             |
 | 设置默认 agent      | `himan agent use codex`                                                           |
 | 安装资产            | `himan install skill code-review`                                                 |
 | 递归安装 skill 依赖 | `himan install skill code-review -r --depth 2`                                    |

@@ -1,12 +1,13 @@
 # Command Reference
 
-`himan` 只有一个 CLI 入口，命令按 `source`、`resource`、`project`、`agent`、`doctor` 分组。部分旧版顶层生命周期命令仍兼容，但新文档统一使用分组命令。
+`himan` 只有一个 CLI 入口，命令按 `repo`、`resource`、`project`、`agent`、`system` 分组。部分旧版顶层生命周期命令仍兼容，但新文档统一使用分组命令；`source` 是 `repo` 的兼容别名，`himan setup` / `himan doctor` 是 `system` 组的顶层别名。
 
 ## Quick Commands
 
 ```bash
 himan --help
-himan source --help
+himan repo --help
+himan system --help
 himan resource --help
 himan project --help
 himan agent --help
@@ -16,28 +17,38 @@ himan agent --help
 
 | 命令 | 说明 |
 | --- | --- |
-| `himan init <git_repo> [--agent a,b] [--install type/name[@version],...] [--mode link\|copy] [--json]` | 初始化 Git source；可同时写当前项目默认 agent 并安装选定资源。 |
-| `himan doctor [--json]` | 检查 Node/Git、Himan home、当前 source、资源扫描、默认 agent、项目 lock、归档引用和安装目标。 |
+| `himan setup [git_repo] [--agent a,b] [--install type/name[@version],...] [--mode link\|copy] [--json]` | 本机环境设置向导（等价 `himan system setup`）：选择/初始化 source、设置默认 agent、选择初始安装与安装模式，执行前输出确认摘要；`himan init` 保留为 legacy 别名。 |
+| `himan doctor [--json]` | 等价 `himan system doctor`：检查 Node/Git、Himan home、当前 source、资源扫描、默认 agent、项目 lock、归档引用和安装目标。 |
 
-## Source
+## System
 
 | 命令 | 说明 |
 | --- | --- |
-| `himan source add <name> <git_repo> [--alias alias]` | 添加命名 Git source；未传 `--alias` 时别名默认等于 `name`。 |
-| `himan source use <source> [--alias alias]` | 按配置名或别名切换默认 source；可同时设置目标 source 别名。 |
-| `himan source alias <source> <alias>` | 设置或修改 source 别名。 |
-| `himan source rename <source> <new-name> [--alias alias]` | 重命名本地 source 配置名；可同时修改别名。 |
-| `himan source list [--json]` | 查看已配置 source、别名和当前 source。 |
-| `himan source init-docs [--source alias] [--force] [--repair-history] [--dry-run] [--json]` | 为 source 生成或修复仓库级 `README.md` / `CHANGELOG.md`。 |
-| `himan source clone <from> <to> [--branch b] [--target-branch b] [--add-source name] [--use] [--dry-run] [--json]` | 将 Git source 分支和 himan 管理的资源 tag 复制到空目标 Git 仓库。 |
-| `himan source sync <from> <to> [--target-branch b] [--add-source name] [--use] [--dry-run] [--json]` | 将最新资源快照同步到目标 Git 仓库并创建对应最新 tag。 |
-| `himan source init <git_repo>` | 与顶层 `himan init` 等价，便于统一使用 `himan source ...` 入口。 |
+| `himan system setup [git_repo] [--agent a,b] [--install refs] [--mode link\|copy] [--json]` | 本机环境设置向导；顶层 `himan setup` 等价，`himan init` 为 legacy 别名。TTY 下缺少参数时逐项提示并在执行前确认；非 TTY 缺失必填参数时报错；`--json` 不进入交互。 |
+| `himan system doctor [--json]` | 检查 Himan 运行时与项目健康；顶层 `himan doctor` 等价。 |
+
+`system audit` / `system migrate` / `system cleanup` 属于规划中的系统盘点能力，尚未实现。
+
+## Repo（原 Source）
+
+| 命令 | 说明 |
+| --- | --- |
+| `himan repo add <name> <git_repo> [--alias alias]` | 添加命名 Git source；未传 `--alias` 时别名默认等于 `name`。 |
+| `himan repo use <source> [--alias alias]` | 按配置名或别名切换默认 source；可同时设置目标 source 别名。 |
+| `himan repo alias <source> <alias>` | 设置或修改 source 别名。 |
+| `himan repo rename <source> <new-name> [--alias alias]` | 重命名本地 source 配置名；可同时修改别名。 |
+| `himan repo list [--json]` | 查看已配置 source、别名和当前 source。 |
+| `himan repo init-docs [--source alias] [--force] [--repair-history] [--dry-run] [--json]` | 为 source 生成或修复仓库级 `README.md` / `CHANGELOG.md`。 |
+| `himan repo clone <from> <to> [--branch b] [--target-branch b] [--add-source name] [--use] [--dry-run] [--json]` | 将 Git source 分支和 himan 管理的资源 tag 复制到空目标 Git 仓库。 |
+| `himan repo sync <from> <to> [--target-branch b] [--add-source name] [--use] [--dry-run] [--json]` | 将最新资源快照同步到目标 Git 仓库并创建对应最新 tag。 |
+
+`himan source ...` 仍可用，行为与 `himan repo ...` 一致（兼容别名）。
 
 ## Resource
 
 | 命令 | 说明 |
 | --- | --- |
-| `himan resource list [type] [--source alias] [--agent a,b] [--brief] [--comment] [--installed] [--archived] [--include-archived] [--json]` | 默认列出当前 source 的 active 资源和评分；同分类内按评分从高到低排序，未评分资源排最后；未传 `type` 时按类型分组；`--comment` 额外展示短评；`--installed` 改为查看当前项目已安装资源。 |
+| `himan resource list [type] [--source alias] [--agent a,b] [--brief] [--comment] [--archived] [--include-archived] [--json]` | 默认列出当前 source 的 active 资源和评分；同分类内按评分从高到低排序，未评分资源排最后；未传 `type` 时按类型分组；`--comment` 额外展示短评。 |
 | `himan resource history <type> <name> [--source alias] [--json]` | 按 Git tag 查看资源版本历史。 |
 | `himan resource create <type> <name> [--description text] [--agent a,b] [--entry file] [--template name] [--force] [--dry-run] [--json]` | 在当前项目 agent 目标目录创建资源脚手架。 |
 | `himan resource comment <type> <name> <score> [text...] [--source alias] [--clear-text] [--dry-run] [--json]` | 写入或修改资源 `comment.score` 和可选 `comment.text`；评分为 1-10，短评最多 64 个单词或汉字。 |
@@ -50,6 +61,8 @@ himan agent --help
 支持的 `type`：`rule`、`command`、`skill`、`config`。
 
 `himan comment <type> <name> <score> [text...]` 是 `himan resource comment ...` 的顶层简写。
+
+`himan resource list --installed` 已弃用：查看当前项目已安装资源请使用 `himan project list`。
 
 ## Project
 

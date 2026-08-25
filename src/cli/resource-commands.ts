@@ -31,11 +31,14 @@ export function registerResourceCommands(command: Command, services: ServiceFact
     .option("--brief", "hide resource descriptions")
     .option("--comment", "show resource comment text")
     .option("--source <alias>", "source alias for source resource list")
-    .option("--installed", "list resources installed in current project")
+    .option(
+      "--installed",
+      "deprecated: list resources installed in current project (use himan project list)",
+    )
     .option("--archived", "list archived resources only")
     .option("--include-archived", "include archived resources in source list")
     .option("--json", "output json format")
-    .description("List resources from current default source or project installs")
+    .description("List resources from current default source")
     .action(
       async (
         type: string | undefined,
@@ -78,6 +81,9 @@ export function registerResourceCommands(command: Command, services: ServiceFact
             source: options.source,
           };
           if (options.installed) {
+            process.stderr.write(
+              "Deprecated: use `himan project list` instead.\n",
+            );
             await writeInstalledList(services, type, agents, Boolean(options.json));
             return;
           }

@@ -38,7 +38,7 @@
 
 - **含义**：未找到源配置。
 - **常见触发**：首次使用前直接执行 `list/install/dev/publish`。
-- **建议处理**：先执行 `himan init <git_repo>`，或检查 `~/.himan/config.json` 是否存在。
+- **建议处理**：先执行 `himan setup <git_repo>`（legacy 别名 `himan init <git_repo>`），或检查 `~/.himan/config.json` 是否存在。
 
 ### `E_NOT_IMPLEMENTED`
 
@@ -56,7 +56,7 @@
 
 - **含义**：资源或来源不存在。
 - **常见触发**：安装不存在的资源、切换到不存在的 source 名称、发布目标资源不存在。
-- **建议处理**：先执行 `himan list <type>` / `himan source list` 确认名称。
+- **建议处理**：先执行 `himan list <type>` / `himan repo list` 确认名称。
 
 ### `E_RESOURCE_ARCHIVED`
 

@@ -10,7 +10,7 @@ Status: 需求讨论稿（proposed），未实现。
 - 区分每个资源是否被 himan 管理，暴露异常项（重复资源、同名不同版本、未托管、lock 目标缺失、store 孤儿缓存等），为用户清理冗余和统一管理提供依据。
 - 提供概念路径：把未托管资源迁移为 himan 托管（`migrate`），以及安全清理冗余（`cleanup`）。
 - 通过 himan 分发的 skill/rule 资源引导 agent 把新建资源放在规范位置并打上管理标记，从源头减少"影子资源"。
-- CLI 分组重构：`source` 命令组更名为 `repo`（保留 `source` 兼容别名）；`setup`（原 `init`） / `doctor` / `audit` / `migrate`（原 `adopt`） / `cleanup`（原 `prune`）归入新 `system` 命令组（`setup` / `doctor` 保留顶层别名，可不写 `system`；`init` 保留为 legacy 别名）；移除重复入口（`resource list --installed`、`source init`）。
+- CLI 分组重构：`source` 命令组更名为 `repo`（保留 `source` 兼容别名）；`setup`（原 `init`） / `doctor` / `audit` / `migrate` / `cleanup` 归入新 `system` 命令组（`setup` / `doctor` 保留顶层别名，可不写 `system`；`init` 保留为 legacy 别名）；移除重复入口（`resource list --installed`、`source init`）。
 
 ## Background And Necessity
 
@@ -53,8 +53,8 @@ himan
     setup           # 原顶层 init 迁入并更名（可不写 system，直接用 himan setup）
     doctor          # 原顶层 doctor 迁入（可不写 system，直接用 himan doctor）
     audit stats|list|issues
-    migrate <path>  # 原 adopt：未托管资源迁移为 himan 托管（登记式，文件可保留原位）
-    cleanup         # 原 prune：按 audit 结果清理冗余（dry-run）
+    migrate <path>  # 未托管资源迁移为 himan 托管（登记式，文件可保留原位）
+    cleanup         # 按 audit 结果清理冗余（dry-run）
   doctor            # 向后兼容别名
 ```
 
@@ -97,8 +97,6 @@ himan
 
 ## Naming Notes
 
-- `adopt` → `import` → `migrate`：最终选用 `migrate`，强调"把本机已有资源迁移为 himan 托管"的状态转变，避免 `import` 被理解为从外部来源拉取；帮助文案需说明为登记式迁移（文件可保留原位，也可移入 store，由实现决策）。
-- `prune` → `cleanup`：更直白，非 Docker 用户也能理解；保留 `--dry-run` 预览与废纸篓语义。
 - `project` 保留：himan 文档与数据模型已用"项目"指消费端工作目录（`himan.lock`、`.himan/config.json`）；不引入 `workspace`（与 IDE / Codex 撞词）或 `local`（与未来本地 source 撞词），歧义通过帮助文案消除。
 
 ## Scan Scope
@@ -170,7 +168,7 @@ himan
 
 ## Key Design Decisions (Pending)
 
-1. store 定位与 `migrate`（原 `adopt`）落点：
+1. store 定位与 `migrate` 落点：
    - 现状 store 是 source 的缓存副本。纳入管理的两条路径：a) 扩展 store 支持"无 source 的个人资源"；b) 引入本地私有 source，`migrate` 写入私有 source，store 仍当缓存。
    - 倾向 b：贴合现有模型，天然获得版本、publish、归档能力。
 2. copy 模式托管标识：
@@ -178,8 +176,8 @@ himan
    - 倾向维护中央安装登记（如 `~/.himan/installed.json`），记录 scope（project/global）、type/name/version/source/agents/mode、目标路径与 updatedAt；旧安装用"symlink 指向 store + 内容哈希匹配"启发式补识别。
    - 该登记同时作为全局资源与版本的权威清单（相当于"全局 lock"）：当前没有全局 lock，全局安装不写任何登记，版本只能从 symlink 目标或复制进去的 `himan.yaml` 推断；登记落地后，全局资源可 `list`、可复现、可为未来的 `outdated` / `upgrade` 提供数据基础。
    - 与项目 `himan.lock` 的关系：`himan.lock` 保留为项目内可提交、可复现的清单（随项目进 Git）；`installed.json` 是机器级运行时记录（项目与全局都登记，不进项目 Git）。
-3. `cleanup`（原 `prune`）安全策略：dry-run 预览 → 移入系统废纸篓而非硬删；第一版只报告不执行。
-4. `migrate`（原 `adopt`）流程：识别 → 补 `himan.yaml` → 内容分析（复用 `resource-analysis`）→ 落点（私有本地 source 或 store 扩展）→ 可 `install` / `publish`。
+3. `cleanup` 安全策略：dry-run 预览 → 移入系统废纸篓而非硬删；第一版只报告不执行。
+4. `migrate` 流程：识别 → 补 `himan.yaml` → 内容分析（复用 `resource-analysis`）→ 落点（私有本地 source 或 store 扩展）→ 可 `install` / `publish`。
 
 ## Version And Release Impact
 
@@ -191,8 +189,8 @@ himan
 
 - 阶段 1：`repo` 改名 + `system` 组骨架 + `setup`（原 `init`） / `doctor` 迁移（保留顶层别名）+ 移除重复入口（`resource list --installed`、`source init`）。
 - 阶段 2：`system audit stats|list|issues`（只读盘点，不改安装模型）。
-- 阶段 3：`migrate`（原 `adopt`，含私有本地 source 或 store 扩展）。
-- 阶段 4：`cleanup`（原 `prune`，dry-run + 废纸篓）。
+- 阶段 3：`migrate`（含私有本地 source 或 store 扩展）。
+- 阶段 4：`cleanup`（dry-run + 废纸篓）。
 - 阶段 5：agent 落位引导（placement 类 skill/rule 资源 + `create` 输出落位指引 + 中央安装登记）。
 
 ## Acceptance Criteria
@@ -227,7 +225,7 @@ himan
 
 ## Open Questions
 
-1. `migrate`（原 `adopt`）落点：私有本地 source vs store 扩展（倾向私有本地 source，需确认）。
+1. `migrate` 落点：私有本地 source vs store 扩展（倾向私有本地 source，需确认）。
 2. copy 模式标识：中央安装登记 vs 目录内 sidecar 标记（倾向中央登记，需确认）。
 3. `audit` 不带子命令默认输出 `stats`，需确认。
 4. "agent 已安装"以配置目录存在为准，需确认。

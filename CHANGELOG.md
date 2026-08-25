@@ -6,6 +6,24 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+### Added
+
+- Added `himan setup` and `himan system setup` as the environment setup wizard, replacing `himan init`; `himan init` remains as a legacy alias.
+- Added the `system` command group with `system setup` and `system doctor`.
+
+### Changed
+
+- Changed the `source` command group to `repo` (`himan repo ...`); `source` remains as a compatibility alias.
+- Moved `doctor` under the `system` command group; `himan doctor` remains as a top-level alias.
+
+### Removed
+
+- Removed the duplicate `himan source init` command; `himan init` is now only available as the legacy top-level alias.
+
+### Deprecated
+
+- Deprecated `himan resource list --installed`; use `himan project list` instead.
+
 ## [0.8.8] - 2026-06-09
 
 ### Changed

@@ -68,10 +68,16 @@ beforeAll(async () => {
   runGit(["remote", "add", "origin", mockedRemoteDir], seedRepoDir);
   runGit(["push", "-u", "origin", "main"], seedRepoDir);
 
-  const build = spawnSync("pnpm", ["run", "build"], {
+  // pnpm self-fetch is blocked in some local sandboxes, so build through the
+  // local TypeScript binary instead of `pnpm run build`.
+  const build = spawnSync(
+    path.join(process.cwd(), "node_modules", ".bin", "tsc"),
+    ["-p", "tsconfig.json"],
+    {
     cwd: process.cwd(),
     encoding: "utf8",
-  });
+    },
+  );
   expect(build.status).toBe(0);
 });
 
@@ -3434,3 +3440,134 @@ function runGitOutput(args: string[], cwd: string): string {
   expect(result.status).toBe(0);
   return result.stdout.trim();
 }
+
+describe("CLI command group refactor (phase 1)", () => {
+  it("documents repo and system groups in help", () => {
+    const help = runCli(["--help"], projectDir, homeDir);
+    expect(help.status).toBe(0);
+    expect(help.stdout).toContain("repo|source");
+    expect(help.stdout).toContain("system");
+    expect(help.stdout).toContain("setup");
+  });
+
+  it("exposes repo with source as a compatibility alias", async () => {
+    const repoHome = path.join(tmpRoot, "phase1-repo-home");
+    const repoProject = path.join(tmpRoot, "phase1-repo-project");
+    await fs.mkdir(repoHome, { recursive: true });
+    await fs.mkdir(repoProject, { recursive: true });
+
+    expect(runCli(["init", TEST_REPO], repoProject, repoHome).status).toBe(0);
+    const sourceList = runCli(["source", "list", "--json"], repoProject, repoHome);
+    const repoList = runCli(["repo", "list", "--json"], repoProject, repoHome);
+    expect(sourceList.status).toBe(0);
+    expect(repoList.status).toBe(0);
+    expect(repoList.stdout).toBe(sourceList.stdout);
+    expect(JSON.parse(repoList.stdout)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "default", isDefault: true }),
+      ]),
+    );
+  });
+
+  it("keeps init as a legacy alias and removes source init / repo init", async () => {
+    const legacyHome = path.join(tmpRoot, "phase1-init-home");
+    const legacyProject = path.join(tmpRoot, "phase1-init-project");
+    await fs.mkdir(legacyHome, { recursive: true });
+    await fs.mkdir(legacyProject, { recursive: true });
+
+    const initResult = runCli(["init", TEST_REPO], legacyProject, legacyHome);
+    expect(initResult.status).toBe(0);
+    expect(initResult.stdout).toContain("Initialized git source");
+
+    const sourceInit = runCli(
+      ["source", "init", TEST_REPO],
+      legacyProject,
+      legacyHome,
+    );
+    expect(sourceInit.status).toBe(1);
+    expect(sourceInit.stderr).toContain("unknown command 'init'");
+
+    const repoInit = runCli(
+      ["repo", "init", TEST_REPO],
+      legacyProject,
+      legacyHome,
+    );
+    expect(repoInit.status).toBe(1);
+    expect(repoInit.stderr).toContain("unknown command 'init'");
+  });
+
+  it("treats setup and system setup as equivalent to init", async () => {
+    const setupHome = path.join(tmpRoot, "phase1-setup-home");
+    const setupProject = path.join(tmpRoot, "phase1-setup-project");
+    const systemHome = path.join(tmpRoot, "phase1-system-home");
+    const systemProject = path.join(tmpRoot, "phase1-system-project");
+    await fs.mkdir(setupHome, { recursive: true });
+    await fs.mkdir(setupProject, { recursive: true });
+    await fs.mkdir(systemHome, { recursive: true });
+    await fs.mkdir(systemProject, { recursive: true });
+
+    const setupResult = runCli(["setup", TEST_REPO], setupProject, setupHome);
+    expect(setupResult.status).toBe(0);
+    expect(setupResult.stdout).toContain("Initialized git source");
+
+    const systemSetupResult = runCli(
+      ["system", "setup", TEST_REPO],
+      systemProject,
+      systemHome,
+    );
+    expect(systemSetupResult.status).toBe(0);
+    expect(systemSetupResult.stdout).toContain("Initialized git source");
+  });
+
+  it("errors in non-interactive mode when setup has no source and no git repo", async () => {
+    const emptyHome = path.join(tmpRoot, "phase1-empty-home");
+    const emptyProject = path.join(tmpRoot, "phase1-empty-project");
+    await fs.mkdir(emptyHome, { recursive: true });
+    await fs.mkdir(emptyProject, { recursive: true });
+
+    const result = runCli(["setup"], emptyProject, emptyHome);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("[E_CLI_USAGE]");
+    expect(result.stderr).toContain("git repository URL");
+  });
+
+  it("treats system doctor as an alias of doctor", async () => {
+    const doctorHome = path.join(tmpRoot, "phase1-doctor-home");
+    const doctorProject = path.join(tmpRoot, "phase1-doctor-project");
+    await fs.mkdir(doctorHome, { recursive: true });
+    await fs.mkdir(doctorProject, { recursive: true });
+
+    const doctor = runCli(["doctor", "--json"], doctorProject, doctorHome);
+    const systemDoctor = runCli(
+      ["system", "doctor", "--json"],
+      doctorProject,
+      doctorHome,
+    );
+    expect(doctor.status).toBe(1);
+    expect(systemDoctor.status).toBe(1);
+    expect(systemDoctor.stdout).toBe(doctor.stdout);
+  });
+
+  it("deprecates resource list --installed in favor of project list", async () => {
+    const depHome = path.join(tmpRoot, "phase1-dep-home");
+    const depProject = path.join(tmpRoot, "phase1-dep-project");
+    await fs.mkdir(depHome, { recursive: true });
+    await fs.mkdir(depProject, { recursive: true });
+
+    const result = runCli(
+      ["resource", "list", "--installed", "--json"],
+      depProject,
+      depHome,
+    );
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain(
+      "Deprecated: use `himan project list` instead.",
+    );
+    expect(JSON.parse(result.stdout)).toEqual({
+      rule: [],
+      command: [],
+      skill: [],
+      config: [],
+    });
+  });
+});

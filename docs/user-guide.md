@@ -76,11 +76,13 @@ analysis:
 ## 初始化与 source 管理
 
 ```bash
-himan init https://github.com/your-org/himan-source.git --agent codex
-himan source add team https://github.com/your-org/himan-source.git --alias team
-himan source use team
-himan source list
+himan system setup https://github.com/your-org/himan-source.git --agent codex
+himan repo add team https://github.com/your-org/himan-source.git --alias team
+himan repo use team
+himan repo list
 ```
+
+`himan setup` / `himan doctor` 是顶层简写（等价 `himan system setup` / `himan system doctor`），`himan init` 保留为 legacy 别名；`source` 是 `repo` 命令组的兼容别名。
 
 source 的配置名是本地内部 key，别名是日常命令使用的稳定引用。显式资源命令默认作用于当前 current source，也可以在 `list`、`history`、`install <type> ...`、`publish` 中用 `--source <alias>` 指定 source。
 
@@ -168,13 +170,13 @@ himan publish --all
 ## Source 文档初始化
 
 ```bash
-himan source init-docs
-himan source init-docs --dry-run
-himan source init-docs --force
-himan source init-docs --repair-history
+himan repo init-docs
+himan repo init-docs --dry-run
+himan repo init-docs --force
+himan repo init-docs --repair-history
 ```
 
-`source init-docs` 为当前 default source 生成仓库级 `README.md` 和 `CHANGELOG.md`。默认只创建缺失文件；`--force` 会覆盖已有文件，重建 README 里的 `Use With Himan` 说明区和资源索引；`--repair-history` 会修复这些受控 README 区块以及历史 publish 记录。
+`repo init-docs` 为当前 default source 生成仓库级 `README.md` 和 `CHANGELOG.md`。默认只创建缺失文件；`--force` 会覆盖已有文件，重建 README 里的 `Use With Himan` 说明区和资源索引；`--repair-history` 会修复这些受控 README 区块以及历史 publish 记录。
 
 ## 归档、恢复与重命名
 
@@ -204,7 +206,7 @@ himan resource rename skill old-name new-name --dry-run
 ## FAQ
 
 **Q: `source add` 之后为什么 `resource list` 没变化？**  
-A: `source add` 只新增一个可用来源，不会自动切换。执行 `himan source use <source-or-alias>` 后再查看，或在单次资源命令中传 `--source <alias>`。
+A: `source add` 只新增一个可用来源，不会自动切换。执行 `himan repo use <source-or-alias>` 后再查看，或在单次资源命令中传 `--source <alias>`。
 
 **Q: `resource list` 和 `source list` 有什么区别？**  
 A: `source list` 查看本机配置了哪些来源；`resource list` 查看当前 source 里有哪些资源。
