@@ -76,17 +76,74 @@ analysis:
 ## 初始化与 source 管理
 
 ```bash
-himan init https://github.com/your-org/himan-source.git --agent codex
-himan source add team https://github.com/your-org/himan-source.git --alias team
-himan source use team
-himan source list
+himan system setup https://github.com/your-org/himan-source.git --agent codex
+himan repo add team https://github.com/your-org/himan-source.git --alias team
+himan repo use team
+himan repo list
 ```
+
+`himan setup` / `himan doctor` 是顶层简写（等价 `himan system setup` / `himan system doctor`），`himan init` 保留为 legacy 别名；`source` 是 `repo` 命令组的兼容别名。
 
 source 的配置名是本地内部 key，别名是日常命令使用的稳定引用。显式资源命令默认作用于当前 current source，也可以在 `list`、`history`、`install <type> ...`、`publish` 中用 `--source <alias>` 指定 source。
 
 资源评价可通过 `himan comment <type> <name> <score> [text...]` 写入 source 元数据，也可使用完整形式 `himan resource comment ...`；`resource list` 默认展示评分，同分类内按评分从高到低排序，未评分资源排最后，传 `--comment` 时额外展示短评。
 
 无参数 `himan install` 会按 `himan.lock` 中记录的 source 恢复安装，不受当前 default source 切换影响。lock 的顶层 `source` 是默认 source；通过 `--source <alias>` 安装或发布到其他 source 时，lock 会在 `sources` 中记录额外 source，并让对应资源条目用 `source` 引用它。
+
+## 系统盘点（system audit）
+
+`himan system audit` 提供只读的机器级资源盘点，统一查看用户级（全局）agent 目录与当前项目的资源，并区分是否被 himan 管理：
+
+```bash
+himan system audit            # 统计视图（默认）
+himan system audit list       # 明细：scope/agent/type/name/version/status/mode/path
+himan system audit issues     # 只看异常，带 warn/error 级别
+himan system audit list --scope project --agent codex --json
+```
+
+资源分类：
+
+- **managed**：有中央安装登记（`~/.himan/installed.json`）或 `himan.lock` 登记，且内容与 store 一致。
+- **drifted**：有登记但文件被修改、删除或版本不对。
+- **unmanaged**：存在于 agent 目录但没有登记（影子资源）。
+- **redundant**：同名资源跨 agent / 跨 scope 重复或存在不同版本。
+- **orphan store cache**：`~/.himan/store` 中没有任何安装引用的版本缓存。
+
+`system doctor` 与 `system audit` 共用同一份 lock target 缺失检查；`system doctor` 关注环境健康，`system audit` 关注资源盘点与漂移/重复。
+
+## 迁移未托管资源（system migrate）
+
+`himan system migrate <path>` 把 agent 目录里手动放入、未被 himan 管理的“影子资源”登记为托管资源，无需先准备 Git source：
+
+```bash
+himan system migrate ~/.agents/skills/meeting-minutes --type skill --agent codex
+himan system migrate .cursor/rules/code-review --dry-run
+```
+
+迁移会：
+
+1. 识别资源类型（`--type` 或按路径中的 `rules/commands/skills/configs` 推断）与名称；
+2. 在私有本地 source（`~/.himan/local-source/`）中生成该资源的副本和 `himan.yaml`（名称、类型、入口、版本、静态分析）；
+3. 同步版本到 `~/.himan/store/`，原目录保留原位。
+
+迁移后资源可通过 `himan resource list --source local` 查看，并可安装：`himan install <type> <name> --source local`。`--dry-run` 只预览不写盘。本地 source 不提供 publish / archive 等需要 Git 的能力，正式发布请把资源迁到 Git source。
+
+## 安全清理（system cleanup）
+
+`himan system cleanup` 基于 `system audit` 的结果，把可安全清理的冗余项移入系统废纸篓（不是硬删除）：
+
+```bash
+himan system cleanup            # 默认 dry-run 预览
+himan system cleanup --yes      # 确认后移入废纸篓
+himan system cleanup --scope project
+```
+
+第一版清理对象：
+
+- **孤儿 store 缓存**（`~/.himan/store/` 中无任何安装引用的版本目录；可随时从 source 重新拉取）；
+- **未托管（影子）资源**：agent 目录里没有登记的资源目录；保留原目录有需要时请先用 `himan system migrate`，确认不需要再清理。
+
+重复安装与版本漂移属于已安装资源，请用 `himan uninstall` 或 `himan install <type> <name>@<版本>` 收敛，cleanup 第一版不会自动删除它们。
 
 ## Agent 与安装目标
 
@@ -157,6 +214,8 @@ himan publish --all
 
 `create` 默认在当前项目的 agent 目标目录创建资源脚手架，供你直接在真实 agent 环境里验证。`dev` 会优先编辑项目内已有资源；如果资源只存在于用户级全局安装目录，会先复制到当前项目目标目录。
 
+`create` 会自动写入 `himan.yaml` 管理标记并输出落位指引；规范位置（`agent × 类型` 目录）与标记要求见 [resource-placement.md](./resource-placement.md)。有标记但未登记的资源是“开发态”，`system audit` 不会把它当影子资源报警；登记入口为 `himan resource publish`（Git source）或 `himan system migrate`（私有本地 source）。
+
 `publish` 会把项目目录里的资源同步回 source，创建或更新资源版本 tag，并自动维护 source 根目录文档：
 
 - `README.md`：更新受控区；其中 `<!-- himan:resources:start -->` 和 `<!-- himan:resources:end -->` 之间维护资源索引，没有 marker 时会追加受控索引区；同时也会维护带 `@hi-man/himan` npm 地址和常用命令的 `Use With Himan` 说明区。
@@ -168,13 +227,13 @@ himan publish --all
 ## Source 文档初始化
 
 ```bash
-himan source init-docs
-himan source init-docs --dry-run
-himan source init-docs --force
-himan source init-docs --repair-history
+himan repo init-docs
+himan repo init-docs --dry-run
+himan repo init-docs --force
+himan repo init-docs --repair-history
 ```
 
-`source init-docs` 为当前 default source 生成仓库级 `README.md` 和 `CHANGELOG.md`。默认只创建缺失文件；`--force` 会覆盖已有文件，重建 README 里的 `Use With Himan` 说明区和资源索引；`--repair-history` 会修复这些受控 README 区块以及历史 publish 记录。
+`repo init-docs` 为当前 default source 生成仓库级 `README.md` 和 `CHANGELOG.md`。默认只创建缺失文件；`--force` 会覆盖已有文件，重建 README 里的 `Use With Himan` 说明区和资源索引；`--repair-history` 会修复这些受控 README 区块以及历史 publish 记录。
 
 ## 归档、恢复与重命名
 
@@ -204,7 +263,7 @@ himan resource rename skill old-name new-name --dry-run
 ## FAQ
 
 **Q: `source add` 之后为什么 `resource list` 没变化？**  
-A: `source add` 只新增一个可用来源，不会自动切换。执行 `himan source use <source-or-alias>` 后再查看，或在单次资源命令中传 `--source <alias>`。
+A: `source add` 只新增一个可用来源，不会自动切换。执行 `himan repo use <source-or-alias>` 后再查看，或在单次资源命令中传 `--source <alias>`。
 
 **Q: `resource list` 和 `source list` 有什么区别？**  
 A: `source list` 查看本机配置了哪些来源；`resource list` 查看当前 source 里有哪些资源。

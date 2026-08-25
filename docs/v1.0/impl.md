@@ -3,6 +3,8 @@
 本文档基于当前实现现状与 `docs/mvp/impl.md` 的设计原则，给出 v1.0 的架构、数据约定与关键流程方案。本文档中的“状态”按当前仓库实现同步维护。
 
 > 当前行为事实源：仓库根目录 [README.md](../../README.md) 和 [repository map](../repository-map.md)。本文保留 v1.0 目标和缺口说明。
+>
+> 系统盘点与 CLI 分组重构（`repo` / `system` 命令组）的执行计划见 [development-plan.md](./development-plan.md)。
 
 ---
 
@@ -70,7 +72,7 @@
 v1.0 仍以 Git 为主。在多源层面，当前已落地基础能力：
 
 - 配置中支持多个命名源（source alias）
-- 命令支持 `source add/use/list/init-docs`
+- 命令支持 `repo add/use/list/init-docs`（`source` 为兼容别名）
 - 业务命令默认读取 current/default source（单来源生效）
 - `create` 自动维护当前 Git source 根目录 `README.md` 资源索引和 `CHANGELOG.md` `[Unreleased]` 条目；`publish` 会把发布记录写入按日期分组的发布段（例如 `## [2026-05-19]`）
 

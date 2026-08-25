@@ -68,10 +68,16 @@ beforeAll(async () => {
   runGit(["remote", "add", "origin", mockedRemoteDir], seedRepoDir);
   runGit(["push", "-u", "origin", "main"], seedRepoDir);
 
-  const build = spawnSync("pnpm", ["run", "build"], {
+  // pnpm self-fetch is blocked in some local sandboxes, so build through the
+  // local TypeScript binary instead of `pnpm run build`.
+  const build = spawnSync(
+    path.join(process.cwd(), "node_modules", ".bin", "tsc"),
+    ["-p", "tsconfig.json"],
+    {
     cwd: process.cwd(),
     encoding: "utf8",
-  });
+    },
+  );
   expect(build.status).toBe(0);
 });
 
@@ -3434,3 +3440,627 @@ function runGitOutput(args: string[], cwd: string): string {
   expect(result.status).toBe(0);
   return result.stdout.trim();
 }
+
+describe("CLI command group refactor (phase 1)", () => {
+  it("documents repo and system groups in help", () => {
+    const help = runCli(["--help"], projectDir, homeDir);
+    expect(help.status).toBe(0);
+    expect(help.stdout).toContain("repo|source");
+    expect(help.stdout).toContain("system");
+    expect(help.stdout).toContain("setup");
+  });
+
+  it("exposes repo with source as a compatibility alias", async () => {
+    const repoHome = path.join(tmpRoot, "phase1-repo-home");
+    const repoProject = path.join(tmpRoot, "phase1-repo-project");
+    await fs.mkdir(repoHome, { recursive: true });
+    await fs.mkdir(repoProject, { recursive: true });
+
+    expect(runCli(["init", TEST_REPO], repoProject, repoHome).status).toBe(0);
+    const sourceList = runCli(["source", "list", "--json"], repoProject, repoHome);
+    const repoList = runCli(["repo", "list", "--json"], repoProject, repoHome);
+    expect(sourceList.status).toBe(0);
+    expect(repoList.status).toBe(0);
+    expect(repoList.stdout).toBe(sourceList.stdout);
+    expect(JSON.parse(repoList.stdout)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "default", isDefault: true }),
+      ]),
+    );
+  });
+
+  it("keeps init as a legacy alias and removes source init / repo init", async () => {
+    const legacyHome = path.join(tmpRoot, "phase1-init-home");
+    const legacyProject = path.join(tmpRoot, "phase1-init-project");
+    await fs.mkdir(legacyHome, { recursive: true });
+    await fs.mkdir(legacyProject, { recursive: true });
+
+    const initResult = runCli(["init", TEST_REPO], legacyProject, legacyHome);
+    expect(initResult.status).toBe(0);
+    expect(initResult.stdout).toContain("Initialized git source");
+
+    const sourceInit = runCli(
+      ["source", "init", TEST_REPO],
+      legacyProject,
+      legacyHome,
+    );
+    expect(sourceInit.status).toBe(1);
+    expect(sourceInit.stderr).toContain("unknown command 'init'");
+
+    const repoInit = runCli(
+      ["repo", "init", TEST_REPO],
+      legacyProject,
+      legacyHome,
+    );
+    expect(repoInit.status).toBe(1);
+    expect(repoInit.stderr).toContain("unknown command 'init'");
+  });
+
+  it("treats setup and system setup as equivalent to init", async () => {
+    const setupHome = path.join(tmpRoot, "phase1-setup-home");
+    const setupProject = path.join(tmpRoot, "phase1-setup-project");
+    const systemHome = path.join(tmpRoot, "phase1-system-home");
+    const systemProject = path.join(tmpRoot, "phase1-system-project");
+    await fs.mkdir(setupHome, { recursive: true });
+    await fs.mkdir(setupProject, { recursive: true });
+    await fs.mkdir(systemHome, { recursive: true });
+    await fs.mkdir(systemProject, { recursive: true });
+
+    const setupResult = runCli(["setup", TEST_REPO], setupProject, setupHome);
+    expect(setupResult.status).toBe(0);
+    expect(setupResult.stdout).toContain("Initialized git source");
+
+    const systemSetupResult = runCli(
+      ["system", "setup", TEST_REPO],
+      systemProject,
+      systemHome,
+    );
+    expect(systemSetupResult.status).toBe(0);
+    expect(systemSetupResult.stdout).toContain("Initialized git source");
+  });
+
+  it("errors in non-interactive mode when setup has no source and no git repo", async () => {
+    const emptyHome = path.join(tmpRoot, "phase1-empty-home");
+    const emptyProject = path.join(tmpRoot, "phase1-empty-project");
+    await fs.mkdir(emptyHome, { recursive: true });
+    await fs.mkdir(emptyProject, { recursive: true });
+
+    const result = runCli(["setup"], emptyProject, emptyHome);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("[E_CLI_USAGE]");
+    expect(result.stderr).toContain("git repository URL");
+  });
+
+  it("treats system doctor as an alias of doctor", async () => {
+    const doctorHome = path.join(tmpRoot, "phase1-doctor-home");
+    const doctorProject = path.join(tmpRoot, "phase1-doctor-project");
+    await fs.mkdir(doctorHome, { recursive: true });
+    await fs.mkdir(doctorProject, { recursive: true });
+
+    const doctor = runCli(["doctor", "--json"], doctorProject, doctorHome);
+    const systemDoctor = runCli(
+      ["system", "doctor", "--json"],
+      doctorProject,
+      doctorHome,
+    );
+    expect(doctor.status).toBe(1);
+    expect(systemDoctor.status).toBe(1);
+    expect(systemDoctor.stdout).toBe(doctor.stdout);
+  });
+
+  it("deprecates resource list --installed in favor of project list", async () => {
+    const depHome = path.join(tmpRoot, "phase1-dep-home");
+    const depProject = path.join(tmpRoot, "phase1-dep-project");
+    await fs.mkdir(depHome, { recursive: true });
+    await fs.mkdir(depProject, { recursive: true });
+
+    const result = runCli(
+      ["resource", "list", "--installed", "--json"],
+      depProject,
+      depHome,
+    );
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain(
+      "Deprecated: use `himan project list` instead.",
+    );
+    expect(JSON.parse(result.stdout)).toEqual({
+      rule: [],
+      command: [],
+      skill: [],
+      config: [],
+    });
+  });
+});
+
+describe("system audit (phase 2)", () => {
+  it("writes the install registry on install and removes entries on uninstall", async () => {
+    const auditHome = path.join(tmpRoot, "phase2-registry-home");
+    const auditProject = path.join(tmpRoot, "phase2-registry-project");
+    const remote = await createSingleRuleRemote(
+      "phase2-registry",
+      "audit-rule",
+      "1.0.0",
+      "audit rule",
+      "from audit source",
+    );
+    await fs.mkdir(auditHome, { recursive: true });
+    await fs.mkdir(auditProject, { recursive: true });
+    const auditProjectReal = await fs.realpath(auditProject);
+
+    expect(runCli(["init", remote], auditProject, auditHome).status).toBe(0);
+    const installResult = runCli(
+      ["install", "rule", "audit-rule@1.0.0", "--agent", "codex"],
+      auditProject,
+      auditHome,
+    );
+    expect(installResult.status).toBe(0);
+
+    const registryPath = path.join(auditHome, ".himan", "installed.json");
+    const registry = JSON.parse(
+      await fs.readFile(registryPath, "utf8"),
+    ) as { entries: Array<Record<string, unknown>> };
+    expect(registry.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "project",
+          projectDir: auditProjectReal,
+          agent: "codex",
+          type: "rule",
+          name: "audit-rule",
+          version: "1.0.0",
+          mode: "copy",
+          targetPath: path.join(auditProjectReal, ".codex", "rules", "audit-rule"),
+        }),
+      ]),
+    );
+
+    expect(
+      runCli(["uninstall", "rule", "audit-rule"], auditProject, auditHome).status,
+    ).toBe(0);
+    const afterUninstall = JSON.parse(
+      await fs.readFile(registryPath, "utf8"),
+    ) as { entries: Array<{ name: string }> };
+    expect(afterUninstall.entries.some((entry) => entry.name === "audit-rule")).toBe(false);
+  });
+
+  it("lists unmanaged resources and defaults to stats without a subcommand", async () => {
+    const auditHome = path.join(tmpRoot, "phase2-audit-home");
+    const auditProject = path.join(tmpRoot, "phase2-audit-project");
+    await fs.mkdir(auditHome, { recursive: true });
+    await fs.mkdir(auditProject, { recursive: true });
+    await fs.mkdir(path.join(auditProject, ".agents", "skills", "shadow-skill"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(auditProject, ".agents", "skills", "shadow-skill", "SKILL.md"),
+      "# shadow-skill\n",
+      "utf8",
+    );
+
+    const listResult = runCli(
+      ["system", "audit", "list", "--json"],
+      auditProject,
+      auditHome,
+    );
+    expect(listResult.status).toBe(0);
+    const resources = JSON.parse(listResult.stdout) as Array<{
+      name: string;
+      status: string;
+    }>;
+    expect(resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "project",
+          agent: "codex",
+          type: "skill",
+          name: "shadow-skill",
+          status: "unmanaged",
+        }),
+      ]),
+    );
+
+    const defaultResult = runCli(
+      ["system", "audit", "--json"],
+      auditProject,
+      auditHome,
+    );
+    expect(defaultResult.status).toBe(0);
+    const stats = JSON.parse(defaultResult.stdout) as {
+      totals: { resources: number; unmanaged: number };
+    };
+    expect(stats.totals.resources).toBeGreaterThanOrEqual(1);
+    expect(stats.totals.unmanaged).toBeGreaterThanOrEqual(1);
+
+    const issuesResult = runCli(
+      ["system", "audit", "issues", "--json"],
+      auditProject,
+      auditHome,
+    );
+    expect(issuesResult.status).toBe(0);
+    const issues = JSON.parse(issuesResult.stdout) as Array<{
+      category: string;
+      level: string;
+    }>;
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: "unmanaged", level: "warn" }),
+      ]),
+    );
+  });
+
+  it("exits non-zero when issues include error-level lock targets", async () => {
+    const auditHome = path.join(tmpRoot, "phase2-issues-home");
+    const auditProject = path.join(tmpRoot, "phase2-issues-project");
+    await fs.mkdir(auditHome, { recursive: true });
+    await fs.mkdir(auditProject, { recursive: true });
+    await fs.writeFile(
+      path.join(auditProject, "himan.lock"),
+      JSON.stringify({
+        version: 1,
+        source: { type: "git", repo: "https://example.com/source.git" },
+        updatedAt: "2026-08-25T00:00:00.000Z",
+        resources: [
+          {
+            type: "rule",
+            name: "ghost-rule",
+            version: "1.0.0",
+            agents: ["codex"],
+            mode: "copy",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const result = runCli(
+      ["system", "audit", "issues", "--json"],
+      auditProject,
+      auditHome,
+    );
+    expect(result.status).toBe(1);
+    const issues = JSON.parse(result.stdout) as Array<{
+      category: string;
+      level: string;
+    }>;
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: "lock-missing-target",
+          level: "error",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects an invalid scope option", () => {
+    const result = runCli(
+      ["system", "audit", "stats", "--scope", "workspace", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(1);
+    const payload = JSON.parse(result.stderr) as {
+      error: { code: string; message: string };
+    };
+    expect(payload.error.code).toBe("E_CLI_USAGE");
+    expect(payload.error.message).toContain("Invalid scope");
+  });
+});
+
+describe("system migrate (phase 3)", () => {
+  it("migrates an unmanaged resource into the local source and makes it installable", async () => {
+    const migrateHome = path.join(tmpRoot, "phase3-migrate-home");
+    const migrateProject = path.join(tmpRoot, "phase3-migrate-project");
+    const resourceDir = path.join(
+      migrateProject,
+      ".agents",
+      "skills",
+      "hello-skill",
+    );
+    await fs.mkdir(resourceDir, { recursive: true });
+    await fs.mkdir(path.join(resourceDir, "references"), { recursive: true });
+    await fs.writeFile(path.join(resourceDir, "SKILL.md"), "# hello-skill\n", "utf8");
+    await fs.writeFile(path.join(resourceDir, "references", "guide.md"), "guide\n", "utf8");
+
+    const dryRun = runCli(
+      [
+        "system",
+        "migrate",
+        resourceDir,
+        "--type",
+        "skill",
+        "--dry-run",
+        "--json",
+      ],
+      migrateProject,
+      migrateHome,
+    );
+    expect(dryRun.status).toBe(0);
+    const dryRunPayload = JSON.parse(dryRun.stdout) as { dryRun: boolean };
+    expect(dryRunPayload.dryRun).toBe(true);
+    await expect(
+      fs.access(path.join(migrateHome, ".himan", "local-source")),
+    ).rejects.toThrow();
+
+    const migrateResult = runCli(
+      [
+        "system",
+        "migrate",
+        resourceDir,
+        "--type",
+        "skill",
+        "--agent",
+        "codex",
+        "--json",
+      ],
+      migrateProject,
+      migrateHome,
+    );
+    expect(migrateResult.status).toBe(0);
+    const payload = JSON.parse(migrateResult.stdout) as {
+      type: string;
+      name: string;
+      version: string;
+      dryRun: boolean;
+    };
+    expect(payload).toEqual(
+      expect.objectContaining({
+        type: "skill",
+        name: "hello-skill",
+        version: "0.0.1",
+        dryRun: false,
+      }),
+    );
+
+    const yamlPath = path.join(
+      migrateHome,
+      ".himan",
+      "local-source",
+      "skills",
+      "hello-skill",
+      "himan.yaml",
+    );
+    const yaml = await fs.readFile(yamlPath, "utf8");
+    expect(yaml).toContain("name: hello-skill");
+    expect(yaml).toContain("type: skill");
+    expect(yaml).toContain("entry: SKILL.md");
+    expect(yaml).toContain("version: 0.0.1");
+    expect(yaml).toContain("agents:");
+    expect(yaml).toContain("- codex");
+    expect(yaml).toContain("analysis:");
+
+    await expect(
+      fs.access(
+        path.join(
+          migrateHome,
+          ".himan",
+          "store",
+          "skill",
+          "hello-skill",
+          "0.0.1",
+          "SKILL.md",
+        ),
+      ),
+    ).resolves.toBeUndefined();
+
+    const listResult = runCli(
+      ["resource", "list", "skill", "--source", "local", "--json"],
+      migrateProject,
+      migrateHome,
+    );
+    expect(listResult.status).toBe(0);
+    expect(JSON.parse(listResult.stdout)).toEqual([
+      expect.objectContaining({
+        name: "hello-skill",
+        type: "skill",
+        version: "0.0.1",
+      }),
+    ]);
+
+    const installResult = runCli(
+      ["install", "skill", "hello-skill", "--source", "local", "--agent", "codex"],
+      migrateProject,
+      migrateHome,
+    );
+    expect(installResult.status).toBe(0);
+    expect(installResult.stdout).toContain("Installed skill/hello-skill@0.0.1");
+
+    const auditResult = runCli(
+      ["system", "audit", "list", "--json"],
+      migrateProject,
+      migrateHome,
+    );
+    expect(auditResult.status).toBe(0);
+    const resources = JSON.parse(auditResult.stdout) as Array<{
+      name: string;
+      status: string;
+      source?: string;
+    }>;
+    expect(resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "hello-skill",
+          status: "managed",
+          source: "local",
+        }),
+      ]),
+    );
+  });
+
+  it("infers the resource type from the parent directory", async () => {
+    const migrateHome = path.join(tmpRoot, "phase3-infer-home");
+    const migrateProject = path.join(tmpRoot, "phase3-infer-project");
+    const resourceDir = path.join(migrateProject, ".cursor", "rules", "my-rule");
+    await fs.mkdir(resourceDir, { recursive: true });
+    await fs.writeFile(path.join(resourceDir, "content.md"), "rule\n", "utf8");
+
+    const result = runCli(
+      ["system", "migrate", resourceDir, "--json"],
+      migrateProject,
+      migrateHome,
+    );
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as { type: string; name: string };
+    expect(payload).toEqual(
+      expect.objectContaining({ type: "rule", name: "my-rule" }),
+    );
+  });
+
+  it("errors when migrating a missing path", () => {
+    const result = runCli(
+      ["system", "migrate", "/does/not/exist", "--type", "rule", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(1);
+    const payload = JSON.parse(result.stderr) as {
+      error: { code: string; message: string };
+    };
+    expect(payload.error.code).toBe("E_RESOURCE_NOT_FOUND");
+    expect(payload.error.message).toContain("Migrate path not found");
+  });
+});
+
+describe("system cleanup (phase 4)", () => {
+  async function seedCleanupEnv(label: string): Promise<{
+    home: string;
+    project: string;
+  }> {
+    const home = path.join(tmpRoot, `${label}-home`);
+    const project = path.join(tmpRoot, `${label}-project`);
+    await fs.mkdir(home, { recursive: true });
+    await fs.mkdir(project, { recursive: true });
+    await fs.mkdir(path.join(project, ".agents", "skills", "shadow-skill"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(project, ".agents", "skills", "shadow-skill", "SKILL.md"),
+      "# shadow\n",
+      "utf8",
+    );
+    await fs.mkdir(
+      path.join(home, ".himan", "store", "skill", "old-skill", "0.1.0"),
+      { recursive: true },
+    );
+    await fs.writeFile(
+      path.join(home, ".himan", "store", "skill", "old-skill", "0.1.0", "SKILL.md"),
+      "# old\n",
+      "utf8",
+    );
+    return { home, project };
+  }
+
+  it("previews candidates without moving anything by default", async () => {
+    const { home, project } = await seedCleanupEnv("phase4-preview");
+
+    const result = runCli(["system", "cleanup", "--json"], project, home);
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      dryRun: boolean;
+      candidates: Array<{ category: string }>;
+    };
+    expect(payload.dryRun).toBe(true);
+    expect(payload.candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ category: "orphan-store-cache" }),
+        expect.objectContaining({ category: "unmanaged" }),
+      ]),
+    );
+    await expect(
+      fs.access(path.join(project, ".agents", "skills", "shadow-skill")),
+    ).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(home, ".himan", "store", "skill", "old-skill", "0.1.0")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("moves candidates to the system trash with --yes", async () => {
+    const { home, project } = await seedCleanupEnv("phase4-execute");
+
+    const result = runCli(["system", "cleanup", "--yes", "--json"], project, home);
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      dryRun: boolean;
+      moved: Array<{ path: string; trashPath: string }>;
+    };
+    expect(payload.dryRun).toBe(false);
+    expect(payload.moved).toHaveLength(2);
+    for (const item of payload.moved) {
+      await expect(fs.access(item.path)).rejects.toThrow();
+      await expect(fs.access(item.trashPath)).resolves.toBeUndefined();
+    }
+  });
+
+  it("excludes orphan store cache for project scope", async () => {
+    const { home, project } = await seedCleanupEnv("phase4-scope");
+
+    const result = runCli(
+      ["system", "cleanup", "--scope", "project", "--json"],
+      project,
+      home,
+    );
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      candidates: Array<{ category: string }>;
+    };
+    expect(
+      payload.candidates.every((candidate) => candidate.category === "unmanaged"),
+    ).toBe(true);
+  });
+
+  it("skips marked resources that are not shadows", async () => {
+    const home = path.join(tmpRoot, "phase4-marked-home");
+    const project = path.join(tmpRoot, "phase4-marked-project");
+    await fs.mkdir(home, { recursive: true });
+    await fs.mkdir(project, { recursive: true });
+    await fs.mkdir(path.join(project, ".agents", "skills", "shadow-skill"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(project, ".agents", "skills", "shadow-skill", "SKILL.md"),
+      "# shadow\n",
+      "utf8",
+    );
+    await fs.mkdir(path.join(project, ".agents", "skills", "marked-skill"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(project, ".agents", "skills", "marked-skill", "SKILL.md"),
+      "# marked\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(project, ".agents", "skills", "marked-skill", "himan.yaml"),
+      "name: marked-skill\ntype: skill\nentry: SKILL.md\nversion: 0.1.0\n",
+      "utf8",
+    );
+
+    const result = runCli(["system", "cleanup", "--json"], project, home);
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      candidates: Array<{ path: string }>;
+    };
+    expect(payload.candidates).toHaveLength(1);
+    expect(payload.candidates[0].path).toContain("shadow-skill");
+  });
+});
+
+describe("resource placement guidance (phase 5)", () => {
+  it("prints placement guidance after create", async () => {
+    const home = path.join(tmpRoot, "phase5-create-home");
+    const project = path.join(tmpRoot, "phase5-create-project");
+    await fs.mkdir(home, { recursive: true });
+    await fs.mkdir(project, { recursive: true });
+    expect(runCli(["init", TEST_REPO], project, home).status).toBe(0);
+
+    const result = runCli(
+      ["create", "skill", "placed-skill", "--agent", "codex"],
+      project,
+      home,
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Placement:");
+    expect(result.stdout).toContain("himan resource publish");
+    expect(result.stdout).toContain("himan system migrate");
+  });
+});

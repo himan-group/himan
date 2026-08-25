@@ -53,6 +53,11 @@
   - 帮助用户理解依赖来源、循环依赖和冲突风险
 - 扩展 `config` 资源覆盖面
   - 在 Codex 之外，逐步评估 Cursor、Claude Code、OpenClaw、Copilot 的配置资源支持
+- 新增 `subagent` 资源类型（提示词定义的子代理）
+  - Codex：`~/.codex/agents/*.toml` / `.codex/agents/*.toml`
+  - Claude Code：`~/.claude/agents/*.md` / `.claude/agents/*.md`
+  - 其他 agent 存放约定待调研；需求详情见 `docs/v1.0/issues/2026-08-25_subagent-resource.md`
+- 规划新 agent 支持：WorkBuddy / deepseek-harness（Agent Skills 标准兼容）；OpenClaw 保留为 Claw 生态入口；Copilot 保留但以后可能废弃
 
 预期结果：
 - `himan` 不只是“能装”，而是“容易发现、容易升级、容易排障”

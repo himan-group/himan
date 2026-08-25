@@ -21,7 +21,7 @@ import type {
 } from "../../domain/source-docs.js";
 
 export interface SourceConfig {
-  type: "git" | "registry";
+  type: "git" | "registry" | "local";
   repo?: string;
   repoId?: string;
   repoDir?: string;

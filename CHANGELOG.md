@@ -6,6 +6,31 @@ The format is based on Keep a Changelog, and this project follows semver for the
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-25
+
+### Added
+
+- Added `himan setup` and `himan system setup` as the environment setup wizard, replacing `himan init`; `himan init` remains as a legacy alias.
+- Added the `system` command group with `system setup` and `system doctor`.
+- Added the machine-level install registry at `~/.himan/installed.json`, recording project and global installs so global resources can be listed and versioned.
+- Added `himan system audit stats|list|issues` for machine-level resource inventory with managed / unmanaged / drifted classification, duplicate and version-drift detection, lock target checks, and orphan store cache reporting.
+- Added `himan system migrate <path>` to onboard unmanaged local resources into a private local source (`~/.himan/local-source/`) with generated `himan.yaml` metadata and static analysis, making them installable via `--source local`.
+- Added `himan system cleanup` with dry-run preview by default and `--yes` execution that moves orphan store cache and unmanaged shadow resources to the system trash instead of hard-deleting them.
+- Added placement guidance after `himan create` and a resource placement guide (`docs/resource-placement.md`) covering canonical per-agent paths and `himan.yaml` markers; `system audit` now reports unmanaged issues only for unmarked shadow resources, and `system cleanup` skips marked dev scaffolds.
+
+### Changed
+
+- Changed the `source` command group to `repo` (`himan repo ...`); `source` remains as a compatibility alias.
+- Moved `doctor` under the `system` command group; `himan doctor` remains as a top-level alias.
+
+### Removed
+
+- Removed the duplicate `himan source init` command; `himan init` is now only available as the legacy top-level alias.
+
+### Deprecated
+
+- Deprecated `himan resource list --installed`; use `himan project list` instead.
+
 ## [0.8.8] - 2026-06-09
 
 ### Changed

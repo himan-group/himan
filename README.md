@@ -18,7 +18,7 @@
 - **不绑定单一 agent**：同一套资产可安装到 Cursor、Claude Code、Codex、OpenClaw、Copilot，不受某个 agent 目录结构限制。
 - **安装结果可复现**：项目内写入 `himan.lock`，记录默认 source、可选额外 source、精确版本、目标 agent 和安装模式；换机器后 `himan install` 即可恢复。
 - **在真实项目中开发和验证**：`create` / `dev` 直接在当前项目的 agent 目录工作，验证后用 `publish` 回写 source、发布新版本并更新文档索引。
-- **适合团队治理**：支持多 source、别名、归档、恢复、批量发布、递归安装 skill 依赖，以及 `doctor` 本地健康检查。
+- **适合团队治理**：支持多 source、别名、归档、恢复、批量发布、递归安装 skill 依赖，`doctor` 本地健康检查，以及 `system audit` 机器级资源盘点（区分托管/未托管/漂移，识别重复与孤儿缓存）。
 
 ## 安装
 
@@ -42,7 +42,7 @@ pnpm dlx @hi-man/himan --help
 
 ```bash
 # 1. 初始化 source，并设置当前项目默认 agent
-himan init https://github.com/your-org/your-himan-source.git --agent codex
+himan system setup https://github.com/your-org/your-himan-source.git --agent codex
 
 # 2. 创建 skill 空壳，并在当前项目 agent 目录里完善和验证
 himan create skill api-review --description "Review API changes"
@@ -53,7 +53,7 @@ himan create skill api-review --description "Review API changes"
 himan publish skill api-review
 
 # 5. 检查本机、source、agent、lock 和安装目标
-himan doctor
+himan system doctor
 ```
 
 `himan create` 只负责创建资产空壳；编写 `SKILL.md` 和维护 `himan.yaml` 通常交给 coding agent 完成。
@@ -61,7 +61,7 @@ himan doctor
 如果 source 中已经有可用资产，也可以在初始化时直接安装：
 
 ```bash
-himan init https://github.com/your-org/your-himan-source.git \
+himan system setup https://github.com/your-org/your-himan-source.git \
   --agent codex \
   --install skill/code-review
 ```
@@ -69,11 +69,13 @@ himan init https://github.com/your-org/your-himan-source.git \
 换一台机器或同事拉取包含 `himan.lock` 的项目后：
 
 ```bash
-himan init https://github.com/your-org/your-himan-source.git --agent codex
+himan system setup https://github.com/your-org/your-himan-source.git --agent codex
 himan install
 ```
 
 `himan install` 无参数时会按当前项目的 `himan.lock` 恢复安装，而不是盲目使用最新版本；资源条目未指定 `source` 时使用 lock 顶层默认 source。
+
+> 兼容说明：`himan setup` / `himan doctor` 是顶层简写（等价 `himan system setup` / `himan system doctor`）；`himan init` 保留为 legacy 别名；`source` 是 `repo` 命令组的兼容别名。
 
 ## 核心概念
 
@@ -89,8 +91,8 @@ himan install
 
 | 场景                | 命令                                                                              |
 | ------------------- | --------------------------------------------------------------------------------- |
-| 添加 source         | `himan source add team https://github.com/your-org/himan-source.git --alias team` |
-| 切换 source         | `himan source use team`                                                           |
+| 添加 source         | `himan repo add team https://github.com/your-org/himan-source.git --alias team`   |
+| 切换 source         | `himan repo use team`                                                             |
 | 设置默认 agent      | `himan agent use codex`                                                           |
 | 安装资产            | `himan install skill code-review`                                                 |
 | 递归安装 skill 依赖 | `himan install skill code-review -r --depth 2`                                    |

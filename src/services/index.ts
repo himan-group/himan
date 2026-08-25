@@ -1,9 +1,12 @@
 import { GitSourceAdapter } from "../adapters/source/git-source-adapter.js";
+import { LocalSourceAdapter } from "../adapters/source/local-source-adapter.js";
 import { RegistrySourceAdapter } from "../adapters/source/registry-source-adapter.js";
+import { SystemAuditor } from "../adapters/audit/system-auditor.js";
 import type {
   ResourceSourceAdapter,
   SourceConfig,
 } from "../adapters/source/resource-source-adapter.js";
+import type { AuditResult, CleanupCandidate, CleanupResult } from "../domain/audit.js";
 import type { DoctorCheck, DoctorResult } from "../domain/doctor.js";
 import type {
   ArchiveOptions,
@@ -13,6 +16,7 @@ import type {
   CreateOptions,
   CreateResult,
   InstallMode,
+  MigrateResult,
   RenameResult,
   ResourceListOptions,
   ResourceMeta,
@@ -21,6 +25,7 @@ import type {
   RestoreResult,
   VersionInfo,
 } from "../domain/resource.js";
+import { buildResourceAnalysisMetadata } from "../adapters/resource/resource-analysis.js";
 import type {
   SourceDocsOptions,
   SourceDocsResult,
@@ -38,7 +43,14 @@ import {
   type LockSourceInfo,
   type ProjectLock,
 } from "../state/project-lock-store.js";
+import {
+  InstalledRegistryStore,
+  type InstallScope,
+  type InstalledRegistryEntry,
+} from "../state/installed-registry-store.js";
 import type { SourceState } from "../state/state-store.js";
+import { findMissingLockTargets } from "../utils/lock-target-check.js";
+import { moveToTrash } from "../utils/trash.js";
 import { PathResolver } from "../utils/path-resolver.js";
 import { toRepoId } from "../utils/repo-id.js";
 import { HimanError, errorCodes } from "../utils/errors.js";
@@ -180,13 +192,18 @@ export class ServiceFactory {
   private readonly stateStore = new StateStore();
   private readonly projectConfigStore = new ProjectConfigStore();
   private readonly lockStore = new ProjectLockStore();
+  private readonly registryStore = new InstalledRegistryStore();
   private readonly paths = new PathResolver();
   private readonly versions = new VersionResolver();
 
   async initSource(
-    type: "git" | "registry",
+    type: "git" | "registry" | "local",
     repo?: string,
-  ): Promise<{ sourceType: "git" | "registry"; repo?: string; repoId?: string }> {
+  ): Promise<{
+    sourceType: "git" | "registry" | "local";
+    repo?: string;
+    repoId?: string;
+  }> {
     await this.stateStore.ensureBaseDirs();
     const current = await this.stateStore.loadConfig();
     const sourceConfig = this.buildSourceConfig(type, repo);
@@ -214,13 +231,13 @@ export class ServiceFactory {
 
   async addSource(
     name: string,
-    type: "git" | "registry",
+    type: "git" | "registry" | "local",
     repo?: string,
     alias: string = name,
   ): Promise<{
     name: string;
     alias: string;
-    type: "git" | "registry";
+    type: "git" | "registry" | "local";
     repo?: string;
     repoId?: string;
   }> {
@@ -405,7 +422,7 @@ export class ServiceFactory {
     Array<{
       name: string;
       alias?: string;
-      type: "git" | "registry";
+      type: "git" | "registry" | "local";
       repo?: string;
       repoId?: string;
       isDefault: boolean;
@@ -579,6 +596,191 @@ export class ServiceFactory {
     return {
       ok: !checks.some((check) => check.status === "error"),
       checks,
+    };
+  }
+
+  async systemAudit(
+    options: { scope?: "global" | "project" | "all"; agent?: string } = {},
+  ): Promise<AuditResult> {
+    const auditor = new SystemAuditor({
+      registryStore: this.registryStore,
+      lockStore: this.lockStore,
+    });
+    return auditor.run({
+      projectDir: process.cwd(),
+      homeDir: this.paths.getHomeDir(),
+      scope: options.scope ?? "all",
+      agent: options.agent,
+    });
+  }
+
+  async systemCleanup(
+    options: {
+      scope?: "global" | "project" | "all";
+      agent?: string;
+      dryRun?: boolean;
+    } = {},
+  ): Promise<CleanupResult> {
+    const scope = options.scope ?? "all";
+    const audit = await this.systemAudit({ scope, agent: options.agent });
+    const candidates: CleanupCandidate[] = [];
+
+    for (const issue of audit.issues) {
+      if (!issue.path) continue;
+      if (issue.category === "unmanaged") {
+        candidates.push({
+          category: "unmanaged",
+          path: issue.path,
+          reason: issue.message,
+        });
+        continue;
+      }
+      if (issue.category !== "orphan-store-cache") continue;
+      if (scope === "project") continue;
+      candidates.push({
+        category: "orphan-store-cache",
+        path: issue.path,
+        reason: issue.message,
+      });
+    }
+
+    const uniqueCandidates = [
+      ...new Map(
+        candidates.map((candidate) => [candidate.path, candidate]),
+      ).values(),
+    ];
+    if (options.dryRun) {
+      return { dryRun: true, candidates: uniqueCandidates };
+    }
+
+    const moved: Array<{ path: string; trashPath: string }> = [];
+    for (const candidate of uniqueCandidates) {
+      if (!(await this.exists(candidate.path))) continue;
+      const trashPath = await moveToTrash(
+        candidate.path,
+        this.paths.getHomeDir(),
+      );
+      moved.push({ path: candidate.path, trashPath });
+    }
+    return { dryRun: false, candidates: uniqueCandidates, moved };
+  }
+
+  async migrate(
+    sourcePath: string,
+    options: { type?: string; agents?: string[]; dryRun?: boolean } = {},
+  ): Promise<MigrateResult> {
+    const resolvedPath = path.resolve(sourcePath);
+    let stat;
+    try {
+      stat = await fs.stat(resolvedPath);
+    } catch {
+      throw new HimanError(
+        errorCodes.RESOURCE_NOT_FOUND,
+        `Migrate path not found: ${resolvedPath}`,
+      );
+    }
+    if (!stat.isDirectory()) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "Migrate target must be a directory.",
+      );
+    }
+
+    const type = options.type
+      ? this.ensureMigrateResourceType(options.type)
+      : await this.inferMigrateResourceType(resolvedPath);
+    const name = path.basename(resolvedPath);
+    const localRoot = this.getLocalSourceRoot();
+    if (resolvedPath.startsWith(`${localRoot}${path.sep}`)) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        "Resource is already inside the local managed source.",
+      );
+    }
+    const targetSourceDir = path.join(localRoot, this.getTypeDir(type), name);
+    if (await this.exists(targetSourceDir)) {
+      throw new HimanError(
+        errorCodes.RESOURCE_EXISTS,
+        `Resource already managed in local source: ${type}/${name}`,
+      );
+    }
+
+    const existingMeta = await this.readMigrateResourceMeta(resolvedPath, type);
+    const entry = existingMeta?.entry ?? this.getDefaultEntry(type);
+    const entryPath = path.join(resolvedPath, entry);
+    if (!(await this.exists(entryPath))) {
+      throw new HimanError(
+        errorCodes.INVALID_RESOURCE_METADATA,
+        `Resource is missing its default entry file: ${entryPath}`,
+      );
+    }
+
+    const files = await this.readResourceFiles(resolvedPath);
+    const packageFiles = files.map((file) => ({
+      path: file.path,
+      content: file.content,
+    }));
+    const entryContent =
+      files.find((file) => file.path === entry)?.content ?? "";
+    const analysis = buildResourceAnalysisMetadata({
+      entry,
+      entryContent,
+      packageFiles,
+      measuredBy: "himan-migrate",
+      generatedBy: "himan-migrate",
+    });
+    const version = existingMeta?.version ?? "0.0.1";
+    const agents = options.agents?.length
+      ? normalizeAgents(options.agents)
+      : existingMeta?.agents;
+    const plannedFiles = [
+      ...files.map((file) => ({ path: file.path, action: "copy" })),
+      { path: "himan.yaml", action: "create" },
+    ];
+    const storePath = this.getStorePath(type, name, version);
+
+    if (options.dryRun) {
+      return {
+        type,
+        name,
+        version,
+        sourceName: "local",
+        sourceDir: targetSourceDir,
+        storePath,
+        files: plannedFiles,
+        dryRun: true,
+      };
+    }
+
+    await this.ensureLocalSourceConfigured();
+    await fs.mkdir(targetSourceDir, { recursive: true });
+    await fs.cp(resolvedPath, targetSourceDir, { recursive: true });
+    await fs.writeFile(
+      path.join(targetSourceDir, "himan.yaml"),
+      YAML.stringify(
+        buildMigrateYaml(existingMeta, {
+          name,
+          type,
+          entry,
+          version,
+          agents,
+          analysis,
+        }),
+      ),
+      "utf8",
+    );
+    await fs.rm(storePath, { recursive: true, force: true });
+    await fs.cp(targetSourceDir, storePath, { recursive: true });
+
+    return {
+      type,
+      name,
+      version,
+      sourceName: "local",
+      sourceDir: targetSourceDir,
+      storePath,
+      files: plannedFiles,
+      dryRun: false,
     };
   }
 
@@ -803,24 +1005,7 @@ export class ServiceFactory {
       };
     }
 
-    const missing: Array<{ resource: string; path: string }> = [];
-    for (const resource of lock.resources) {
-      const agents = normalizeAgents(resource.agents);
-      const targets = getProjectResourcePaths(
-        projectDir,
-        resource.type,
-        resource.name,
-        agents,
-      );
-      for (const targetPath of targets) {
-        if (!(await this.exists(targetPath))) {
-          missing.push({
-            resource: `${resource.type}/${resource.name}@${resource.version}`,
-            path: targetPath,
-          });
-        }
-      }
-    }
+    const missing = await findMissingLockTargets(projectDir, lock);
 
     if (missing.length > 0) {
       return {
@@ -1171,6 +1356,7 @@ export class ServiceFactory {
       await fs.rm(linkPath, { recursive: true, force: true });
     }
     await this.lockStore.removeResource(projectDir, { type, name });
+    await this.registryStore.remove({ scope: "project", projectDir, type, name });
     if (type === "config") {
       await this.reactivateProjectConfig(projectDir);
     }
@@ -1207,6 +1393,7 @@ export class ServiceFactory {
     for (const linkPath of globalTarget.linkPaths) {
       await fs.rm(linkPath, { recursive: true, force: true });
     }
+    await this.registryStore.remove({ scope: "global", type, name });
     if (type === "config") {
       await fs.rm(this.getCodexActiveConfigPath(this.paths.getHomeDir()), {
         force: true,
@@ -1345,6 +1532,17 @@ export class ServiceFactory {
         mode: installMode,
       });
     }
+    await this.registerInstalledTargets({
+      scope: installScope,
+      projectDir,
+      type,
+      name,
+      version: nextVersion,
+      source: lockResourceSource ?? sourceInfo?.name ?? sourceInfo?.repo,
+      agents: nextAgents,
+      mode: installMode,
+      linkPaths,
+    });
     this.reportPublishProgress(options, "cleanup", `Cleaning up legacy dev copy if present.`);
     await fs.rm(this.getProjectDevPath(projectDir, type, name), {
       recursive: true,
@@ -2024,6 +2222,17 @@ export class ServiceFactory {
         mode: prepared.mode,
       });
     }
+    await this.registerInstalledTargets({
+      scope: prepared.scope,
+      projectDir,
+      type: prepared.type,
+      name: prepared.name,
+      version: prepared.version,
+      source: lockResourceSource ?? sourceInfo?.name ?? sourceInfo?.repo,
+      agents: prepared.effectiveTargets,
+      mode: prepared.mode,
+      linkPaths: prepared.linkPaths,
+    });
 
     return {
       type: prepared.type,
@@ -2253,15 +2462,15 @@ export class ServiceFactory {
     return { name: currentName, source: currentSource };
   }
 
-  private createSource(type: "git" | "registry"): ResourceSourceAdapter {
-    return type === "registry"
-      ? new RegistrySourceAdapter()
-      : new GitSourceAdapter();
+  private createSource(type: "git" | "registry" | "local"): ResourceSourceAdapter {
+    if (type === "registry") return new RegistrySourceAdapter();
+    if (type === "local") return new LocalSourceAdapter();
+    return new GitSourceAdapter();
   }
 
   private async getLockSourceInfo(): Promise<{
     name?: string;
-    type: "git" | "registry";
+    type: "git" | "registry" | "local";
     repo?: string;
     repoId?: string;
   }> {
@@ -2393,6 +2602,9 @@ export class ServiceFactory {
       if (leftRepoId && rightRepoId) return leftRepoId === rightRepoId;
       if (a.repo && b.repo) return a.repo === b.repo;
     }
+    if (a.type === "local") {
+      if (a.repo && b.repo) return a.repo === b.repo;
+    }
     return true;
   }
 
@@ -2518,12 +2730,27 @@ export class ServiceFactory {
   }
 
   private buildSourceConfig(
-    type: "git" | "registry",
+    type: "git" | "registry" | "local",
     repo?: string,
     repoId?: string,
   ): SourceConfig {
     if (type === "registry") {
       return { type };
+    }
+    if (type === "local") {
+      if (!repo) {
+        throw new HimanError(
+          errorCodes.INVALID_INPUT,
+          "Local source root directory is required.",
+        );
+      }
+      const effectiveRepoId = repoId ?? toRepoId(repo);
+      return {
+        type,
+        repo,
+        repoId: effectiveRepoId,
+        repoDir: repo,
+      };
     }
     if (!repo) {
       throw new HimanError(
@@ -2618,6 +2845,161 @@ export class ServiceFactory {
     return path.join(this.paths.getStoreDir(), type, name, version);
   }
 
+  private getLocalSourceRoot(): string {
+    return path.join(this.paths.getHimanRoot(), "local-source");
+  }
+
+  private ensureMigrateResourceType(type: string): ResourceType {
+    if (
+      type !== "rule"
+      && type !== "command"
+      && type !== "skill"
+      && type !== "config"
+    ) {
+      throw new HimanError(
+        errorCodes.UNSUPPORTED_RESOURCE_TYPE,
+        `Unsupported resource type: ${type}`,
+      );
+    }
+    return type;
+  }
+
+  private async inferMigrateResourceType(
+    resourcePath: string,
+  ): Promise<ResourceType> {
+    const yamlPath = path.join(resourcePath, "himan.yaml");
+    if (await this.exists(yamlPath)) {
+      try {
+        const raw = await fs.readFile(yamlPath, "utf8");
+        const parsed = YAML.parse(raw) as { type?: unknown } | null;
+        if (parsed && typeof parsed.type === "string" && parsed.type) {
+          return this.ensureMigrateResourceType(parsed.type);
+        }
+      } catch {
+        // Fall through to path inference.
+      }
+    }
+
+    const parentDir = path.basename(path.dirname(resourcePath));
+    const byDir: Record<string, ResourceType> = {
+      rules: "rule",
+      commands: "command",
+      skills: "skill",
+      configs: "config",
+    };
+    if (byDir[parentDir]) return byDir[parentDir];
+
+    throw new HimanError(
+      errorCodes.UNSUPPORTED_RESOURCE_TYPE,
+      "Cannot infer resource type from path. Pass --type rule|command|skill|config.",
+    );
+  }
+
+  private async ensureLocalSourceConfigured(): Promise<void> {
+    const config = await this.stateStore.loadConfig();
+    const existing = config?.sources?.items
+      ? Object.values(config.sources.items).some(
+        (source) => source.type === "local",
+      )
+      : false;
+    if (existing) return;
+    await this.addSource("local", "local", this.getLocalSourceRoot(), "local");
+  }
+
+  private async readMigrateResourceMeta(
+    resourceDir: string,
+    type: ResourceType,
+  ): Promise<{
+    entry?: string;
+    version?: string;
+    description?: string;
+    category?: string;
+    agents?: string[];
+    comment?: { score: number; text?: string };
+  } | undefined> {
+    const yamlPath = path.join(resourceDir, "himan.yaml");
+    if (await this.exists(yamlPath)) {
+      const raw = await fs.readFile(yamlPath, "utf8");
+      const parsed = YAML.parse(raw) as {
+        entry?: unknown;
+        version?: unknown;
+        description?: unknown;
+        category?: unknown;
+        agents?: unknown;
+        targets?: unknown;
+        comment?: unknown;
+      } | null;
+      if (!parsed) return undefined;
+      return {
+        entry:
+          typeof parsed.entry === "string" && parsed.entry
+            ? parsed.entry
+            : undefined,
+        version:
+          typeof parsed.version === "string" && parsed.version
+            ? parsed.version
+            : undefined,
+        description:
+          typeof parsed.description === "string"
+            ? parsed.description
+            : undefined,
+        category:
+          typeof parsed.category === "string" ? parsed.category : undefined,
+        agents:
+          Array.isArray(parsed.agents)
+            ? (parsed.agents as string[]).filter((item): item is string => typeof item === "string")
+            : Array.isArray(parsed.targets)
+              ? (parsed.targets as string[]).filter((item): item is string => typeof item === "string")
+              : undefined,
+        comment:
+          parsed.comment && typeof parsed.comment === "object"
+            ? (parsed.comment as { score: number; text?: string })
+            : undefined,
+      };
+    }
+
+    if (type !== "skill") return undefined;
+    const entryPath = path.join(resourceDir, this.getDefaultEntry(type));
+    if (!(await this.exists(entryPath))) return undefined;
+    const metadata = await this.readFrontMatter(entryPath);
+    return {
+      description: this.readStringMetadata(metadata, "description"),
+      agents:
+        this.readStringArrayMetadata(metadata, "agents")
+        ?? this.readStringArrayMetadata(metadata, "targets"),
+    };
+  }
+
+  private async readResourceFiles(
+    resourceDir: string,
+  ): Promise<Array<{ path: string; content: string }>> {
+    const files: Array<{ path: string; content: string }> = [];
+    await this.collectResourceFiles(resourceDir, "", files);
+    return files;
+  }
+
+  private async collectResourceFiles(
+    dirPath: string,
+    relativeDir: string,
+    files: Array<{ path: string; content: string }>,
+  ): Promise<void> {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry.name);
+      const relativePath = relativeDir
+        ? path.join(relativeDir, entry.name)
+        : entry.name;
+      if (entry.isDirectory()) {
+        await this.collectResourceFiles(fullPath, relativePath, files);
+      } else if (entry.isFile()) {
+        files.push({
+          path: relativePath,
+          content: await fs.readFile(fullPath, "utf8"),
+        });
+      }
+    }
+  }
+
   private getProjectDevPath(projectDir: string, type: ResourceType, name: string): string {
     return path.join(projectDir, ".himan", "dev", type, name);
   }
@@ -2634,6 +3016,35 @@ export class ServiceFactory {
       return;
     }
     await fs.symlink(sourcePath, targetPath, "dir");
+  }
+
+  private async registerInstalledTargets(params: {
+    scope: InstallScope;
+    projectDir: string;
+    type: ResourceType;
+    name: string;
+    version: string;
+    source?: string;
+    agents: string[];
+    mode: InstallMode;
+    linkPaths: string[];
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    const entries: InstalledRegistryEntry[] = params.agents.map((agent, index) => ({
+      scope: params.scope,
+      projectDir: params.scope === "project" ? params.projectDir : undefined,
+      agent,
+      type: params.type,
+      name: params.name,
+      version: params.version,
+      source: params.source,
+      mode: params.mode,
+      targetPath:
+        params.linkPaths[index]
+        ?? params.linkPaths[params.linkPaths.length - 1],
+      updatedAt: now,
+    }));
+    await this.registryStore.upsertMany(entries);
   }
 
   private getDefaultAgentsForType(type: ResourceType): string[] {
@@ -3366,6 +3777,14 @@ export class ServiceFactory {
     return items.length > 0 ? items : undefined;
   }
 
+  private readStringMetadata(
+    metadata: Record<string, unknown> | null,
+    key: string,
+  ): string | undefined {
+    const value = metadata?.[key];
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  }
+
   private errorCheck(name: string, message: string, error: unknown): DoctorCheck {
     return {
       name,
@@ -3610,4 +4029,39 @@ export class ServiceFactory {
       );
     }
   }
+}
+
+interface MigrateYamlInput {
+  name: string;
+  type: ResourceType;
+  entry: string;
+  version: string;
+  agents?: string[];
+  analysis: ReturnType<typeof buildResourceAnalysisMetadata>;
+}
+
+function buildMigrateYaml(
+  meta:
+    | {
+      entry?: string;
+      version?: string;
+      description?: string;
+      category?: string;
+      agents?: string[];
+      comment?: { score: number; text?: string };
+    }
+    | undefined,
+  input: MigrateYamlInput,
+): Record<string, unknown> {
+  return {
+    name: input.name,
+    type: input.type,
+    entry: input.entry,
+    version: input.version,
+    ...(meta?.description ? { description: meta.description } : {}),
+    ...(input.agents?.length ? { agents: input.agents } : {}),
+    ...(meta?.category ? { category: meta.category } : {}),
+    ...(meta?.comment ? { comment: meta.comment } : {}),
+    analysis: input.analysis,
+  };
 }
