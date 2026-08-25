@@ -4,7 +4,7 @@ import type { InstallMode, ResourceType } from "../domain/resource.js";
 
 export interface LockSourceInfo {
   name?: string;
-  type: "git" | "registry";
+  type: "git" | "registry" | "local";
   repo?: string;
   repoId?: string;
 }

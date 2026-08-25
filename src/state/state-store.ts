@@ -3,7 +3,7 @@ import path from "node:path";
 import { PathResolver } from "../utils/path-resolver.js";
 
 export interface SourceState {
-  type: "git" | "registry";
+  type: "git" | "registry" | "local";
   alias?: string;
   repo?: string;
   repoId?: string;

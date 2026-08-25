@@ -111,6 +111,23 @@ himan system audit list --scope project --agent codex --json
 
 `system doctor` 与 `system audit` 共用同一份 lock target 缺失检查；`system doctor` 关注环境健康，`system audit` 关注资源盘点与漂移/重复。
 
+## 迁移未托管资源（system migrate）
+
+`himan system migrate <path>` 把 agent 目录里手动放入、未被 himan 管理的“影子资源”登记为托管资源，无需先准备 Git source：
+
+```bash
+himan system migrate ~/.agents/skills/meeting-minutes --type skill --agent codex
+himan system migrate .cursor/rules/code-review --dry-run
+```
+
+迁移会：
+
+1. 识别资源类型（`--type` 或按路径中的 `rules/commands/skills/configs` 推断）与名称；
+2. 在私有本地 source（`~/.himan/local-source/`）中生成该资源的副本和 `himan.yaml`（名称、类型、入口、版本、静态分析）；
+3. 同步版本到 `~/.himan/store/`，原目录保留原位。
+
+迁移后资源可通过 `himan resource list --source local` 查看，并可安装：`himan install <type> <name> --source local`。`--dry-run` 只预览不写盘。本地 source 不提供 publish / archive 等需要 Git 的能力，正式发布请把资源迁到 Git source。
+
 ## Agent 与安装目标
 
 支持的 agent：

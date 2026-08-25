@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import type { AuditIssue, AuditResult } from "../domain/audit.js";
 import type { ServiceFactory } from "../services/index.js";
+import { getSupportedAgentNames, normalizeAgent } from "../utils/agent-configs.js";
 import { errorCodes, HimanError } from "../utils/errors.js";
 import { runAction } from "./shared.js";
 
@@ -29,6 +30,86 @@ export function registerAuditCommands(
     });
 }
 
+export function registerMigrateCommand(
+  command: Command,
+  services: ServiceFactory,
+): void {
+  command
+    .command("migrate")
+    .argument("<path>", "path to an unmanaged resource directory")
+    .option("--type <type>", "resource type: rule, command, skill, or config")
+    .option(
+      "--agent <list>",
+      "agents for the migrated resource metadata, comma separated",
+    )
+    .option("--dry-run", "show what would be migrated without writing")
+    .option("--json", "output json format")
+    .description(
+      "Migrate an unmanaged local resource into the private local source",
+    )
+    .action(
+      async (
+        sourcePath: string,
+        options: {
+          type?: string;
+          agent?: string;
+          dryRun?: boolean;
+          json?: boolean;
+        },
+      ) => {
+        await runAction(async () => {
+          const result = await services.migrate(sourcePath, {
+            type: options.type,
+            agents: parseAgentList(options.agent),
+            dryRun: options.dryRun,
+          });
+          if (options.json) {
+            process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+            return;
+          }
+          if (result.dryRun) {
+            process.stdout.write(
+              `Dry run: would migrate ${result.type}/${result.name}@${result.version} `
+              + "to the local source.\n",
+            );
+            for (const file of result.files) {
+              process.stdout.write(`- ${file.action} ${file.path}\n`);
+            }
+            process.stdout.write(`- store: ${result.storePath}\n`);
+            return;
+          }
+          process.stdout.write(
+            `Migrated ${result.type}/${result.name}@${result.version} to the local source.\n`,
+          );
+          process.stdout.write(
+            `Source: ${result.sourceName} (${result.sourceDir})\n`,
+          );
+          process.stdout.write(`Store: ${result.storePath}\n`);
+          process.stdout.write(
+            `Next: himan install ${result.type} ${result.name} --source ${result.sourceName}\n`,
+          );
+        });
+      },
+    );
+}
+
+function parseAgentList(input?: string): string[] | undefined {
+  if (!input) return undefined;
+  const agents = input
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (agents.length === 0) return undefined;
+  for (const agent of agents) {
+    if (!normalizeAgent(agent)) {
+      throw new HimanError(
+        errorCodes.INVALID_INPUT,
+        `Unsupported agent: ${agent}. Supported agents: ${getSupportedAgentNames().join(", ")}`,
+      );
+    }
+  }
+  return agents;
+}
 
 function normalizeView(view?: string): AuditView {
   const normalized = view ?? "stats";

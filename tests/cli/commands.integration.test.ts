@@ -3746,3 +3746,177 @@ describe("system audit (phase 2)", () => {
     expect(payload.error.message).toContain("Invalid scope");
   });
 });
+
+describe("system migrate (phase 3)", () => {
+  it("migrates an unmanaged resource into the local source and makes it installable", async () => {
+    const migrateHome = path.join(tmpRoot, "phase3-migrate-home");
+    const migrateProject = path.join(tmpRoot, "phase3-migrate-project");
+    const resourceDir = path.join(
+      migrateProject,
+      ".agents",
+      "skills",
+      "hello-skill",
+    );
+    await fs.mkdir(resourceDir, { recursive: true });
+    await fs.mkdir(path.join(resourceDir, "references"), { recursive: true });
+    await fs.writeFile(path.join(resourceDir, "SKILL.md"), "# hello-skill\n", "utf8");
+    await fs.writeFile(path.join(resourceDir, "references", "guide.md"), "guide\n", "utf8");
+
+    const dryRun = runCli(
+      [
+        "system",
+        "migrate",
+        resourceDir,
+        "--type",
+        "skill",
+        "--dry-run",
+        "--json",
+      ],
+      migrateProject,
+      migrateHome,
+    );
+    expect(dryRun.status).toBe(0);
+    const dryRunPayload = JSON.parse(dryRun.stdout) as { dryRun: boolean };
+    expect(dryRunPayload.dryRun).toBe(true);
+    await expect(
+      fs.access(path.join(migrateHome, ".himan", "local-source")),
+    ).rejects.toThrow();
+
+    const migrateResult = runCli(
+      [
+        "system",
+        "migrate",
+        resourceDir,
+        "--type",
+        "skill",
+        "--agent",
+        "codex",
+        "--json",
+      ],
+      migrateProject,
+      migrateHome,
+    );
+    expect(migrateResult.status).toBe(0);
+    const payload = JSON.parse(migrateResult.stdout) as {
+      type: string;
+      name: string;
+      version: string;
+      dryRun: boolean;
+    };
+    expect(payload).toEqual(
+      expect.objectContaining({
+        type: "skill",
+        name: "hello-skill",
+        version: "0.0.1",
+        dryRun: false,
+      }),
+    );
+
+    const yamlPath = path.join(
+      migrateHome,
+      ".himan",
+      "local-source",
+      "skills",
+      "hello-skill",
+      "himan.yaml",
+    );
+    const yaml = await fs.readFile(yamlPath, "utf8");
+    expect(yaml).toContain("name: hello-skill");
+    expect(yaml).toContain("type: skill");
+    expect(yaml).toContain("entry: SKILL.md");
+    expect(yaml).toContain("version: 0.0.1");
+    expect(yaml).toContain("agents:");
+    expect(yaml).toContain("- codex");
+    expect(yaml).toContain("analysis:");
+
+    await expect(
+      fs.access(
+        path.join(
+          migrateHome,
+          ".himan",
+          "store",
+          "skill",
+          "hello-skill",
+          "0.0.1",
+          "SKILL.md",
+        ),
+      ),
+    ).resolves.toBeUndefined();
+
+    const listResult = runCli(
+      ["resource", "list", "skill", "--source", "local", "--json"],
+      migrateProject,
+      migrateHome,
+    );
+    expect(listResult.status).toBe(0);
+    expect(JSON.parse(listResult.stdout)).toEqual([
+      expect.objectContaining({
+        name: "hello-skill",
+        type: "skill",
+        version: "0.0.1",
+      }),
+    ]);
+
+    const installResult = runCli(
+      ["install", "skill", "hello-skill", "--source", "local", "--agent", "codex"],
+      migrateProject,
+      migrateHome,
+    );
+    expect(installResult.status).toBe(0);
+    expect(installResult.stdout).toContain("Installed skill/hello-skill@0.0.1");
+
+    const auditResult = runCli(
+      ["system", "audit", "list", "--json"],
+      migrateProject,
+      migrateHome,
+    );
+    expect(auditResult.status).toBe(0);
+    const resources = JSON.parse(auditResult.stdout) as Array<{
+      name: string;
+      status: string;
+      source?: string;
+    }>;
+    expect(resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "hello-skill",
+          status: "managed",
+          source: "local",
+        }),
+      ]),
+    );
+  });
+
+  it("infers the resource type from the parent directory", async () => {
+    const migrateHome = path.join(tmpRoot, "phase3-infer-home");
+    const migrateProject = path.join(tmpRoot, "phase3-infer-project");
+    const resourceDir = path.join(migrateProject, ".cursor", "rules", "my-rule");
+    await fs.mkdir(resourceDir, { recursive: true });
+    await fs.writeFile(path.join(resourceDir, "content.md"), "rule\n", "utf8");
+
+    const result = runCli(
+      ["system", "migrate", resourceDir, "--json"],
+      migrateProject,
+      migrateHome,
+    );
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as { type: string; name: string };
+    expect(payload).toEqual(
+      expect.objectContaining({ type: "rule", name: "my-rule" }),
+    );
+  });
+
+  it("errors when migrating a missing path", () => {
+    const result = runCli(
+      ["system", "migrate", "/does/not/exist", "--type", "rule", "--json"],
+      projectDir,
+      homeDir,
+    );
+    expect(result.status).toBe(1);
+    const payload = JSON.parse(result.stderr) as {
+      error: { code: string; message: string };
+    };
+    expect(payload.error.code).toBe("E_RESOURCE_NOT_FOUND");
+    expect(payload.error.message).toContain("Migrate path not found");
+  });
+});

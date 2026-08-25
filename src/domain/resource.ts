@@ -76,6 +76,17 @@ export interface CreateResult {
   dryRun: boolean;
 }
 
+export interface MigrateResult {
+  type: ResourceType;
+  name: string;
+  version: string;
+  sourceName: string;
+  sourceDir: string;
+  storePath: string;
+  files: Array<{ path: string; action: string }>;
+  dryRun: boolean;
+}
+
 export interface RenameOptions {
   dryRun?: boolean;
 }

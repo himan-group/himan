@@ -39,7 +39,7 @@ interface CollectedSetupInputs {
 
 interface SetupSourceResult {
   source: {
-    sourceType: "git" | "registry";
+    sourceType: "git" | "registry" | "local";
     repo?: string;
     repoId?: string;
     name?: string;
